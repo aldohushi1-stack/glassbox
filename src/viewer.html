@@ -1,0 +1,691 @@
+<title>Glassbox</title>
+<meta name="description" content="The flight recorder viewer for Claude Code and Agent SDK sessions. Drop a session .jsonl; get a timeline, token and cost burn, and auto-diagnostics. Nothing leaves your browser.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F2F4F7;--panel:#FFFFFF;--panel-2:#F7F8FA;--line:#DDE2E9;--line-2:#EBEEF3;
+  --ink:#161C24;--ink-2:#3C4655;--muted:#5B6675;--faint:#8B95A3;
+  --accent:#E8590C;--accent-ink:#FFFFFF;--accent-soft:rgba(232,89,12,.12);
+  --c-read:#3B7DD8;--c-write:#D9A21B;--c-exec:#1F9D8A;--c-agent:#7C5CD6;--c-user:#C2417F;--c-mcp:#6B7A90;--c-other:#9AA4B2;--c-model:#B9C2CE;--c-idle:#E3E7ED;
+  --err:#D63B2F;--warn:#C98A0B;--info:#3B7DD8;--ok:#1F9D8A;
+  --err-soft:rgba(214,59,47,.12);--warn-soft:rgba(217,162,27,.16);--info-soft:rgba(59,125,216,.12);
+  --shadow:0 10px 30px rgba(22,28,36,.14);
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --cond:"IBM Plex Sans Condensed","Arial Narrow",var(--sans);
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#2A3340;--line-2:#222B36;
+    --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#98A3B3;--faint:#6E7A8A;
+    --accent:#FF7A33;--accent-ink:#161C24;--accent-soft:rgba(255,122,51,.16);
+    --c-read:#5D9BEA;--c-write:#E9B63A;--c-exec:#37B8A3;--c-agent:#9E84EE;--c-user:#DD6AA0;--c-mcp:#8A98AD;--c-other:#7B8797;--c-model:#4A5666;--c-idle:#1E2630;
+    --err:#F06A5F;--warn:#E9B63A;--info:#5D9BEA;--ok:#37B8A3;
+    --err-soft:rgba(240,106,95,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(93,155,234,.16);
+    --shadow:0 10px 30px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#2A3340;--line-2:#222B36;
+  --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#98A3B3;--faint:#6E7A8A;
+  --accent:#FF7A33;--accent-ink:#161C24;--accent-soft:rgba(255,122,51,.16);
+  --c-read:#5D9BEA;--c-write:#E9B63A;--c-exec:#37B8A3;--c-agent:#9E84EE;--c-user:#DD6AA0;--c-mcp:#8A98AD;--c-other:#7B8797;--c-model:#4A5666;--c-idle:#1E2630;
+  --err:#F06A5F;--warn:#E9B63A;--info:#5D9BEA;--ok:#37B8A3;
+  --err-soft:rgba(240,106,95,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(93,155,234,.16);
+  --shadow:0 10px 30px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.app{max-width:1440px;margin:0 auto;padding:0 20px 80px}
+
+/* masthead */
+.mast{display:flex;align-items:center;gap:20px;padding:18px 0 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font:600 26px/1 var(--cond);letter-spacing:.01em;margin:0}
+.brand h1 span{color:var(--accent)}
+.brand .tag{color:var(--muted);font-size:13px}
+.drop{flex:1;min-width:280px;display:flex;align-items:center;gap:12px;border:1.5px dashed var(--line);border-radius:6px;padding:8px 12px;background:var(--panel);transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop .hint{color:var(--muted);font-size:13px;flex:1}
+.drop .hint b{color:var(--ink);font-weight:500}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:5px;padding:6px 11px;font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(.95)}
+.btn:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.controls{display:flex;gap:8px;align-items:center}
+
+/* session line */
+.session{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;padding:10px 0 0;color:var(--muted);font-size:13px}
+.session .title{color:var(--ink);font-weight:500;font-size:15px}
+.session .k{color:var(--faint)}
+
+/* stat strip */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:16px 0}
+.stat{background:var(--panel);padding:10px 12px;min-width:0}
+.stat .l{font:500 11px/1 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.stat .v{font:500 20px/1.1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.stat .s{font-size:12px;line-height:1.3;color:var(--muted);margin-top:4px}
+.stat.f .v{display:flex;gap:10px}
+.sev{display:inline-flex;align-items:center;gap:5px}
+.sev::before{content:"";width:8px;height:8px;border-radius:2px;background:currentColor}
+.sev.error{color:var(--err)}.sev.warn{color:var(--warn)}.sev.info{color:var(--info)}
+
+/* sections */
+.sec{margin-top:22px}
+.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
+.sec-h h2{font:600 13px/1 var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0}
+.sec-h .aux{font-size:12px;color:var(--faint)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.two{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
+@media (max-width:900px){.two{grid-template-columns:1fr}}
+
+/* timeline */
+.tl-wrap{position:relative;overflow:hidden;border-radius:6px}
+.tl-wrap svg{display:block;width:100%;cursor:grab;user-select:none}
+.tl-wrap svg.drag{cursor:grabbing}
+.tl-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:8px 12px;border-top:1px solid var(--line-2)}
+.tl-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.span{stroke:none}
+.span:hover{filter:brightness(.85)}
+.span.sel{stroke:var(--accent);stroke-width:2}
+.span.hl{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:3 2}
+.span.err{stroke:var(--err);stroke-width:1.5}
+.lane-label{font:500 11px var(--cond);letter-spacing:.06em;text-transform:uppercase;fill:var(--muted)}
+.lane-sub{font:11px var(--mono);fill:var(--faint)}
+.tick{font:10px var(--mono);fill:var(--faint)}
+.turn-lbl{font:10px var(--mono);fill:var(--muted)}
+.tl-empty{padding:40px;text-align:center;color:var(--muted)}
+.tooltip{position:fixed;z-index:20;pointer-events:none;background:var(--ink);color:var(--ground);padding:7px 9px;border-radius:4px;font-size:12px;max-width:360px;box-shadow:var(--shadow);display:none;line-height:1.35}
+.tooltip b{font-weight:600}
+.tooltip .m{font-family:var(--mono);opacity:.85}
+
+/* burn chart */
+.burn svg{display:block;width:100%}
+.burn .bar:hover{filter:brightness(.85)}
+.axis{font:10px var(--mono);fill:var(--faint)}
+
+/* findings */
+.findings{padding:4px 0}
+.finding{display:grid;grid-template-columns:8px 1fr auto;gap:0 12px;padding:10px 14px;border-top:1px solid var(--line-2);cursor:pointer}
+.finding:first-child{border-top:none}
+.finding:hover{background:var(--panel-2)}
+.finding .bar{border-radius:2px;align-self:stretch}
+.finding.error .bar{background:var(--err)}.finding.warn .bar{background:var(--warn)}.finding.info .bar{background:var(--info)}
+.finding .t{font-weight:500}
+.finding .d{color:var(--muted);font-size:12.5px;margin-top:2px}
+.finding .id{font:11px var(--mono);color:var(--faint);align-self:start;padding-top:3px}
+.finding.active{background:var(--accent-soft)}
+.empty{padding:22px 14px;color:var(--muted)}
+
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 10px;text-align:left;border-top:1px solid var(--line-2);white-space:nowrap}
+th{font:500 11px var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-top:none;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
+th.sorted{color:var(--ink)}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+tr.row{cursor:pointer}
+tr.row:hover td{background:var(--panel-2)}
+tr.row.on td{background:var(--accent-soft)}
+.cat{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:0}
+.tbl-wrap{overflow-x:auto;max-height:420px;overflow-y:auto}
+.errpill{color:var(--err);font-weight:500}
+
+/* turns */
+.turn{border-top:1px solid var(--line-2)}
+.turn:first-child{border-top:none}
+.turn summary{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:10px 14px;cursor:pointer;list-style:none}
+.turn summary::-webkit-details-marker{display:none}
+.turn summary:hover{background:var(--panel-2)}
+.turn .no{font:12px var(--mono);color:var(--faint)}
+.turn .p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.turn .p.meta{color:var(--faint);font-style:italic}
+.turn .stats{font:12px var(--mono);color:var(--muted);white-space:nowrap}
+.turn .body{padding:4px 14px 12px 14px;border-top:1px solid var(--line-2);background:var(--panel-2)}
+.step{display:grid;grid-template-columns:60px 16px 1fr auto;gap:10px;align-items:baseline;padding:4px 0;font-size:13px;cursor:pointer;border-radius:3px}
+.step:hover{background:var(--accent-soft)}
+.step .t{font:11px var(--mono);color:var(--faint)}
+.step .dot{width:8px;height:8px;border-radius:2px;align-self:center}
+.step .what{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.step .what .n{font-weight:500}
+.step .what .a{color:var(--muted);font-family:var(--mono);font-size:12px}
+.step .r{font:11px var(--mono);color:var(--muted);white-space:nowrap}
+.step.model .what{color:var(--ink-2)}
+.prompt{padding:8px 0 6px;color:var(--ink-2);white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;font-size:13px}
+
+/* drawer */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:30;transform:translateX(102%);transition:transform .18s ease;display:flex;flex-direction:column}
+.drawer.open{transform:none}
+@media (prefers-reduced-motion:reduce){.drawer{transition:none}}
+.drawer .dh{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.drawer .dh h3{margin:0;font:600 16px var(--sans);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer .db{overflow:auto;padding:14px 16px;flex:1}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:13px;margin-bottom:14px}
+.kv .k{color:var(--faint)}
+.kv .v{font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-all}
+.drawer h4{font:600 11px var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
+pre{margin:0;background:var(--panel-2);border:1px solid var(--line-2);border-radius:4px;padding:10px;font:12px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto}
+.x{border:none;background:none;font-size:20px;line-height:1;color:var(--muted);padding:2px 6px}
+.x:hover{color:var(--ink)}
+
+/* dialogs */
+dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;max-width:720px;width:92vw;box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(10,14,20,.45)}
+dialog .dh{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+dialog .dh h3{margin:0;font:600 16px var(--sans);flex:1}
+dialog .db{padding:14px 18px;max-height:70vh;overflow:auto}
+dialog .df{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.rates td input{width:80px;padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);text-align:right;font-family:var(--mono)}
+.note{color:var(--muted);font-size:12.5px}
+.problems{margin:10px 0 0;padding:8px 12px;border:1px solid var(--warn);background:var(--warn-soft);border-radius:5px;font-size:12.5px}
+kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:var(--panel-2)}
+.hidden{display:none!important}
+.redacted{color:var(--faint);font-style:italic}
+</style>
+
+<div class="app">
+  <header class="mast">
+    <div class="brand"><h1>Glass<span>box</span></h1><span class="tag">flight recorder for Claude Code sessions</span></div>
+    <label class="drop" id="drop" tabindex="0">
+      <input type="file" id="file" multiple accept=".jsonl,.json,.txt" class="hidden">
+      <span class="hint"><b>Drop a session .jsonl</b> (or the whole session folder with its subagents) — parsed in your browser, never uploaded.</span>
+      <span class="btn">Choose files</span>
+    </label>
+    <div class="controls">
+      <button class="btn" id="demo">Load demo</button>
+      <button class="btn" id="share" title="Blank every prompt, input and result so the trace can be shared">Share mode</button>
+      <button class="btn" id="rates" title="Edit the per-model rate card">Rates</button>
+      <button class="btn" id="help">?</button>
+    </div>
+  </header>
+
+  <div id="main" class="hidden">
+    <div class="session" id="session"></div>
+    <div id="problems" class="problems hidden"></div>
+    <div class="strip" id="strip"></div>
+
+    <section class="sec">
+      <div class="sec-h"><h2>Timeline</h2><span class="aux">scroll to zoom · drag to pan · click a span for detail · <kbd>0</kbd> resets</span></div>
+      <div class="panel tl-wrap" id="tl"></div>
+    </section>
+
+    <div class="two sec">
+      <section>
+        <div class="sec-h"><h2>Context &amp; cost per request</h2><span class="aux" id="burn-aux"></span></div>
+        <div class="panel burn" id="burn"></div>
+      </section>
+      <section>
+        <div class="sec-h"><h2>Findings</h2><span class="aux" id="find-aux"></span></div>
+        <div class="panel findings" id="findings"></div>
+      </section>
+    </div>
+
+    <section class="sec">
+      <div class="sec-h"><h2>Tools</h2><span class="aux">click a row to filter the timeline</span></div>
+      <div class="panel tbl-wrap"><table id="tools"></table></div>
+    </section>
+
+    <section class="sec">
+      <div class="sec-h"><h2>Turns</h2><span class="aux" id="turns-aux"></span></div>
+      <div class="panel" id="turns"></div>
+    </section>
+  </div>
+
+  <div id="landing" class="sec">
+    <div class="panel" style="padding:28px 30px;max-width:760px">
+      <p style="margin:0 0 10px;font-size:16px">Every Claude Code and Cowork session writes a transcript to <code class="mono">~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code>. Agent SDK runs emit the same shapes as <code class="mono">stream-json</code>. Glassbox turns that file into a timeline, a token and cost breakdown, and a list of things a reviewer would flag: retry loops, failing tools, oversized results, context bloat, stalls.</p>
+      <p style="margin:0 0 16px;color:var(--muted)">Drop the <code class="mono">.jsonl</code> above, or drop the session folder to include subagent lanes. Nothing is sent anywhere. Or <a href="#" id="demo2">load the demo</a>: the trace of the session that built this tool.</p>
+      <p class="note" style="margin:0"><b>Finding the file:</b> macOS/Linux <code class="mono">ls -t ~/.claude/projects/*/*.jsonl | head</code> · Windows <code class="mono">%USERPROFILE%\.claude\projects\</code>. Subagents live in <code class="mono">&lt;session-id&gt;/subagents/agent-*.jsonl</code> next to it.</p>
+    </div>
+  </div>
+</div>
+
+<div class="tooltip" id="tip"></div>
+
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="dh"><h3 id="d-title">Detail</h3><button class="x" id="d-close" aria-label="Close">×</button></div>
+  <div class="db" id="d-body"></div>
+</aside>
+
+<dialog id="rates-dlg">
+  <div class="dh"><h3>Rate card · USD per million tokens</h3><button class="x" id="rates-close" aria-label="Close">×</button></div>
+  <div class="db">
+    <p class="note" style="margin:0 0 10px">Defaults fetched from the Claude pricing page on 2026-09-05. Prices change — edit any cell; changes are kept in this browser. Prefix matching: a row named <code class="mono">claude-sonnet-4</code> covers every dated Sonnet 4.x id.</p>
+    <div class="tbl-wrap"><table class="rates" id="rates-tbl"></table></div>
+    <p class="note" style="margin:10px 0 0">Add a model: <input id="rate-new" placeholder="model id prefix" style="padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);width:220px"> <button class="btn" id="rate-add">Add row</button></p>
+  </div>
+  <div class="df"><button class="btn" id="rates-reset">Reset to defaults</button><button class="btn primary" id="rates-save">Apply</button></div>
+</dialog>
+
+<dialog id="help-dlg">
+  <div class="dh"><h3>How to read Glassbox</h3><button class="x" id="help-close" aria-label="Close">×</button></div>
+  <div class="db" style="font-size:13.5px;line-height:1.55">
+    <p><b>Timeline.</b> One lane per agent; the main session first, subagents below it. Grey blocks are model time (from the moment the model had its input to its last streamed block). Coloured blocks are tool calls, by category. Hatched grey between turns is human idle time. Red edge = the tool returned an error. Scroll to zoom, drag to pan, press <kbd>0</kbd> to reset.</p>
+    <p><b>Context &amp; cost.</b> One bar per API request: the size of the prompt the model saw, split into cached reads (light), cache writes (mid) and uncached input (dark). The line is cumulative estimated cost.</p>
+    <p><b>Findings.</b> Mechanical rules, no AI: identical calls repeated in a turn, tool error rates, results over 20k characters, context over 120k tokens, mid-session cache invalidation, responses that took over a minute and produced little, truncated outputs, hook and API errors, compaction events. Click one to highlight its evidence on the timeline. Thresholds live in <code class="mono">TraceCore.DEFAULTS</code>.</p>
+    <p><b>Tokens.</b> Assistant messages are stored one record per content block with the usage repeated on each; Glassbox counts usage once per API request. Thinking tokens are part of output tokens, shown as a share, never double counted. Cost is an estimate from the rate card unless the file carries a reported <code class="mono">total_cost_usd</code>.</p>
+    <p><b>Share mode.</b> Blanks every prompt, tool input, result and assistant text in the view and exports a structure-only <code class="mono">.jsonl</code> that keeps timestamps, usage and tool names — safe to post publicly.</p>
+    <p class="note">Glassbox is a single HTML file with no network calls. Source and tests: see the README that ships with it.</p>
+  </div>
+</dialog>
+
+<script>/*__TRACE_CORE__*/</script>
+<script>
+(function () {
+  'use strict';
+  const C = window.TraceCore;
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const CAT_COLOR = { read: 'var(--c-read)', write: 'var(--c-write)', exec: 'var(--c-exec)', agent: 'var(--c-agent)', user: 'var(--c-user)', mcp: 'var(--c-mcp)', other: 'var(--c-other)' };
+  const fmtDur = C.fmtDur, fmtInt = C.fmtInt;
+  const fmtTok = (n) => n == null ? '—' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+  const fmtUSD = (v) => v == null ? '—' : v < 0.01 ? '$' + v.toFixed(4) : v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2);
+  const pct = (x) => x == null ? '—' : Math.round(x * 100) + '%';
+  const clock = (ms) => ms == null ? '—' : new Date(ms).toISOString().slice(11, 19);
+
+  // ------------------------------------------------------------ state
+  const S = { files: [], records: [], trace: null, findings: [], cost: null, rates: loadRates(), share: false, sel: null, hl: new Set(), toolFilter: null, view: null };
+
+  function loadRates() {
+    try { const r = JSON.parse(localStorage.getItem('glassbox.rates') || 'null'); if (r && typeof r === 'object') return r; } catch (e) { }
+    return JSON.parse(JSON.stringify(C.RATES));
+  }
+  function saveRates() { try { localStorage.setItem('glassbox.rates', JSON.stringify(S.rates)); } catch (e) { } }
+  const R = (s) => S.share ? '«' + String(s == null ? '' : s).length + ' chars»' : s; // display redaction
+
+  // ------------------------------------------------------------ loading
+  async function readEntry(entry, out, prefix) {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej));
+      if (/\.(jsonl|json|txt)$/i.test(f.name)) out.push({ name: prefix + f.name, file: f });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      let batch;
+      do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const e of batch) await readEntry(e, out, prefix + entry.name + '/'); } while (batch.length);
+    }
+  }
+  async function handleDataTransfer(dt) {
+    const out = [];
+    const items = dt.items ? Array.from(dt.items) : [];
+    let usedEntries = false;
+    for (const it of items) { const e = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (e) { usedEntries = true; await readEntry(e, out, ''); } }
+    if (!usedEntries) for (const f of Array.from(dt.files || [])) out.push({ name: f.name, file: f });
+    await loadFiles(out);
+  }
+  async function loadFiles(list) {
+    const files = [];
+    for (const { name, file } of list) files.push({ name: (file.webkitRelativePath || name), text: await file.text() });
+    if (files.length) load(files);
+  }
+  function load(files) {
+    S.files = files;
+    S.records = files.filter((f) => !/\.meta\.json$/.test(f.name)).flatMap((f) => C.parseLines(f.text, f.name).records);
+    S.trace = C.parseTrace(files);
+    S.findings = C.diagnose(S.trace);
+    S.cost = C.estimateCost(S.trace, S.rates);
+    S.sel = null; S.hl = new Set(); S.toolFilter = null; S.view = null;
+    $('#landing').classList.add('hidden'); $('#main').classList.remove('hidden');
+    renderAll();
+    window.scrollTo({ top: 0 });
+  }
+  function recost() { if (!S.trace) return; S.cost = C.estimateCost(S.trace, S.rates); renderStrip(); renderBurn(); renderTurns(); }
+
+  // ------------------------------------------------------------ render: all
+  function renderAll() { renderSession(); renderStrip(); renderTimeline(); renderBurn(); renderFindings(); renderTools(); renderTurns(); closeDrawer(); }
+
+  function renderSession() {
+    const m = S.trace.meta, t = S.trace;
+    const title = m.title || (t.turns.find((x) => x.promptKind === 'human' && x.agent === 'main' && x.promptText && !/^[«<]/.test(x.promptText.trim())) || {}).promptText || 'Session';
+    const parts = [
+      `<span class="title">${esc(R(String(title).slice(0, 110)))}</span>`,
+      m.models.length ? `<span><span class="k">model</span> <span class="mono">${esc(m.models.join(', '))}</span></span>` : '',
+      m.version ? `<span><span class="k">claude code</span> <span class="mono">${esc(m.version)}</span></span>` : '',
+      m.format !== 'claude-code' ? `<span><span class="k">format</span> <span class="mono">${esc(m.format)}</span></span>` : '',
+      m.cwd ? `<span><span class="k">cwd</span> <span class="mono">${esc(R(m.cwd))}</span></span>` : '',
+      m.start ? `<span><span class="k">started</span> <span class="mono">${esc(new Date(m.start).toLocaleString())}</span></span>` : '',
+      `<span><span class="k">files</span> <span class="mono">${m.files.length}</span></span>`,
+      m.sessionId ? `<span><span class="k">session</span> <span class="mono">${esc(m.sessionId.slice(0, 8))}…</span></span>` : '',
+    ].filter(Boolean);
+    $('#session').innerHTML = parts.join('');
+    const p = $('#problems');
+    if (t.problems.length) { p.classList.remove('hidden'); p.textContent = `${t.problems.length} line${t.problems.length > 1 ? 's' : ''} could not be parsed and were skipped (e.g. ${t.problems[0].file}:${t.problems[0].line} — ${t.problems[0].reason}).`; } else p.classList.add('hidden');
+    const share = $('#share'); share.classList.toggle('on', S.share); share.textContent = S.share ? 'Share mode · export' : 'Share mode';
+  }
+
+  function renderStrip() {
+    const t = S.trace, T = t.totals, u = T.usage, cost = S.cost;
+    const ctx = u.input + u.cacheRead + u.cacheWrite;
+    const errs = S.findings.filter((f) => f.severity === 'error').length, warns = S.findings.filter((f) => f.severity === 'warn').length, infos = S.findings.filter((f) => f.severity === 'info').length;
+    const costV = cost.reported != null ? fmtUSD(cost.reported) : cost.total != null ? fmtUSD(cost.total) : '—';
+    const costS = cost.reported != null ? 'reported by the run' : cost.total != null ? (cost.complete ? 'estimated from rate card' : 'partial — unknown model') : (cost.unknownModels.length ? 'unknown model: set a rate' : 'no usage data');
+    const tiles = [
+      ['Wall time', fmtDur(T.wallMs), T.humanIdleMs ? `${fmtDur(T.activeMs)} active · ${fmtDur(T.humanIdleMs)} waiting on you` : (t.meta.hasTimestamps ? 'no human idle' : 'no timestamps in file')],
+      ['Turns', fmtInt(T.turns), `${fmtInt(T.requests)} API requests`],
+      ['Tool calls', fmtInt(T.toolCalls), `${T.toolErrors ? `<span class="errpill">${T.toolErrors} failed</span>` : 'none failed'}${T.orphans ? ` · ${T.orphans} unanswered` : ''} · ${fmtDur(T.toolTimeMs)} in tools`],
+      ['Context served', fmtTok(ctx), `${pct(T.cacheHitRatio)} from cache · peak ${fmtTok(Math.max(0, ...t.requests.map((r) => r.contextTokens)))}`],
+      ['Output', fmtTok(u.output), `${u.thinking ? pct(u.thinking / u.output) + ' thinking · ' : ''}${fmtDur(T.modelTimeMs)} generating`],
+      ['Est. cost', costV, costS],
+      ['Findings', `<span class="sev error">${errs}</span><span class="sev warn">${warns}</span><span class="sev info">${infos}</span>`, S.findings.length ? esc(S.findings[0].title) : 'nothing flagged', 'f'],
+    ];
+    if (t.agents.length > 1) tiles.splice(2, 0, ['Subagents', fmtInt(t.agents.length - 1), `${fmtTok(t.agents.filter((a) => a.id !== 'main').reduce((s, a) => s + a.usage.output, 0))} output tokens`]);
+    $('#strip').innerHTML = tiles.map(([l, v, s, cls]) => `<div class="stat ${cls || ''}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  }
+
+  // ------------------------------------------------------------ timeline
+  const TL = { W: 0, left: 130, top: 26, rowH: 18, laneGap: 10, rows: [], t0: 0, t1: 1, drag: null };
+  function packRows(spans) {
+    const rows = [];
+    for (const s of spans.slice().sort((a, b) => a.s - b.s)) {
+      let placed = false;
+      for (const r of rows) { if (r.end <= s.s) { r.items.push(s); r.end = s.e; placed = true; break; } }
+      if (!placed) rows.push({ items: [s], end: s.e });
+    }
+    return rows.map((r) => r.items);
+  }
+  function buildLayout() {
+    const t = S.trace; const m = t.meta;
+    const base = m.hasTimestamps ? m.start : 0;
+    // synthesize sequence timing when there are no timestamps: each request/tool = 1 unit
+    let seq = 0; const synth = (o) => { if (o.start == null) { o._s = seq++; o._e = seq; } };
+    if (!m.hasTimestamps) { for (const r of t.requests) synth(r); for (const c of t.toolCalls) synth(c); }
+    const end = m.hasTimestamps ? m.end : seq;
+    const lanes = [];
+    for (const ag of t.agents) {
+      const reqs = t.requests.filter((r) => r.agent === ag.id);
+      const calls = t.toolCalls.filter((c) => c.agent === ag.id && !c.unmatched);
+      const model = reqs.map((r) => ({ kind: 'req', ref: r, s: (m.hasTimestamps ? (r.responseFrom != null ? r.responseFrom : r.start) : r._s) - base, e: (m.hasTimestamps ? r.end : r._e) - base }));
+      const tools = calls.map((c) => ({ kind: 'tool', ref: c, s: (m.hasTimestamps ? c.start : c._s) - base, e: (m.hasTimestamps ? (c.end != null ? c.end : m.end) : c._e) - base }));
+      const idle = ag.id === 'main' ? t.turns.filter((x) => x.agent === 'main' && x.idleBeforeMs > 0).map((x) => ({ kind: 'idle', ref: x, s: x.start - x.idleBeforeMs - base, e: x.start - base })) : [];
+      lanes.push({ agent: ag, rows: [model, ...packRows(tools)], idle });
+    }
+    TL.lanes = lanes; TL.total = Math.max(1, end - base); TL.base = base;
+    if (!S.view) S.view = { t0: 0, t1: TL.total };
+  }
+  function renderTimeline() {
+    buildLayout();
+    const box = $('#tl');
+    const width = box.clientWidth || 1000; TL.W = width;
+    let y = TL.top; const laneY = [];
+    for (const ln of TL.lanes) { laneY.push(y); y += ln.rows.length * TL.rowH + TL.laneGap; }
+    const H = y + 8;
+    const { t0, t1 } = S.view; const span = t1 - t0;
+    const X = (tm) => TL.left + (tm - t0) / span * (width - TL.left - 10);
+    const svg = [];
+    svg.push(`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" id="tl-svg">`);
+    svg.push(`<defs><pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--c-idle)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--faint)" stroke-width="1" opacity=".55"/></pattern><clipPath id="clip"><rect x="${TL.left}" y="0" width="${width - TL.left}" height="${H}"/></clipPath></defs>`);
+    svg.push(`<rect x="0" y="0" width="${width}" height="${H}" fill="var(--panel)"/>`);
+    // ticks
+    const ticks = niceTicks(t0, t1, Math.max(3, Math.floor((width - TL.left) / 110)), S.trace.meta.hasTimestamps);
+    for (const tk of ticks) { const x = X(tk); svg.push(`<line x1="${x}" y1="${TL.top - 4}" x2="${x}" y2="${H}" stroke="var(--line-2)"/><text class="tick" x="${x + 3}" y="${TL.top - 8}">${S.trace.meta.hasTimestamps ? '+' + fmtTick(tk) : '#' + tk}</text>`); }
+    // turn markers (main)
+    svg.push('<g clip-path="url(#clip)">');
+    for (const tn of S.trace.turns) {
+      if (tn.agent !== 'main' || tn.promptKind !== 'human' || tn.start == null) continue;
+      const x = X(tn.start - TL.base); if (x < TL.left || x > width) continue;
+      svg.push(`<line x1="${x}" y1="${TL.top - 2}" x2="${x}" y2="${H}" stroke="var(--muted)" stroke-dasharray="2 3"/><text class="turn-lbl" x="${x + 3}" y="${H - 4}">T${mainTurnNo(tn)}</text>`);
+    }
+    for (const ev of S.trace.events) if (ev.kind === 'compact' && ev.at != null) { const x = X(ev.at - TL.base); svg.push(`<line x1="${x}" y1="${TL.top}" x2="${x}" y2="${H}" stroke="var(--accent)" stroke-width="1.5"/><text class="turn-lbl" x="${x + 3}" y="${H - 4}" fill="var(--accent)">compact</text>`); }
+    // lanes
+    TL.lanes.forEach((ln, i) => {
+      const ly = laneY[i];
+      for (const id of ln.idle) { const x0 = Math.max(TL.left, X(id.s)), x1 = Math.min(width, X(id.e)); if (x1 > x0) svg.push(`<rect x="${x0}" y="${ly}" width="${x1 - x0}" height="${ln.rows.length * TL.rowH - 2}" fill="url(#hatch)" data-kind="idle" data-ref="${id.ref.index}"/>`); }
+      ln.rows.forEach((row, ri) => {
+        const ry = ly + ri * TL.rowH;
+        for (const sp of row) {
+          let x0 = X(sp.s), x1 = X(sp.e); if (x1 < TL.left || x0 > width) continue;
+          x0 = Math.max(TL.left, x0); x1 = Math.min(width, x1); const w = Math.max(2, x1 - x0);
+          if (sp.kind === 'req') {
+            const r = sp.ref; const thinkOnly = r.blocks.length && r.blocks.every((b) => b.type === 'thinking');
+            const cls = 'span' + (S.sel && S.sel.kind === 'req' && S.sel.ref === r ? ' sel' : '') + (S.hl.has(r.id) ? ' hl' : '');
+            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${TL.rowH - 5}" rx="2" fill="var(--c-model)" opacity="${thinkOnly ? .55 : .9}" data-kind="req" data-ref="${esc(r.id)}"/>`);
+          } else {
+            const c = sp.ref; const dim = S.toolFilter && S.toolFilter !== c.name;
+            const cls = 'span' + (c.isError ? ' err' : '') + (S.sel && S.sel.kind === 'tool' && S.sel.ref === c ? ' sel' : '') + (S.hl.has(c.id) ? ' hl' : '');
+            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${TL.rowH - 5}" rx="2" fill="${CAT_COLOR[c.category]}" opacity="${dim ? .18 : (c.status === 'orphan' ? .5 : 1)}" data-kind="tool" data-ref="${esc(c.id)}"/>`);
+            if (w > 40 && !dim) svg.push(`<text x="${x0 + 4}" y="${ry + TL.rowH - 6}" font-size="10" font-family="var(--mono)" fill="#fff" pointer-events="none">${esc(shortName(c.name)).slice(0, Math.floor(w / 6.5))}</text>`);
+          }
+        }
+      });
+    });
+    svg.push('</g>');
+    // lane labels
+    TL.lanes.forEach((ln, i) => {
+      const ly = laneY[i]; const ag = ln.agent;
+      svg.push(`<rect x="0" y="${ly - 2}" width="${TL.left - 6}" height="${ln.rows.length * TL.rowH}" fill="var(--panel)"/>`);
+      svg.push(`<text class="lane-label" x="10" y="${ly + 12}">${ag.id === 'main' ? 'main' : '↳ ' + esc((ag.agentType || 'subagent').slice(0, 16))}</text>`);
+      const sub = ag.id === 'main' ? `${ag.requestCount} req · ${ag.toolCount} tools` : esc((ag.description || ag.id).slice(0, 22));
+      svg.push(`<text class="lane-sub" x="10" y="${ly + 25}">${sub}</text>`);
+    });
+    svg.push('</svg>');
+    const legend = `<div class="tl-legend"><span><i style="background:var(--c-model)"></i>model</span>${Object.entries(CAT_COLOR).map(([k, v]) => `<span><i style="background:${v}"></i>${k}</span>`).join('')}<span><i style="background:url(#hatch);border:1px solid var(--line)"></i>human idle</span><span><i style="border:1.5px solid var(--err);background:none"></i>error</span>${S.toolFilter ? `<span style="margin-left:auto">filtered: <b>${esc(S.toolFilter)}</b> <a href="#" id="unfilter">clear</a></span>` : ''}</div>`;
+    box.innerHTML = svg.join('') + legend;
+    bindTimeline();
+  }
+  function mainTurnNo(tn) { let n = 0; for (const x of S.trace.turns) { if (x.agent === 'main' && x.promptKind === 'human') { n++; if (x === tn) return n; } } return '?'; }
+  function shortName(n) { return n.startsWith('mcp__') ? n.split('__').slice(1).join(':') : n; }
+  function fmtTick(ms) { const s = Math.round(ms / 1000); const m = Math.floor(s / 60), r = s % 60; const h = Math.floor(m / 60); return h ? `${h}:${String(m % 60).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`; }
+  function niceTicks(a, b, n, isTime) {
+    const raw = (b - a) / n; const steps = isTime ? [1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000, 7200000] : [1, 2, 5, 10, 20, 50, 100, 200, 500];
+    const step = steps.find((s) => s >= raw) || steps[steps.length - 1];
+    const out = []; for (let v = Math.ceil(a / step) * step; v <= b; v += step) out.push(v); return out;
+  }
+  function bindTimeline() {
+    const svg = $('#tl-svg'); if (!svg) return;
+    const box = $('#tl');
+    const un = $('#unfilter'); if (un) un.onclick = (e) => { e.preventDefault(); S.toolFilter = null; renderTimeline(); renderTools(); };
+    svg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect(); const px = (e.clientX - rect.left) * (TL.W / rect.width);
+      const frac = Math.min(1, Math.max(0, (px - TL.left) / (TL.W - TL.left - 10)));
+      const { t0, t1 } = S.view; const span = t1 - t0; const cursor = t0 + frac * span;
+      const k = Math.exp(e.deltaY * 0.0015); let ns = Math.min(TL.total, Math.max(TL.total / 2000, span * k));
+      let n0 = cursor - frac * ns; n0 = Math.max(0, Math.min(TL.total - ns, n0));
+      S.view = { t0: n0, t1: n0 + ns }; scheduleTL();
+    }, { passive: false });
+    svg.addEventListener('mousedown', (e) => { TL.drag = { x: e.clientX, t0: S.view.t0, t1: S.view.t1, moved: false }; svg.classList.add('drag'); });
+    window.addEventListener('mousemove', onDragMove); window.addEventListener('mouseup', onDragEnd);
+    svg.addEventListener('mousemove', (e) => { const el = e.target.closest('[data-kind]'); if (el) showTip(e, el); else hideTip(); });
+    svg.addEventListener('mouseleave', hideTip);
+    svg.addEventListener('click', (e) => { if (TL.drag && TL.drag.moved) return; const el = e.target.closest('[data-kind]'); if (!el) return; const k = el.dataset.kind, ref = el.dataset.ref; if (k === 'tool') select({ kind: 'tool', ref: S.trace.toolCalls.find((c) => c.id === ref) }); else if (k === 'req') select({ kind: 'req', ref: S.trace.requests.find((r) => r.id === ref) }); });
+    function onDragMove(e) { if (!TL.drag) return; const dx = e.clientX - TL.drag.x; if (Math.abs(dx) > 3) TL.drag.moved = true; const rect = svg.getBoundingClientRect(); const span = TL.drag.t1 - TL.drag.t0; const dt = -dx / (rect.width * (TL.W - TL.left - 10) / TL.W) * span; let n0 = Math.max(0, Math.min(TL.total - span, TL.drag.t0 + dt)); S.view = { t0: n0, t1: n0 + span }; scheduleTL(); }
+    function onDragEnd() { if (!TL.drag) return; const moved = TL.drag.moved; svg.classList.remove('drag'); setTimeout(() => { TL.drag = null; }, moved ? 50 : 0); window.removeEventListener('mousemove', onDragMove); window.removeEventListener('mouseup', onDragEnd); }
+  }
+  let tlRaf = null; function scheduleTL() { if (tlRaf) return; tlRaf = requestAnimationFrame(() => { tlRaf = null; renderTimeline(); }); }
+  document.addEventListener('keydown', (e) => { if (e.key === '0' && S.trace && !/input|textarea/i.test(e.target.tagName)) { S.view = null; renderTimeline(); } if (e.key === 'Escape') closeDrawer(); });
+  window.addEventListener('resize', () => { if (S.trace) { renderTimeline(); renderBurn(); } });
+
+  const tip = $('#tip');
+  function showTip(e, el) {
+    const k = el.dataset.kind, ref = el.dataset.ref; let html = '';
+    if (k === 'tool') { const c = S.trace.toolCalls.find((x) => x.id === ref); if (!c) return; html = `<b>${esc(c.name)}</b> <span class="m">${c.status}${c.durationMs != null ? ' · ' + fmtDur(c.durationMs) : ''}</span><br><span class="m">${esc(R(inputSummary(c)).slice(0, 160))}</span>${c.resultChars ? `<br><span class="m">→ ${fmtInt(c.resultChars)} chars</span>` : ''}`; }
+    else if (k === 'req') { const r = S.trace.requests.find((x) => x.id === ref); if (!r) return; const i = S.trace.requests.indexOf(r) + 1; html = `<b>Request #${i}</b> <span class="m">${esc(r.blocksSummary)}</span><br><span class="m">${fmtDur(r.responseMs)} · ${fmtTok(r.usage.output)} out (${fmtTok(r.usage.thinking)} thinking) · ctx ${fmtTok(r.contextTokens)}${r.tokensPerSec ? ' · ' + r.tokensPerSec.toFixed(0) + ' tok/s' : ''}</span>${S.cost.byRequest[i - 1] != null ? `<br><span class="m">${fmtUSD(S.cost.byRequest[i - 1])}</span>` : ''}`; }
+    else if (k === 'idle') { const tn = S.trace.turns[+ref]; html = `<b>Waiting on you</b> <span class="m">${fmtDur(tn.idleBeforeMs)}</span>`; }
+    else if (k === 'bar') { const r = S.trace.requests[+ref]; const i = +ref + 1; html = `<b>Request #${i}</b> <span class="m">${esc(r.blocksSummary)}</span><br><span class="m">cache read ${fmtTok(r.usage.cacheRead)} · cache write ${fmtTok(r.usage.cacheWrite)} · input ${fmtTok(r.usage.input)}</span><br><span class="m">out ${fmtTok(r.usage.output)} · ${fmtUSD(S.cost.byRequest[+ref])} · cumulative ${fmtUSD(cum(+ref))}</span>`; }
+    tip.innerHTML = html; tip.style.display = 'block'; moveTip(e);
+  }
+  function moveTip(e) { const w = tip.offsetWidth, h = tip.offsetHeight; let x = e.clientX + 14, y = e.clientY + 14; if (x + w > innerWidth - 8) x = e.clientX - w - 10; if (y + h > innerHeight - 8) y = e.clientY - h - 10; tip.style.left = x + 'px'; tip.style.top = y + 'px'; }
+  function hideTip() { tip.style.display = 'none'; }
+  document.addEventListener('mousemove', (e) => { if (tip.style.display === 'block') moveTip(e); });
+  function cum(i) { let s = 0; for (let k = 0; k <= i; k++) s += S.cost.byRequest[k] || 0; return s; }
+  function inputSummary(c) {
+    const i = c.input || {};
+    if (i.command) return i.command; if (i.file_path) return i.file_path + (i.pattern ? ' ' + i.pattern : ''); if (i.pattern) return i.pattern; if (i.query) return i.query; if (i.description) return i.description; if (i.url) return i.url; if (i.prompt) return i.prompt; if (i.path) return i.path;
+    const s = JSON.stringify(i); return s === '{}' ? '' : s;
+  }
+
+  // ------------------------------------------------------------ burn chart
+  function renderBurn() {
+    const box = $('#burn'); const reqs = S.trace.requests; const width = box.clientWidth || 800; const H = 200, L = 46, Rm = 52, T = 14, B = 22;
+    if (!reqs.length) { box.innerHTML = '<div class="empty">No API requests found.</div>'; return; }
+    const maxCtx = Math.max(1, ...reqs.map((r) => r.contextTokens));
+    const costs = S.cost.byRequest; let acc = 0; const cumv = costs.map((c) => (acc += c || 0));
+    const maxCost = Math.max(1e-9, ...cumv);
+    const plotW = width - L - Rm, bw = Math.max(1, plotW / reqs.length - 1);
+    const y = (v) => T + (H - T - B) * (1 - v / maxCtx), yc = (v) => T + (H - T - B) * (1 - v / maxCost);
+    const s = [`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}">`];
+    const ticks = [0, .25, .5, .75, 1];
+    for (const f of ticks) { const yy = y(maxCtx * f); s.push(`<line x1="${L}" x2="${width - Rm}" y1="${yy}" y2="${yy}" stroke="var(--line-2)"/><text class="axis" x="${L - 4}" y="${yy + 3}" text-anchor="end">${fmtTok(Math.round(maxCtx * f))}</text>`); }
+    if (S.cost.total != null) for (const f of [.5, 1]) { const yy = yc(maxCost * f); s.push(`<text class="axis" x="${width - Rm + 4}" y="${yy + 3}" fill="var(--accent)">${fmtUSD(maxCost * f)}</text>`); }
+    reqs.forEach((r, i) => {
+      const x = L + i * (plotW / reqs.length); const u = r.usage; let top = H - B;
+      const seg = (v, fill, op) => { if (!v) return; const h = (H - T - B) * v / maxCtx; top -= h; s.push(`<rect class="bar" x="${x}" y="${top}" width="${bw}" height="${h}" fill="${fill}" opacity="${op}" data-kind="bar" data-ref="${i}"/>`); };
+      const isSub = r.agent !== 'main';
+      seg(u.cacheRead, isSub ? 'var(--c-agent)' : 'var(--c-read)', .35); seg(u.cacheWrite, isSub ? 'var(--c-agent)' : 'var(--c-read)', .7); seg(u.input, isSub ? 'var(--c-agent)' : 'var(--c-read)', 1);
+      if (S.sel && S.sel.kind === 'req' && S.sel.ref === r) s.push(`<rect x="${x - 1}" y="${T}" width="${bw + 2}" height="${H - T - B}" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`);
+    });
+    for (const ev of S.trace.events) if (ev.kind === 'compact' && ev.at != null) { const idx = reqs.findIndex((r) => r.start != null && r.start >= ev.at); if (idx >= 0) { const x = L + idx * (plotW / reqs.length); s.push(`<line x1="${x}" x2="${x}" y1="${T}" y2="${H - B}" stroke="var(--accent)" stroke-dasharray="3 2"/>`); } }
+    if (S.cost.total != null) { const pts = cumv.map((v, i) => `${(L + i * (plotW / reqs.length) + bw / 2).toFixed(1)},${yc(v).toFixed(1)}`); s.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round"/>`); const lx = L + (reqs.length - 1) * (plotW / reqs.length) + bw / 2; s.push(`<circle cx="${lx}" cy="${yc(cumv[cumv.length - 1])}" r="3" fill="var(--accent)"/>`); }
+    const step = Math.max(1, Math.ceil(reqs.length / Math.max(2, Math.floor(plotW / 60))));
+    for (let i = 0; i < reqs.length; i += step) s.push(`<text class="axis" x="${L + i * (plotW / reqs.length)}" y="${H - 6}">#${i + 1}</text>`);
+    s.push('</svg>');
+    box.innerHTML = s.join('');
+    $('#burn-aux').innerHTML = `bars: prompt size per request (light = cached read, mid = cache write, dark = uncached${S.trace.agents.length > 1 ? ', violet = subagent' : ''}) · <span style="color:var(--accent)">line</span>: cumulative ${S.cost.reported != null ? 'estimated' : 'est.'} cost`;
+    const svg = box.querySelector('svg');
+    svg.addEventListener('mousemove', (e) => { const el = e.target.closest('[data-kind]'); if (el) showTip(e, el); else hideTip(); });
+    svg.addEventListener('mouseleave', hideTip);
+    svg.addEventListener('click', (e) => { const el = e.target.closest('[data-kind=bar]'); if (el) select({ kind: 'req', ref: S.trace.requests[+el.dataset.ref] }); });
+  }
+
+  // ------------------------------------------------------------ findings
+  function renderFindings() {
+    const box = $('#findings'); const fs = S.findings;
+    $('#find-aux').textContent = fs.length ? `${fs.length} · mechanical rules, no AI` : '';
+    if (!fs.length) { box.innerHTML = '<div class="empty">Nothing flagged. Either a clean session or a very short one.</div>'; return; }
+    box.innerHTML = fs.map((f, i) => `<div class="finding ${f.severity}" data-i="${i}" tabindex="0"><div class="bar"></div><div><div class="t">${esc(f.title)}</div><div class="d">${esc(S.share ? f.detail.replace(/«[^»]*»|\/[^\s]+/g, '…') : f.detail)}</div></div><div class="id">${f.id}</div></div>`).join('');
+    $$('.finding', box).forEach((el) => { const go = () => focusFinding(+el.dataset.i); el.onclick = go; el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
+  }
+  function focusFinding(i) {
+    const f = S.findings[i]; const ev = f.evidence || {};
+    $$('.finding').forEach((el, k) => el.classList.toggle('active', k === i));
+    S.hl = new Set([...(ev.toolCallIds || []), ...(ev.requestIds || [])]);
+    // zoom timeline to evidence
+    const items = [...(ev.toolCallIds || []).map((id) => S.trace.toolCalls.find((c) => c.id === id)), ...(ev.requestIds || []).map((id) => S.trace.requests.find((r) => r.id === id))].filter(Boolean);
+    if (items.length && S.trace.meta.hasTimestamps) {
+      let a = Infinity, b = -Infinity; for (const it of items) { const s = (it.responseFrom != null ? it.responseFrom : it.start), e = it.end != null ? it.end : S.trace.meta.end; if (s != null) a = Math.min(a, s); if (e != null) b = Math.max(b, e); }
+      if (Number.isFinite(a) && Number.isFinite(b)) { const pad = Math.max((b - a) * .6, 15000); S.view = { t0: Math.max(0, a - TL.base - pad), t1: Math.min(TL.total, b - TL.base + pad) }; }
+    } else if (ev.at != null && S.trace.meta.hasTimestamps) { const c = ev.at - TL.base; S.view = { t0: Math.max(0, c - 60000), t1: Math.min(TL.total, c + 60000) }; }
+    renderTimeline();
+    if (items.length === 1) select({ kind: items[0].name ? 'tool' : 'req', ref: items[0] }, true); else closeDrawer();
+    $('#tl').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  // ------------------------------------------------------------ tools table
+  const TT = { sort: 'time', dir: -1 };
+  function renderTools() {
+    const rows = new Map();
+    for (const c of S.trace.toolCalls) {
+      if (c.unmatched) continue;
+      if (!rows.has(c.name)) rows.set(c.name, { name: c.name, category: c.category, calls: 0, errors: 0, time: 0, max: 0, chars: 0, n: 0 });
+      const r = rows.get(c.name); r.calls++; if (c.isError) r.errors++; if (c.durationMs != null) { r.time += c.durationMs; r.n++; r.max = Math.max(r.max, c.durationMs); } r.chars += c.resultChars || 0;
+    }
+    const list = Array.from(rows.values()).map((r) => Object.assign(r, { avg: r.n ? r.time / r.n : 0, rate: r.calls ? r.errors / r.calls : 0 }));
+    list.sort((a, b) => (typeof a[TT.sort] === 'string' ? a[TT.sort].localeCompare(b[TT.sort]) : a[TT.sort] - b[TT.sort]) * TT.dir);
+    const cols = [['name', 'Tool', ''], ['calls', 'Calls', 'n'], ['errors', 'Errors', 'n'], ['time', 'Total time', 'n'], ['avg', 'Avg', 'n'], ['max', 'Max', 'n'], ['chars', 'Result chars', 'n']];
+    const th = cols.map(([k, l, c]) => `<th class="${c} ${TT.sort === k ? 'sorted' : ''}" data-k="${k}">${l}${TT.sort === k ? (TT.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
+    const tr = list.map((r) => `<tr class="row ${S.toolFilter === r.name ? 'on' : ''}" data-name="${esc(r.name)}"><td><span class="cat" style="background:${CAT_COLOR[r.category]}"></span>${esc(r.name)}</td><td class="n">${r.calls}</td><td class="n">${r.errors ? `<span class="errpill">${r.errors} (${Math.round(r.rate * 100)}%)</span>` : '—'}</td><td class="n">${fmtDur(r.time)}</td><td class="n">${fmtDur(r.avg)}</td><td class="n">${fmtDur(r.max)}</td><td class="n">${fmtInt(r.chars)}</td></tr>`).join('');
+    $('#tools').innerHTML = `<thead><tr>${th}</tr></thead><tbody>${tr || '<tr><td colspan="7" class="empty">No tool calls.</td></tr>'}</tbody>`;
+    $$('#tools th').forEach((el) => el.onclick = () => { const k = el.dataset.k; if (TT.sort === k) TT.dir *= -1; else { TT.sort = k; TT.dir = k === 'name' ? 1 : -1; } renderTools(); });
+    $$('#tools tr.row').forEach((el) => el.onclick = () => { S.toolFilter = S.toolFilter === el.dataset.name ? null : el.dataset.name; renderTools(); renderTimeline(); });
+  }
+
+  // ------------------------------------------------------------ turns
+  function renderTurns() {
+    const t = S.trace; const box = $('#turns');
+    const turns = t.turns.filter((tn) => tn.agent === 'main');
+    $('#turns-aux').textContent = `${turns.filter((x) => x.promptKind === 'human').length} prompts${t.agents.length > 1 ? ' · subagent work is inside its Agent call' : ''}`;
+    let n = 0;
+    box.innerHTML = turns.map((tn) => {
+      const human = tn.promptKind === 'human'; if (human) n++;
+      const reqs = tn.requestIds.map((id) => t.requests.find((r) => r.id === id)).filter(Boolean);
+      const cost = reqs.reduce((s, r) => s + (S.cost.byRequest[t.requests.indexOf(r)] || 0), 0);
+      const dur = tn.start != null && tn.end != null ? tn.end - tn.start : null;
+      const label = human ? `T${n}` : tn.promptKind;
+      const prompt = tn.promptText ? R(tn.promptText).replace(/\s+/g, ' ').slice(0, 140) : '(no prompt text)';
+      const steps = [];
+      for (const r of reqs) {
+        const i = t.requests.indexOf(r);
+        const txt = r.blocks.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim();
+        if (txt) steps.push({ t: r.end, kind: 'model', html: `<span class="what"><span class="n">says</span> <span class="a">${esc(R(txt).replace(/\s+/g, ' ').slice(0, 120))}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)' });
+        else if (!r.blocks.some((b) => b.type === 'tool_use')) steps.push({ t: r.end, kind: 'model', html: `<span class="what"><span class="a">${esc(r.blocksSummary || 'response')}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)' });
+        for (const b of r.blocks) if (b.type === 'tool_use') { const c = t.toolCalls.find((x) => x.id === b.id); if (!c) continue; steps.push({ t: c.start, kind: 'tool', html: `<span class="what"><span class="n">${esc(shortName(c.name))}</span> <span class="a">${esc(R(inputSummary(c)).slice(0, 110))}</span></span>`, r: `${c.status === 'error' ? '<span class="errpill">error</span> · ' : c.status === 'orphan' ? 'no result · ' : ''}${fmtDur(c.durationMs)}${c.resultChars ? ' · ' + fmtTok(c.resultChars) + ' ch' : ''}`, sel: { kind: 'tool', ref: c }, color: CAT_COLOR[c.category] }); }
+        void i;
+      }
+      const stepsHtml = steps.map((s, k) => `<div class="step ${s.kind}" data-turn="${tn.index}" data-step="${k}"><span class="t">${tn.start != null && s.t != null ? '+' + fmtTick(s.t - tn.start) : ''}</span><span class="dot" style="background:${s.color}"></span>${s.html}<span class="r">${s.r}</span></div>`).join('');
+      tn._steps = steps;
+      return `<details class="turn"><summary><span class="no">${label}</span><span class="p ${human ? '' : 'meta'}">${esc(prompt)}</span><span class="stats">${tn.toolCallIds.length} tools · ${fmtTok(tn.usage.output)} out · ${fmtDur(dur)}${cost ? ' · ' + fmtUSD(cost) : ''}${tn.idleBeforeMs > 60000 ? ' · after ' + fmtDur(tn.idleBeforeMs) + ' idle' : ''}</span></summary><div class="body">${tn.promptText ? `<div class="prompt ${S.share ? 'redacted' : ''}">${esc(R(tn.promptText).slice(0, 4000))}</div>` : ''}${stepsHtml || '<div class="empty">No model activity in this turn.</div>'}</div></details>`;
+    }).join('') || '<div class="empty">No turns.</div>';
+    $$('.step', box).forEach((el) => el.onclick = () => { const tn = t.turns[+el.dataset.turn]; const s = tn._steps[+el.dataset.step]; select(s.sel, true); });
+  }
+
+  // ------------------------------------------------------------ selection / drawer
+  function select(sel, keepHl) {
+    S.sel = sel; if (!keepHl) S.hl = new Set();
+    renderTimeline(); renderBurn();
+    const d = $('#drawer'), body = $('#d-body');
+    if (sel.kind === 'tool') {
+      const c = sel.ref; const i = S.trace.toolCalls.indexOf(c);
+      $('#d-title').textContent = c.name;
+      const sub = c.subagentId ? S.trace.agents.find((a) => a.id === c.subagentId) : null;
+      body.innerHTML = `<div class="kv"><span class="k">status</span><span class="v">${c.status}${c.isError ? ' <span class="errpill">error</span>' : ''}</span><span class="k">category</span><span class="v">${c.category}</span><span class="k">started</span><span class="v">${c.start != null ? clock(c.start) + ' · +' + fmtTick(c.start - S.trace.meta.start) : '—'}</span><span class="k">duration</span><span class="v">${fmtDur(c.durationMs)}</span><span class="k">agent</span><span class="v">${esc(c.agent)}</span><span class="k">turn</span><span class="v">${c.turnIndex + 1}</span><span class="k">input size</span><span class="v">${fmtInt(c.inputChars)} chars</span><span class="k">result size</span><span class="v">${fmtInt(c.resultChars)} chars</span>${sub ? `<span class="k">spawned</span><span class="v">${esc(sub.agentType || 'subagent')} · ${sub.requestCount} req · ${sub.toolCount} tools · ${fmtTok(sub.usage.output)} out</span>` : ''}<span class="k">call #</span><span class="v">${i + 1} of ${S.trace.toolCalls.length}</span></div>
+        <h4>Input</h4><pre>${esc(S.share ? '«' + c.inputChars + ' chars»' : JSON.stringify(c.input, null, 2))}</pre>
+        <h4>Result</h4><pre>${esc(S.share ? '«' + c.resultChars + ' chars»' : (c.resultText || (c.resultStructured ? JSON.stringify(c.resultStructured, null, 2) : '(empty)')).slice(0, 30000))}${!S.share && c.resultText && c.resultText.length > 30000 ? '\n… ' + fmtInt(c.resultText.length - 30000) + ' more chars' : ''}</pre>`;
+    } else {
+      const r = sel.ref; const i = S.trace.requests.indexOf(r); const u = r.usage;
+      $('#d-title').textContent = `Request #${i + 1}`;
+      body.innerHTML = `<div class="kv"><span class="k">model</span><span class="v">${esc(r.model || '—')}</span><span class="k">stop reason</span><span class="v">${esc(r.stopReason || '—')}</span><span class="k">response</span><span class="v">${fmtDur(r.responseMs)}${r.tokensPerSec ? ' · ' + r.tokensPerSec.toFixed(1) + ' tok/s' : ''}</span><span class="k">context</span><span class="v">${fmtInt(r.contextTokens)} tokens</span><span class="k">cache read</span><span class="v">${fmtInt(u.cacheRead)}</span><span class="k">cache write</span><span class="v">${fmtInt(u.cacheWrite)}${u.cacheWrite1h ? ' (1h: ' + fmtInt(u.cacheWrite1h) + ')' : ''}</span><span class="k">uncached input</span><span class="v">${fmtInt(u.input)}</span><span class="k">output</span><span class="v">${fmtInt(u.output)} (${fmtInt(u.thinking)} thinking)</span><span class="k">cost</span><span class="v">${fmtUSD(S.cost.byRequest[i])}</span><span class="k">agent</span><span class="v">${esc(r.agent)}</span><span class="k">blocks</span><span class="v">${esc(r.blocksSummary)}</span></div>
+        ${r.blocks.map((b) => b.type === 'text' ? `<h4>Text</h4><pre>${esc(S.share ? '«' + b.text.length + ' chars»' : b.text)}</pre>` : b.type === 'thinking' ? `<h4>Thinking</h4><pre>${esc(S.share || !b.text ? '«' + (b.text || '').length + ' chars»' : b.text.slice(0, 8000))}</pre>` : b.type === 'tool_use' ? `<h4>Tool call</h4><pre>${esc(b.name)}</pre>` : '').join('')}`;
+    }
+    d.classList.add('open'); d.setAttribute('aria-hidden', 'false');
+  }
+  function closeDrawer() { const d = $('#drawer'); if (d.classList.contains('open')) { d.classList.remove('open'); d.setAttribute('aria-hidden', 'true'); if (S.sel) { S.sel = null; renderTimeline(); renderBurn(); } } }
+  $('#d-close').onclick = closeDrawer;
+
+  // ------------------------------------------------------------ share mode
+  $('#share').onclick = () => {
+    if (!S.trace) { S.share = !S.share; $('#share').classList.toggle('on', S.share); return; }
+    if (!S.share) { S.share = true; renderAll(); return; }
+    // second click: export
+    const red = C.redact(S.records);
+    const blob = new Blob([C.toJsonl(red)], { type: 'application/x-ndjson' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (S.trace.meta.sessionId || 'trace').slice(0, 8) + '-redacted.jsonl'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  $('#share').addEventListener('contextmenu', (e) => { e.preventDefault(); S.share = false; if (S.trace) renderAll(); else $('#share').classList.remove('on'); });
+
+  // ------------------------------------------------------------ rates dialog
+  const rd = $('#rates-dlg');
+  function renderRates() {
+    const cols = ['in', 'out', 'w5m', 'w1h', 'read'];
+    $('#rates-tbl').innerHTML = `<thead><tr><th>Model prefix</th>${cols.map((c) => `<th class="n">${{ in: 'Input', out: 'Output', w5m: 'Cache write 5m', w1h: 'Cache write 1h', read: 'Cache read' }[c]}</th>`).join('')}<th></th></tr></thead><tbody>${Object.entries(S.rates).map(([m, r]) => `<tr data-m="${esc(m)}"><td class="mono">${esc(m)}</td>${cols.map((c) => `<td class="n"><input type="number" step="0.01" min="0" data-c="${c}" value="${r[c]}"></td>`).join('')}<td><button class="x" data-del="${esc(m)}" title="Remove">×</button></td></tr>`).join('')}</tbody>`;
+    $$('#rates-tbl [data-del]').forEach((b) => b.onclick = () => { delete S.rates[b.dataset.del]; renderRates(); });
+  }
+  $('#rates').onclick = () => { renderRates(); rd.showModal(); };
+  $('#rates-close').onclick = () => rd.close();
+  $('#rate-add').onclick = () => { const m = $('#rate-new').value.trim(); if (!m) return; S.rates[m] = { in: 0, out: 0, w5m: 0, w1h: 0, read: 0 }; $('#rate-new').value = ''; renderRates(); };
+  $('#rates-reset').onclick = () => { S.rates = JSON.parse(JSON.stringify(C.RATES)); renderRates(); };
+  $('#rates-save').onclick = () => { $$('#rates-tbl tbody tr').forEach((tr) => { const m = tr.dataset.m; if (!S.rates[m]) return; $$('input', tr).forEach((inp) => { S.rates[m][inp.dataset.c] = parseFloat(inp.value) || 0; }); }); saveRates(); rd.close(); recost(); };
+
+  // ------------------------------------------------------------ help + inputs
+  $('#help').onclick = () => $('#help-dlg').showModal(); $('#help-close').onclick = () => $('#help-dlg').close();
+  const drop = $('#drop');
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); handleDataTransfer(e.dataTransfer); });
+  document.addEventListener('dragover', (e) => { e.preventDefault(); });
+  document.addEventListener('drop', (e) => { if (!drop.contains(e.target)) { e.preventDefault(); handleDataTransfer(e.dataTransfer); } });
+  $('#file').addEventListener('change', (e) => loadFiles(Array.from(e.target.files).map((f) => ({ name: f.name, file: f }))));
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } });
+
+  const DEMO = /*__DEMO__*/null;
+  function loadDemo(e) { if (e) e.preventDefault(); if (!DEMO) { alert('No demo embedded in this build.'); return; } load(DEMO.map((f) => ({ name: f.name, text: f.text }))); }
+  $('#demo').onclick = loadDemo; $('#demo2').onclick = loadDemo;
+  if (location.hash === '#demo') loadDemo();
+})();
+</script>

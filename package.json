@@ -1,0 +1,15 @@
+{
+  "name": "glassbox-trace",
+  "version": "0.1.0",
+  "description": "The flight recorder viewer for Claude Code / Agent SDK sessions. Drop a session .jsonl on a single HTML file; get a timeline, token/cost burn and auto-diagnostics.",
+  "main": "src/trace-core.js",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "node scripts/build.mjs",
+    "sanitize": "node scripts/sanitize.mjs",
+    "e2e": "node test/browser.e2e.mjs",
+    "check": "npm test && npm run build && npm run e2e"
+  },
+  "license": "MIT",
+  "author": "Aldo Hushi"
+}
