@@ -59,6 +59,10 @@ for (const scheme of ['light', 'dark']) {
   const promptTxt = await page.$eval('#turns details summary .p', (e) => e.textContent);
   assert.match(promptTxt, /«\d+ chars»|\(no prompt text\)/, 'share mode blanks prompts');
   await page.click('#share'); // back to normal
+  // banner dismiss actually hides it (display:none), and the closed drawer is not rendered
+  await page.click('#banner-x');
+  assert.equal(await page.$eval('#banner', (e) => getComputedStyle(e).display), 'none', 'dismissed banner is display:none');
+  assert.equal(await page.$eval('#drawer', (e) => getComputedStyle(e).display), 'none', 'closed drawer is display:none');
   // keyboard: tab into the timeline, arrow to the next call, Enter opens the drawer, focus lands inside, Escape restores focus
   await page.focus('#tl-svg [tabindex="0"]');
   const before = await page.evaluate(() => document.activeElement.dataset.ref);
