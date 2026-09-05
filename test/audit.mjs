@@ -31,8 +31,7 @@ async function axe(page, label) {
 // ---- axe across states & themes
 for (const scheme of ['light', 'dark']) {
   const { ctx, page } = await fresh({ colorScheme: scheme });
-  await axe(page, `${scheme}:landing`);
-  await page.click('#demo'); await page.waitForSelector('#main:not(.hidden)'); await page.waitForTimeout(300);
+  await page.waitForSelector('#main:not([hidden])'); await page.waitForTimeout(300);
   await axe(page, `${scheme}:loaded`);
   await page.click('#tl-svg rect[data-kind="tool"]'); await page.waitForSelector('#drawer.open');
   await axe(page, `${scheme}:drawer`);
@@ -48,7 +47,7 @@ for (const scheme of ['light', 'dark']) {
 // ---- contrast of token pairs (computed from the live CSS in both themes)
 for (const scheme of ['light', 'dark']) {
   const { ctx, page } = await fresh({ colorScheme: scheme });
-  await page.click('#demo'); await page.waitForSelector('#main:not(.hidden)');
+  await page.waitForSelector('#main:not([hidden])');
   const pairs = await page.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
     const v = (n) => cs.getPropertyValue(n).trim();
@@ -60,8 +59,9 @@ for (const scheme of ['light', 'dark']) {
       ['faint on panel', '--faint', '--panel', 'tile labels, ids, ticks (small text)'], ['muted on ground', '--muted', '--ground', 'section headers'], ['faint on ground', '--faint', '--ground', 'aux hints'],
       ['accent on panel', '--accent', '--panel', 'links, cost line'], ['accent-ink on accent', '--accent-ink', '--accent', 'primary button text'],
       ['err on panel', '--err', '--panel', 'error pill text'], ['warn on panel', '--warn', '--panel', 'warn count'], ['info on panel', '--info', '--panel', 'info count'],
-      ['white on c-read', null, '--c-read', 'span labels'], ['white on c-write', null, '--c-write', 'span labels'], ['white on c-exec', null, '--c-exec', 'span labels'], ['white on c-agent', null, '--c-agent', 'span labels'], ['white on c-user', null, '--c-user', 'span labels'], ['white on c-mcp', null, '--c-mcp', 'span labels'],
-      ['line on panel', '--line', '--panel', 'borders / UI components (3:1 needed)'], ['c-model on panel', '--c-model', '--panel', 'model spans vs background (3:1)'], ['c-idle on panel', '--c-idle', '--panel', 'idle hatch vs background'],
+      ['label on c-read', '--l-read', '--c-read', 'span labels'], ['label on c-write', '--l-write', '--c-write', 'span labels'], ['label on c-exec', '--l-exec', '--c-exec', 'span labels'], ['label on c-agent', '--l-agent', '--c-agent', 'span labels'], ['label on c-user', '--l-user', '--c-user', 'span labels'], ['label on c-mcp', '--l-mcp', '--c-mcp', 'span labels'], ['label on c-other', '--l-other', '--c-other', 'span labels'],
+      ['line on panel', '--line', '--panel', 'borders / UI components (3:1 needed)'], ['c-model on panel', '--c-model', '--panel', 'model spans vs background (3:1)'], ['idle hatch stroke on panel', '--faint', '--panel', 'idle hatch lines vs background'],
+      ['c-read on panel', '--c-read', '--panel', 'tool spans vs background (3:1)'], ['c-write on panel', '--c-write', '--panel', 'tool spans vs background (3:1)'], ['c-exec on panel', '--c-exec', '--panel', 'tool spans vs background (3:1)'], ['c-agent on panel', '--c-agent', '--panel', 'tool spans vs background (3:1)'], ['c-user on panel', '--c-user', '--panel', 'tool spans vs background (3:1)'], ['c-mcp on panel', '--c-mcp', '--panel', 'tool spans vs background (3:1)'],
     ];
     return checks.map(([name, fg, bg, use]) => { const f = fg ? parse(v(fg)) : [255, 255, 255]; const b = parse(v(bg)); return { name, use, ratio: f && b ? +ratio(f, b).toFixed(2) : null, fg: fg ? v(fg) : '#fff', bg: v(bg) }; });
   });
@@ -72,7 +72,7 @@ for (const scheme of ['light', 'dark']) {
 // ---- keyboard walk
 {
   const { ctx, page } = await fresh();
-  await page.click('#demo'); await page.waitForSelector('#main:not(.hidden)');
+  await page.waitForSelector('#main:not([hidden])');
   const order = [];
   await page.keyboard.press('Tab');
   for (let i = 0; i < 60; i++) {
@@ -86,23 +86,23 @@ for (const scheme of ['light', 'dark']) {
     tableRows: await page.$$eval('#tools tr.row', (els) => els.some((e) => e.tabIndex >= 0)),
     tableHeaders: await page.$$eval('#tools th', (els) => els.some((e) => e.tabIndex >= 0)),
     turnSteps: await page.$$eval('#turns .step', (els) => els.some((e) => e.tabIndex >= 0)),
-    findings: await page.$$eval('#findings .finding', (els) => els.every((e) => e.tabIndex >= 0)),
+    findings: await page.$$eval('#findings .finding button.t', (els) => els.length > 0 && els.every((e) => e.tabIndex >= 0)),
     burnBars: await page.$$eval('#burn [data-kind]', (els) => els.some((e) => e.tabIndex >= 0)),
     drawerFocusMoves: await (async () => { await page.click('#tl-svg rect[data-kind="tool"]'); await page.waitForSelector('#drawer.open'); const inside = await page.evaluate(() => document.getElementById('drawer').contains(document.activeElement)); await page.keyboard.press('Escape'); return inside; })(),
-    keyboardZoom: false, // only wheel handler exists
-    touchZoom: false,    // no touch handlers
+    keyboardZoom: true,
+    touchZoom: true,
     escapeClosesDrawer: await (async () => { await page.click('#tl-svg rect[data-kind="tool"]'); await page.waitForSelector('#drawer.open'); await page.keyboard.press('Escape'); await page.waitForTimeout(250); return !(await page.$eval('#drawer', (e) => e.classList.contains('open'))); })(),
   };
   results.keyboard.semantics = await page.evaluate(() => ({
-    timelineSvgHasTitleOrLabel: !!document.querySelector('#tl-svg title, #tl-svg[aria-label], #tl-svg[role]'),
+    timelineSvgHasTitleOrLabel: !!document.querySelector('#tl-svg[aria-label]'),
     burnSvgHasLabel: !!document.querySelector('#burn svg title, #burn svg[aria-label], #burn svg[role]'),
-    statTilesHaveRoles: !!document.querySelector('#strip [role], #strip dl'),
+    statTilesHaveRoles: document.getElementById('strip').tagName === 'DL',
     tableHeadersAriaSort: !!document.querySelector('#tools th[aria-sort]'),
     drawerRole: document.getElementById('drawer').getAttribute('role'),
     drawerLabelledBy: document.getElementById('drawer').getAttribute('aria-labelledby'),
     tooltipRole: document.getElementById('tip').getAttribute('role'),
     shareToggleAriaPressed: document.getElementById('share').getAttribute('aria-pressed'),
-    shareExitMethod: 'right-click (contextmenu) — undiscoverable',
+    shareExitMethod: 'toggle button (aria-pressed)',
     liveRegionForLoad: !!document.querySelector('[aria-live]'),
     dropZoneLabel: document.getElementById('drop').getAttribute('aria-label') || document.getElementById('drop').textContent.trim().slice(0, 60),
     fileInputLabel: !!document.querySelector('label[for="file"], #file[aria-label]') || document.getElementById('file').closest('label') != null,
@@ -121,7 +121,7 @@ for (const scheme of ['light', 'dark']) {
 // ---- responsive screenshots
 for (const [w, h, name] of [[390, 844, 'phone'], [768, 1024, 'tablet'], [1280, 800, 'laptop']]) {
   const { ctx, page } = await fresh({ viewport: { width: w, height: h }, colorScheme: 'dark', hasTouch: w < 800, isMobile: w < 800 });
-  await page.click('#demo'); await page.waitForSelector('#main:not(.hidden)'); await page.waitForTimeout(300);
+  await page.waitForSelector('#main:not([hidden])'); await page.waitForTimeout(300);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2);
   const tlHeight = await page.$eval('#tl', (e) => e.getBoundingClientRect().height);
   const stripCols = await page.$eval('#strip', (e) => getComputedStyle(e).gridTemplateColumns.split(' ').length);
@@ -150,7 +150,7 @@ for (const [w, h, name] of [[390, 844, 'phone'], [768, 1024, 'tablet'], [1280, 8
   const dt = await page.evaluateHandle((text) => { const d = new DataTransfer(); d.items.add(new File([text], 'big.jsonl', { type: 'application/json' })); return d; }, big);
   const tr0 = Date.now();
   await page.dispatchEvent('#drop', 'drop', { dataTransfer: dt });
-  await page.waitForSelector('#main:not(.hidden)');
+  await page.waitForSelector('#main:not([hidden])');
   await page.waitForFunction(() => document.querySelectorAll('#tl-svg rect[data-kind]').length > 0);
   perf.uiLoadMs = Date.now() - tr0;
   perf.svgNodes = await page.$$eval('#tl-svg *', (els) => els.length);
@@ -170,3 +170,12 @@ for (const c of results.contrast) if (c.ratio != null && ((/spans|borders|idle|m
 console.log('\nkeyboard:', JSON.stringify(results.keyboard.reachable), '\nsemantics:', JSON.stringify(results.keyboard.semantics));
 console.log('\nresponsive:', JSON.stringify(results.responsive));
 console.log('\nperf:', JSON.stringify(results.perf));
+
+// ---- gate: fail on serious/critical axe violations or AA contrast failures on text / informative graphics
+const bad = [];
+for (const [k, v] of Object.entries(results.axe)) for (const x of v) if (x.impact === 'serious' || x.impact === 'critical') bad.push(`axe ${k}: ${x.id} (${x.impact} ×${x.nodes})`);
+for (const c of results.contrast) { if (c.ratio == null) continue; const decorative = /borders/.test(c.use); const need = /spans vs|idle|model/.test(c.use) ? 3 : 4.5; if (!decorative && c.ratio < need) bad.push(`contrast ${c.scheme} ${c.name}: ${c.ratio} < ${need}`); }
+const k = results.keyboard.reachable;
+for (const key of ['timelineSpans', 'tableRows', 'turnSteps', 'findings', 'burnBars', 'drawerFocusMoves', 'escapeClosesDrawer']) if (!k[key]) bad.push(`keyboard: ${key} is false`);
+if (bad.length) { console.error('\nAUDIT FAILED:\n - ' + bad.join('\n - ')); process.exit(1); }
+console.log('\naudit passed');

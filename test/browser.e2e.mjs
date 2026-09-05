@@ -23,14 +23,14 @@ const expectedFindings = core.diagnose(expected);
 const browser = await chromium.launch();
 const errors = [];
 for (const scheme of ['light', 'dark']) {
-  const ctx = await browser.newContext({ viewport: { width: 1380, height: 900 }, colorScheme: scheme });
+  const ctx = await browser.newContext({ viewport: { width: 1380, height: 900 }, colorScheme: scheme, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); }); // font CDN may be offline in CI
   await page.goto('file://' + dist);
   await page.click('#demo');
-  await page.waitForSelector('#main:not(.hidden)');
-  const tiles = await page.$$eval('#strip .stat', (els) => els.map((e) => ({ l: e.querySelector('.l').textContent, v: e.querySelector('.v').textContent.trim() })));
+  await page.waitForSelector('#main:not([hidden])');
+  const tiles = await page.$$eval('#strip .stat', (els) => els.map((e) => ({ l: e.querySelector('dt').textContent, v: e.querySelector('.v').textContent.trim() })));
   const byLabel = Object.fromEntries(tiles.map((t) => [t.l, t.v]));
   assert.equal(byLabel['Turns'], core.fmtInt(expected.totals.turns), 'turns tile');
   assert.equal(byLabel['Tool calls'], core.fmtInt(expected.totals.toolCalls), 'tool calls tile');
@@ -43,12 +43,13 @@ for (const scheme of ['light', 'dark']) {
   const toolRows = await page.$$eval('#tools tbody tr.row', (els) => els.length);
   assert.ok(toolRows >= 5, 'tools table rows');
   // click first finding → highlight + possibly drawer
-  await page.click('#findings .finding');
+  await page.click('#findings .finding button.t');
   await page.waitForTimeout(150);
   const hl = await page.$$eval('#tl-svg .span.hl, #tl-svg .span.sel', (els) => els.length);
   assert.ok(hl >= 1, 'finding highlights evidence on the timeline');
+  await page.keyboard.press('Escape'); await page.click('#z-reset'); await page.waitForTimeout(700); // let the smooth scroll settle
   // click a tool span → drawer opens with its name
-  await page.click('#tl-svg rect[data-kind="tool"]');
+  await page.click('#tl-svg rect[data-kind="tool"]', { force: true });
   await page.waitForSelector('#drawer.open');
   const title = await page.$eval('#d-title', (e) => e.textContent);
   assert.ok(title.length > 0, 'drawer title');
@@ -57,7 +58,42 @@ for (const scheme of ['light', 'dark']) {
   await page.click('#share');
   const promptTxt = await page.$eval('#turns details summary .p', (e) => e.textContent);
   assert.match(promptTxt, /«\d+ chars»|\(no prompt text\)/, 'share mode blanks prompts');
-  await page.click('#share', { button: 'right' }); // back to normal
+  await page.click('#share'); // back to normal
+  // keyboard: tab into the timeline, arrow to the next call, Enter opens the drawer, focus lands inside, Escape restores focus
+  await page.focus('#tl-svg [tabindex="0"]');
+  const before = await page.evaluate(() => document.activeElement.dataset.ref);
+  await page.keyboard.press('ArrowRight');
+  const after = await page.evaluate(() => document.activeElement.dataset.ref);
+  assert.notEqual(before, after, 'ArrowRight moves focus to another span');
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('#drawer.open');
+  assert.equal(await page.evaluate(() => document.getElementById('drawer').contains(document.activeElement)), true, 'focus moves into the drawer');
+  assert.equal(await page.evaluate(() => document.getElementById('drawer').getAttribute('aria-hidden')), null, 'drawer is not aria-hidden while open');
+  assert.match(await page.evaluate(() => location.hash), /^#(tool|req)=/, 'permalink hash set on select');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(() => document.activeElement.dataset && document.activeElement.dataset.ref), after, 'focus restored to the span after Escape');
+  assert.equal(await page.$eval('#drawer', (d) => d.hidden), true, 'drawer hidden after Escape');
+  // search filters and highlights
+  await page.fill('#q', 'bash'); await page.waitForTimeout(300);
+  const hits = await page.$eval('#q-n', (e) => parseInt(e.textContent, 10));
+  assert.ok(hits > 0, 'search finds Bash calls');
+  assert.ok((await page.$$eval('#tl-svg .span.hl', (els) => els.length)) > 0, 'matches highlighted on the timeline');
+  await page.fill('#q', ''); await page.waitForTimeout(300);
+  // copy all findings → clipboard has markdown
+  await page.click('#copy-all');
+  const clip = await page.evaluate(() => navigator.clipboard.readText());
+  assert.match(clip, /^- \*\*(ERROR|WARN|INFO)\*\* `/, 'findings copied as Markdown');
+  // permalink: hash → selection on reload
+  await page.goto('file://' + dist + '#req=5'); await page.reload(); await page.waitForSelector('#drawer.open');
+  assert.equal(await page.$eval('#d-title', (e) => e.textContent), 'Request #5', 'permalink opens request 5 on a fresh load');
+  await page.keyboard.press('Escape');
+  // zoom buttons change the view
+  const w0 = await page.$eval('#minimap rect[stroke]', (r) => +r.getAttribute('width'));
+  await page.click('#z-in'); await page.waitForTimeout(80);
+  const w1 = await page.$eval('#minimap rect[stroke]', (r) => +r.getAttribute('width'));
+  assert.ok(w1 < w0, 'zoom in narrows the minimap viewport');
+  await page.click('#z-reset'); await page.waitForTimeout(80);
   // screenshot: top of page
   await page.screenshot({ path: path.join(root, `dist/screenshot-${scheme}.png`), fullPage: false });
   await ctx.close();

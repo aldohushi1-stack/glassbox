@@ -3,63 +3,76 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
-  --ground:#F2F4F7;--panel:#FFFFFF;--panel-2:#F7F8FA;--line:#DDE2E9;--line-2:#EBEEF3;
-  --ink:#161C24;--ink-2:#3C4655;--muted:#5B6675;--faint:#8B95A3;
-  --accent:#E8590C;--accent-ink:#FFFFFF;--accent-soft:rgba(232,89,12,.12);
-  --c-read:#3B7DD8;--c-write:#D9A21B;--c-exec:#1F9D8A;--c-agent:#7C5CD6;--c-user:#C2417F;--c-mcp:#6B7A90;--c-other:#9AA4B2;--c-model:#B9C2CE;--c-idle:#E3E7ED;
-  --err:#D63B2F;--warn:#C98A0B;--info:#3B7DD8;--ok:#1F9D8A;
-  --err-soft:rgba(214,59,47,.12);--warn-soft:rgba(217,162,27,.16);--info-soft:rgba(59,125,216,.12);
+  --ground:#F2F4F7;--panel:#FFFFFF;--panel-2:#F7F8FA;--line:#CDD4DD;--line-2:#E6EAF0;
+  --ink:#161C24;--ink-2:#3C4655;--muted:#4F5A69;--faint:#5F6B7A;
+  --accent:#B8420A;--accent-ink:#FFFFFF;--accent-soft:rgba(184,66,10,.12);
+  --c-read:#3B7DD8;--c-write:#B27F00;--c-exec:#1F9D8A;--c-agent:#7C5CD6;--c-user:#C2417F;--c-mcp:#5B6A80;--c-other:#9AA4B2;--c-model:#8290A0;--c-idle:#E3E7ED;
+  --l-read:#0E1217;--l-write:#0E1217;--l-exec:#0E1217;--l-agent:#FFFFFF;--l-user:#FFFFFF;--l-mcp:#FFFFFF;--l-other:#0E1217;
+  --err:#C4342A;--warn:#8A5F00;--info:#2A63B8;--ok:#177A6B;
+  --err-soft:rgba(196,52,42,.12);--warn-soft:rgba(138,95,0,.14);--info-soft:rgba(42,99,184,.12);
+  --focus:#B8420A;
   --shadow:0 10px 30px rgba(22,28,36,.14);
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --cond:"IBM Plex Sans Condensed","Arial Narrow",var(--sans);
   --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs:14px;--pad:12px;--rowh:18px;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#2A3340;--line-2:#222B36;
-    --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#98A3B3;--faint:#6E7A8A;
-    --accent:#FF7A33;--accent-ink:#161C24;--accent-soft:rgba(255,122,51,.16);
-    --c-read:#5D9BEA;--c-write:#E9B63A;--c-exec:#37B8A3;--c-agent:#9E84EE;--c-user:#DD6AA0;--c-mcp:#8A98AD;--c-other:#7B8797;--c-model:#4A5666;--c-idle:#1E2630;
-    --err:#F06A5F;--warn:#E9B63A;--info:#5D9BEA;--ok:#37B8A3;
-    --err-soft:rgba(240,106,95,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(93,155,234,.16);
+    --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#33404F;--line-2:#222B36;
+    --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#A3AEBE;--faint:#8A98AA;
+    --accent:#FF8A4D;--accent-ink:#0E1217;--accent-soft:rgba(255,138,77,.16);
+    --c-read:#7DB0F0;--c-write:#F0C24A;--c-exec:#4FD0BB;--c-agent:#B39CF5;--c-user:#F088B8;--c-mcp:#A5B2C6;--c-other:#8B97A6;--c-model:#75859A;--c-idle:#1E2630;
+    --l-read:#0E1217;--l-write:#0E1217;--l-exec:#0E1217;--l-agent:#0E1217;--l-user:#0E1217;--l-mcp:#0E1217;--l-other:#0E1217;
+    --err:#F27C72;--warn:#E9B63A;--info:#7FB2F0;--ok:#4FD0BB;
+    --err-soft:rgba(242,124,114,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(127,178,240,.16);
+    --focus:#FF8A4D;
     --shadow:0 10px 30px rgba(0,0,0,.5);
   }
 }
 :root[data-theme="dark"]{
-  --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#2A3340;--line-2:#222B36;
-  --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#98A3B3;--faint:#6E7A8A;
-  --accent:#FF7A33;--accent-ink:#161C24;--accent-soft:rgba(255,122,51,.16);
-  --c-read:#5D9BEA;--c-write:#E9B63A;--c-exec:#37B8A3;--c-agent:#9E84EE;--c-user:#DD6AA0;--c-mcp:#8A98AD;--c-other:#7B8797;--c-model:#4A5666;--c-idle:#1E2630;
-  --err:#F06A5F;--warn:#E9B63A;--info:#5D9BEA;--ok:#37B8A3;
-  --err-soft:rgba(240,106,95,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(93,155,234,.16);
+  --ground:#0E1217;--panel:#161C24;--panel-2:#1B222C;--line:#33404F;--line-2:#222B36;
+  --ink:#E7EBF0;--ink-2:#C5CDD8;--muted:#A3AEBE;--faint:#8A98AA;
+  --accent:#FF8A4D;--accent-ink:#0E1217;--accent-soft:rgba(255,138,77,.16);
+  --c-read:#7DB0F0;--c-write:#F0C24A;--c-exec:#4FD0BB;--c-agent:#B39CF5;--c-user:#F088B8;--c-mcp:#A5B2C6;--c-other:#8B97A6;--c-model:#75859A;--c-idle:#1E2630;
+  --l-read:#0E1217;--l-write:#0E1217;--l-exec:#0E1217;--l-agent:#0E1217;--l-user:#0E1217;--l-mcp:#0E1217;--l-other:#0E1217;
+  --err:#F27C72;--warn:#E9B63A;--info:#7FB2F0;--ok:#4FD0BB;
+  --err-soft:rgba(242,124,114,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(127,178,240,.16);
+  --focus:#FF8A4D;
   --shadow:0 10px 30px rgba(0,0,0,.5);
 }
+:root[data-density="compact"]{--fs:12.5px;--pad:8px;--rowh:15px}
+:root[data-density="comfortable"]{--fs:16px;--pad:14px;--rowh:22px}
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font:14px/1.45 var(--sans);-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--ground);color:var(--ink);font:var(--fs)/1.45 var(--sans);-webkit-font-smoothing:antialiased}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 a{color:var(--accent)}
 .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
-.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .app{max-width:1440px;margin:0 auto;padding:0 20px 80px}
 
 /* masthead */
-.mast{display:flex;align-items:center;gap:20px;padding:18px 0 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.mast{display:flex;align-items:center;gap:16px;padding:16px 0 12px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:10px}
 .brand h1{font:600 26px/1 var(--cond);letter-spacing:.01em;margin:0}
 .brand h1 span{color:var(--accent)}
 .brand .tag{color:var(--muted);font-size:13px}
-.drop{flex:1;min-width:280px;display:flex;align-items:center;gap:12px;border:1.5px dashed var(--line);border-radius:6px;padding:8px 12px;background:var(--panel);transition:border-color .15s,background .15s}
+.drop{flex:1;min-width:260px;display:flex;align-items:center;gap:12px;border:1.5px dashed var(--line);border-radius:6px;padding:8px 12px;background:var(--panel);transition:border-color .15s,background .15s;cursor:pointer}
 .drop.over{border-color:var(--accent);background:var(--accent-soft)}
 .drop .hint{color:var(--muted);font-size:13px;flex:1}
 .drop .hint b{color:var(--ink);font-weight:500}
-.btn{border:1px solid var(--line);background:var(--panel);border-radius:5px;padding:6px 11px;font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:5px;padding:6px 11px;font-size:13px;font-weight:500;color:var(--ink-2);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.btn.primary:hover{filter:brightness(.95)}
-.btn:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
-.controls{display:flex;gap:8px;align-items:center}
+.btn[aria-pressed="true"],.btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.banner{display:flex;gap:12px;align-items:center;margin:12px 0 0;padding:10px 14px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:6px;font-size:13.5px}
+.banner p{margin:0;flex:1}
+.banner code{font-family:var(--mono);font-size:12.5px}
 
 /* session line */
 .session{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;padding:10px 0 0;color:var(--muted);font-size:13px}
@@ -68,8 +81,9 @@ a{color:var(--accent)}
 
 /* stat strip */
 .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:16px 0}
-.stat{background:var(--panel);padding:10px 12px;min-width:0}
-.stat .l{font:500 11px/1 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.stat{background:var(--panel);padding:10px var(--pad);min-width:0;margin:0}
+.stat dt{font:500 11px/1 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:6px}
+.stat dd{margin:0}
 .stat .v{font:500 20px/1.1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
 .stat .s{font-size:12px;line-height:1.3;color:var(--muted);margin-top:4px}
 .stat.f .v{display:flex;gap:10px}
@@ -79,103 +93,120 @@ a{color:var(--accent)}
 
 /* sections */
 .sec{margin-top:22px}
-.sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px}
+.sec-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;flex-wrap:wrap}
 .sec-h h2{font:600 13px/1 var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0}
 .sec-h .aux{font-size:12px;color:var(--faint)}
+.sec-h .tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px}
 .two{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
 @media (max-width:900px){.two{grid-template-columns:1fr}}
+.search{display:flex;align-items:center;gap:6px}
+.search input{border:1px solid var(--line);border-radius:5px;padding:5px 9px;background:var(--panel);width:220px;font-size:13px}
+.search .n{font:12px var(--mono);color:var(--muted);min-width:60px}
+select.btn{padding-right:8px}
 
 /* timeline */
 .tl-wrap{position:relative;overflow:hidden;border-radius:6px}
-.tl-wrap svg{display:block;width:100%;cursor:grab;user-select:none}
+.tl-wrap svg{display:block;width:100%;cursor:grab;user-select:none;touch-action:none}
 .tl-wrap svg.drag{cursor:grabbing}
-.tl-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:8px 12px;border-top:1px solid var(--line-2)}
+.tl-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:8px var(--pad);border-top:1px solid var(--line-2);align-items:center}
 .tl-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.span{stroke:none}
+.span{stroke:none;outline:none}
 .span:hover{filter:brightness(.85)}
 .span.sel{stroke:var(--accent);stroke-width:2}
 .span.hl{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:3 2}
 .span.err{stroke:var(--err);stroke-width:1.5}
+.span:focus-visible{stroke:var(--focus);stroke-width:3}
 .lane-label{font:500 11px var(--cond);letter-spacing:.06em;text-transform:uppercase;fill:var(--muted)}
 .lane-sub{font:11px var(--mono);fill:var(--faint)}
 .tick{font:10px var(--mono);fill:var(--faint)}
 .turn-lbl{font:10px var(--mono);fill:var(--muted)}
-.tl-empty{padding:40px;text-align:center;color:var(--muted)}
+.cursor-lbl{font:11px var(--mono);fill:var(--ink)}
+.minimap{display:block;width:100%;height:44px;border-top:1px solid var(--line-2);cursor:pointer}
 .tooltip{position:fixed;z-index:20;pointer-events:none;background:var(--ink);color:var(--ground);padding:7px 9px;border-radius:4px;font-size:12px;max-width:360px;box-shadow:var(--shadow);display:none;line-height:1.35}
 .tooltip b{font-weight:600}
 .tooltip .m{font-family:var(--mono);opacity:.85}
 
 /* burn chart */
 .burn svg{display:block;width:100%}
+.burn .bar{outline:none}
 .burn .bar:hover{filter:brightness(.85)}
+.burn .bar:focus-visible rect:last-child{stroke:var(--focus);stroke-width:2}
 .axis{font:10px var(--mono);fill:var(--faint)}
 
 /* findings */
 .findings{padding:4px 0}
-.finding{display:grid;grid-template-columns:8px 1fr auto;gap:0 12px;padding:10px 14px;border-top:1px solid var(--line-2);cursor:pointer}
+.finding{display:grid;grid-template-columns:8px 1fr auto;gap:0 12px;padding:10px var(--pad);border-top:1px solid var(--line-2);cursor:pointer}
 .finding:first-child{border-top:none}
 .finding:hover{background:var(--panel-2)}
 .finding .bar{border-radius:2px;align-self:stretch}
 .finding.error .bar{background:var(--err)}.finding.warn .bar{background:var(--warn)}.finding.info .bar{background:var(--info)}
-.finding .t{font-weight:500}
+.finding .t{all:unset;cursor:pointer;font-weight:500;color:var(--ink);display:block}
+.finding .t:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:2px}
 .finding .d{color:var(--muted);font-size:12.5px;margin-top:2px}
-.finding .id{font:11px var(--mono);color:var(--faint);align-self:start;padding-top:3px}
+.finding .side{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.finding .id{font:11px var(--mono);color:var(--faint)}
 .finding.active{background:var(--accent-soft)}
-.empty{padding:22px 14px;color:var(--muted)}
+.empty{padding:22px var(--pad);color:var(--muted)}
 
 /* table */
 table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 10px;text-align:left;border-top:1px solid var(--line-2);white-space:nowrap}
-th{font:500 11px var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-top:none;cursor:pointer;user-select:none;position:sticky;top:0;background:var(--panel)}
-th.sorted{color:var(--ink)}
+th{font:500 11px var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);border-top:none;position:sticky;top:0;background:var(--panel);z-index:1}
+th button{all:unset;cursor:pointer;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit}
+th button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+th[aria-sort]:not([aria-sort="none"]) button{color:var(--ink)}
 td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+td:first-child,th:first-child{position:sticky;left:0;background:var(--panel);z-index:2}
+th:first-child{z-index:3}
 tr.row{cursor:pointer}
 tr.row:hover td{background:var(--panel-2)}
-tr.row.on td{background:var(--accent-soft)}
+tr.row[aria-pressed="true"] td{background:var(--accent-soft)}
+tr.row:focus-visible{outline:2px solid var(--focus);outline-offset:-2px}
 .cat{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:7px;vertical-align:0}
-.tbl-wrap{overflow-x:auto;max-height:420px;overflow-y:auto}
+.tbl-wrap{overflow:auto;max-height:420px}
 .errpill{color:var(--err);font-weight:500}
 
 /* turns */
 .turn{border-top:1px solid var(--line-2)}
 .turn:first-child{border-top:none}
-.turn summary{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:10px 14px;cursor:pointer;list-style:none}
+.turn summary{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:baseline;padding:10px var(--pad);cursor:pointer;list-style:none}
 .turn summary::-webkit-details-marker{display:none}
 .turn summary:hover{background:var(--panel-2)}
 .turn .no{font:12px var(--mono);color:var(--faint)}
 .turn .p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .turn .p.meta{color:var(--faint);font-style:italic}
 .turn .stats{font:12px var(--mono);color:var(--muted);white-space:nowrap}
-.turn .body{padding:4px 14px 12px 14px;border-top:1px solid var(--line-2);background:var(--panel-2)}
-.step{display:grid;grid-template-columns:60px 16px 1fr auto;gap:10px;align-items:baseline;padding:4px 0;font-size:13px;cursor:pointer;border-radius:3px}
+.turn .body{padding:4px var(--pad) 12px;border-top:1px solid var(--line-2);background:var(--panel-2)}
+.step{display:grid;grid-template-columns:60px 16px 1fr auto;gap:10px;align-items:baseline;padding:4px 4px;font-size:13px;cursor:pointer;border-radius:3px}
 .step:hover{background:var(--accent-soft)}
+.step[hidden]{display:none}
 .step .t{font:11px var(--mono);color:var(--faint)}
 .step .dot{width:8px;height:8px;border-radius:2px;align-self:center}
 .step .what{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .step .what .n{font-weight:500}
 .step .what .a{color:var(--muted);font-family:var(--mono);font-size:12px}
 .step .r{font:11px var(--mono);color:var(--muted);white-space:nowrap}
-.step.model .what{color:var(--ink-2)}
 .prompt{padding:8px 0 6px;color:var(--ink-2);white-space:pre-wrap;word-break:break-word;max-height:160px;overflow:auto;font-size:13px}
+mark{background:var(--accent-soft);color:inherit;border-radius:2px}
 
 /* drawer */
-.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:30;transform:translateX(102%);transition:transform .18s ease;display:flex;flex-direction:column}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,92vw);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:30;display:flex;flex-direction:column;transform:translateX(102%);transition:transform .18s ease}
 .drawer.open{transform:none}
 @media (prefers-reduced-motion:reduce){.drawer{transition:none}}
 .drawer .dh{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
 .drawer .dh h3{margin:0;font:600 16px var(--sans);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .drawer .db{overflow:auto;padding:14px 16px;flex:1}
-.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:13px;margin-bottom:14px}
-.kv .k{color:var(--faint)}
-.kv .v{font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-all}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:4px 12px;font-size:13px;margin:0 0 14px}
+.kv dt{color:var(--faint)}
+.kv dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-all}
 .drawer h4{font:600 11px var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
 pre{margin:0;background:var(--panel-2);border:1px solid var(--line-2);border-radius:4px;padding:10px;font:12px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word;max-height:360px;overflow:auto}
-.x{border:none;background:none;font-size:20px;line-height:1;color:var(--muted);padding:2px 6px}
+.x{border:none;background:none;font-size:20px;line-height:1;color:var(--muted);padding:2px 6px;border-radius:4px}
 .x:hover{color:var(--ink)}
 
 /* dialogs */
-dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;max-width:720px;width:92vw;box-shadow:var(--shadow)}
+dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:0;max-width:760px;width:92vw;box-shadow:var(--shadow)}
 dialog::backdrop{background:rgba(10,14,20,.45)}
 dialog .dh{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center}
 dialog .dh h3{margin:0;font:600 16px var(--sans);flex:1}
@@ -185,93 +216,114 @@ dialog .df{padding:12px 18px;border-top:1px solid var(--line);display:flex;justi
 .note{color:var(--muted);font-size:12.5px}
 .problems{margin:10px 0 0;padding:8px 12px;border:1px solid var(--warn);background:var(--warn-soft);border-radius:5px;font-size:12.5px}
 kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:var(--panel-2)}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;margin:8px 0 0}
+.sessions tr.row td{white-space:normal}
 .hidden{display:none!important}
 .redacted{color:var(--faint);font-style:italic}
+@media (max-width:600px){.lane-sub{display:none}.brand .tag{display:none}.turn summary{grid-template-columns:auto 1fr}.turn .stats{grid-column:1 / -1;white-space:normal}.step{grid-template-columns:48px 12px 1fr}.step .r{grid-column:3;justify-self:start}}
 </style>
 
 <div class="app">
   <header class="mast">
     <div class="brand"><h1>Glass<span>box</span></h1><span class="tag">flight recorder for Claude Code sessions</span></div>
-    <label class="drop" id="drop" tabindex="0">
-      <input type="file" id="file" multiple accept=".jsonl,.json,.txt" class="hidden">
-      <span class="hint"><b>Drop a session .jsonl</b> (or the whole session folder with its subagents) — parsed in your browser, never uploaded.</span>
-      <span class="btn">Choose files</span>
+    <label class="drop" id="drop" tabindex="0" aria-label="Drop a session .jsonl file or folder here, or press Enter to choose files">
+      <input type="file" id="file" multiple accept=".jsonl,.json,.txt" class="sr-only">
+      <span class="hint"><b>Drop a session .jsonl</b> (or the whole session folder) — parsed in your browser, never uploaded.</span>
+      <span class="btn" aria-hidden="true">Choose files</span>
     </label>
     <div class="controls">
+      <button class="btn" id="open-folder" hidden title="Browse ~/.claude/projects and pick a session">Open folder…</button>
+      <button class="btn" id="recent" hidden title="Sessions from the folder you opened before">Recent</button>
       <button class="btn" id="demo">Load demo</button>
-      <button class="btn" id="share" title="Blank every prompt, input and result so the trace can be shared">Share mode</button>
+      <button class="btn" id="share" aria-pressed="false" title="Blank every prompt, input and result so the trace can be shared">Share mode</button>
+      <button class="btn" id="export" disabled title="Download a structure-only copy of the transcript">Export redacted</button>
       <button class="btn" id="rates" title="Edit the per-model rate card">Rates</button>
-      <button class="btn" id="help">?</button>
+      <button class="btn" id="theme" title="Theme: system / light / dark" aria-label="Theme: system">◐</button>
+      <button class="btn" id="density" title="Text density" aria-label="Density: normal">Aa</button>
+      <button class="btn" id="help" aria-label="Help and keyboard shortcuts">?</button>
     </div>
   </header>
+  <div id="status" class="sr-only" aria-live="polite"></div>
 
-  <div id="main" class="hidden">
+  <main id="main" hidden>
+    <div class="banner" id="banner" hidden><p><b>This is the demo session</b> — the trace of the session that built Glassbox. Drop your own <code>.jsonl</code> above to replace it. Find yours with <code>ls -t ~/.claude/projects/*/*.jsonl | head</code> (Windows: <code>%USERPROFILE%\.claude\projects\</code>), or use <b>Open folder</b> in Chrome or Edge.</p><button class="x" id="banner-x" aria-label="Dismiss">×</button></div>
     <div class="session" id="session"></div>
-    <div id="problems" class="problems hidden"></div>
-    <div class="strip" id="strip"></div>
+    <div id="problems" class="problems" hidden role="alert"></div>
+    <dl class="strip" id="strip"></dl>
 
-    <section class="sec">
-      <div class="sec-h"><h2>Timeline</h2><span class="aux">scroll to zoom · drag to pan · click a span for detail · <kbd>0</kbd> resets</span></div>
+    <section class="sec" aria-labelledby="h-tl">
+      <div class="sec-h"><h2 id="h-tl">Timeline</h2>
+        <div class="tools">
+          <div class="search"><label class="sr-only" for="q">Search prompts, tool inputs and results</label><input id="q" type="search" placeholder="Search…"><span class="n" id="q-n" aria-live="polite"></span></div>
+          <label class="sr-only" for="fit">Fit to turn</label><select id="fit" class="btn"></select>
+          <button class="btn" id="z-out" aria-label="Zoom out">−</button><button class="btn" id="z-in" aria-label="Zoom in">+</button><button class="btn" id="z-reset" aria-label="Reset zoom">⟲</button>
+        </div>
+      </div>
       <div class="panel tl-wrap" id="tl"></div>
     </section>
 
     <div class="two sec">
-      <section>
-        <div class="sec-h"><h2>Context &amp; cost per request</h2><span class="aux" id="burn-aux"></span></div>
+      <section aria-labelledby="h-burn">
+        <div class="sec-h"><h2 id="h-burn">Context &amp; cost per request</h2><span class="aux" id="burn-aux"></span></div>
         <div class="panel burn" id="burn"></div>
       </section>
-      <section>
-        <div class="sec-h"><h2>Findings</h2><span class="aux" id="find-aux"></span></div>
+      <section aria-labelledby="h-find">
+        <div class="sec-h"><h2 id="h-find">Findings</h2><div class="tools"><span class="aux" id="find-aux"></span><button class="btn sm" id="copy-all">Copy all</button><button class="btn sm" id="export-md">Export report</button></div></div>
         <div class="panel findings" id="findings"></div>
       </section>
     </div>
 
-    <section class="sec">
-      <div class="sec-h"><h2>Tools</h2><span class="aux">click a row to filter the timeline</span></div>
-      <div class="panel tbl-wrap"><table id="tools"></table></div>
+    <section class="sec" aria-labelledby="h-tools">
+      <div class="sec-h"><h2 id="h-tools">Tools</h2><span class="aux">select a row to filter the timeline</span></div>
+      <div class="panel tbl-wrap" tabindex="0" aria-label="Tools table, scrollable"><table id="tools"></table></div>
     </section>
 
-    <section class="sec">
-      <div class="sec-h"><h2>Turns</h2><span class="aux" id="turns-aux"></span></div>
+    <section class="sec" aria-labelledby="h-turns">
+      <div class="sec-h"><h2 id="h-turns">Turns</h2><span class="aux" id="turns-aux"></span></div>
       <div class="panel" id="turns"></div>
     </section>
-  </div>
-
-  <div id="landing" class="sec">
-    <div class="panel" style="padding:28px 30px;max-width:760px">
-      <p style="margin:0 0 10px;font-size:16px">Every Claude Code and Cowork session writes a transcript to <code class="mono">~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code>. Agent SDK runs emit the same shapes as <code class="mono">stream-json</code>. Glassbox turns that file into a timeline, a token and cost breakdown, and a list of things a reviewer would flag: retry loops, failing tools, oversized results, context bloat, stalls.</p>
-      <p style="margin:0 0 16px;color:var(--muted)">Drop the <code class="mono">.jsonl</code> above, or drop the session folder to include subagent lanes. Nothing is sent anywhere. Or <a href="#" id="demo2">load the demo</a>: the trace of the session that built this tool.</p>
-      <p class="note" style="margin:0"><b>Finding the file:</b> macOS/Linux <code class="mono">ls -t ~/.claude/projects/*/*.jsonl | head</code> · Windows <code class="mono">%USERPROFILE%\.claude\projects\</code>. Subagents live in <code class="mono">&lt;session-id&gt;/subagents/agent-*.jsonl</code> next to it.</p>
-    </div>
-  </div>
+  </main>
 </div>
 
-<div class="tooltip" id="tip"></div>
+<div class="tooltip" id="tip" role="tooltip"></div>
 
-<aside class="drawer" id="drawer" aria-hidden="true">
-  <div class="dh"><h3 id="d-title">Detail</h3><button class="x" id="d-close" aria-label="Close">×</button></div>
+<aside class="drawer" id="drawer" role="dialog" aria-labelledby="d-title" hidden>
+  <div class="dh"><h3 id="d-title" tabindex="-1">Detail</h3><button class="x" id="d-close" aria-label="Close detail">×</button></div>
   <div class="db" id="d-body"></div>
 </aside>
 
-<dialog id="rates-dlg">
-  <div class="dh"><h3>Rate card · USD per million tokens</h3><button class="x" id="rates-close" aria-label="Close">×</button></div>
+<dialog id="rates-dlg" aria-labelledby="rates-h">
+  <div class="dh"><h3 id="rates-h">Rate card · USD per million tokens</h3><button class="x" id="rates-close" aria-label="Close">×</button></div>
   <div class="db">
     <p class="note" style="margin:0 0 10px">Defaults fetched from the Claude pricing page on 2026-09-05. Prices change — edit any cell; changes are kept in this browser. Prefix matching: a row named <code class="mono">claude-sonnet-4</code> covers every dated Sonnet 4.x id.</p>
     <div class="tbl-wrap"><table class="rates" id="rates-tbl"></table></div>
-    <p class="note" style="margin:10px 0 0">Add a model: <input id="rate-new" placeholder="model id prefix" style="padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);width:220px"> <button class="btn" id="rate-add">Add row</button></p>
+    <p class="note" style="margin:10px 0 0"><label for="rate-new">Add a model:</label> <input id="rate-new" placeholder="model id prefix" style="padding:3px 6px;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);width:220px"> <button class="btn" id="rate-add">Add row</button></p>
   </div>
   <div class="df"><button class="btn" id="rates-reset">Reset to defaults</button><button class="btn primary" id="rates-save">Apply</button></div>
 </dialog>
 
-<dialog id="help-dlg">
-  <div class="dh"><h3>How to read Glassbox</h3><button class="x" id="help-close" aria-label="Close">×</button></div>
+<dialog id="sessions-dlg" aria-labelledby="sessions-h">
+  <div class="dh"><h3 id="sessions-h">Sessions</h3><button class="x" id="sessions-close" aria-label="Close">×</button></div>
+  <div class="db"><p class="note" id="sessions-note" style="margin:0 0 10px"></p><div class="tbl-wrap" style="max-height:60vh"><table class="sessions" id="sessions-tbl"></table></div></div>
+</dialog>
+
+<dialog id="help-dlg" aria-labelledby="help-h">
+  <div class="dh"><h3 id="help-h">How to read Glassbox</h3><button class="x" id="help-close" aria-label="Close">×</button></div>
   <div class="db" style="font-size:13.5px;line-height:1.55">
-    <p><b>Timeline.</b> One lane per agent; the main session first, subagents below it. Grey blocks are model time (from the moment the model had its input to its last streamed block). Coloured blocks are tool calls, by category. Hatched grey between turns is human idle time. Red edge = the tool returned an error. Scroll to zoom, drag to pan, press <kbd>0</kbd> to reset.</p>
+    <p><b>Timeline.</b> One lane per agent; the main session first, subagents below it. Grey blocks are model time (from the moment the model had its input to its last streamed block). Coloured blocks are tool calls, by category. Hatched grey between turns is human idle time. Red edge = the tool returned an error. The strip underneath is a minimap of the whole session; click it to jump.</p>
     <p><b>Context &amp; cost.</b> One bar per API request: the size of the prompt the model saw, split into cached reads (light), cache writes (mid) and uncached input (dark). The line is cumulative estimated cost.</p>
-    <p><b>Findings.</b> Mechanical rules, no AI: identical calls repeated in a turn, tool error rates, results over 20k characters, context over 120k tokens, mid-session cache invalidation, responses that took over a minute and produced little, truncated outputs, hook and API errors, compaction events. Click one to highlight its evidence on the timeline. Thresholds live in <code class="mono">TraceCore.DEFAULTS</code>.</p>
+    <p><b>Findings.</b> Mechanical rules, no AI: identical calls repeated in a turn, tool error rates, results over 20k characters, context over 120k tokens, mid-session cache invalidation, responses that took over a minute and produced little, truncated outputs, hook and API errors, compaction events. Select one to highlight its evidence on the timeline; copy one or all as Markdown to paste into an issue or back into the agent.</p>
     <p><b>Tokens.</b> Assistant messages are stored one record per content block with the usage repeated on each; Glassbox counts usage once per API request. Thinking tokens are part of output tokens, shown as a share, never double counted. Cost is an estimate from the rate card unless the file carries a reported <code class="mono">total_cost_usd</code>.</p>
-    <p><b>Share mode.</b> Blanks every prompt, tool input, result and assistant text in the view and exports a structure-only <code class="mono">.jsonl</code> that keeps timestamps, usage and tool names — safe to post publicly.</p>
-    <p class="note">Glassbox is a single HTML file with no network calls. Source and tests: see the README that ships with it.</p>
+    <p><b>Share mode.</b> Blanks every prompt, tool input, result and assistant text in the view; <b>Export redacted</b> downloads a structure-only <code class="mono">.jsonl</code> that keeps timestamps, usage and tool names — safe to post publicly.</p>
+    <p><b>Keyboard.</b></p>
+    <div class="keys">
+      <span><kbd>Tab</kbd></span><span>into the timeline, then <kbd>←</kbd> <kbd>→</kbd> previous / next call, <kbd>↑</kbd> <kbd>↓</kbd> change lane, <kbd>Enter</kbd> open detail</span>
+      <span><kbd>+</kbd> <kbd>−</kbd> <kbd>0</kbd></span><span>zoom in, out, reset · <kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> pan</span>
+      <span><kbd>Esc</kbd></span><span>close the detail panel</span>
+      <span><kbd>/</kbd></span><span>jump to search</span>
+      <span><kbd>?</kbd></span><span>this help</span>
+    </div>
+    <p class="note" style="margin-top:12px">Glassbox is a single HTML file with no network calls. Source, tests and the CLI (<code class="mono">npx glassbox</code>) are in the README.</p>
   </div>
 </dialog>
 
@@ -284,61 +336,60 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const CAT_COLOR = { read: 'var(--c-read)', write: 'var(--c-write)', exec: 'var(--c-exec)', agent: 'var(--c-agent)', user: 'var(--c-user)', mcp: 'var(--c-mcp)', other: 'var(--c-other)' };
+  const CAT_LABEL = { read: 'var(--l-read)', write: 'var(--l-write)', exec: 'var(--l-exec)', agent: 'var(--l-agent)', user: 'var(--l-user)', mcp: 'var(--l-mcp)', other: 'var(--l-other)' };
   const fmtDur = C.fmtDur, fmtInt = C.fmtInt;
   const fmtTok = (n) => n == null ? '—' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
   const fmtUSD = (v) => v == null ? '—' : v < 0.01 ? '$' + v.toFixed(4) : v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2);
   const pct = (x) => x == null ? '—' : Math.round(x * 100) + '%';
   const clock = (ms) => ms == null ? '—' : new Date(ms).toISOString().slice(11, 19);
+  const store = { get(k) { try { return localStorage.getItem('glassbox.' + k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem('glassbox.' + k, v); } catch (e) { } } };
+  const say = (msg) => { const s = $('#status'); s.textContent = ''; setTimeout(() => { s.textContent = msg; }, 30); };
 
   // ------------------------------------------------------------ state
-  const S = { files: [], records: [], trace: null, findings: [], cost: null, rates: loadRates(), share: false, sel: null, hl: new Set(), toolFilter: null, view: null };
+  const S = { files: [], records: [], trace: null, findings: [], cost: null, rates: loadRates(), share: false, sel: null, hl: new Set(), toolFilter: null, view: null, query: '', matches: new Set(), focusId: null, lastFocus: null, isDemo: false };
+  function loadRates() { try { const r = JSON.parse(store.get('rates') || 'null'); if (r && typeof r === 'object') return r; } catch (e) { } return JSON.parse(JSON.stringify(C.RATES)); }
+  const R = (s) => S.share ? '«' + String(s == null ? '' : s).length + ' chars»' : s;
 
-  function loadRates() {
-    try { const r = JSON.parse(localStorage.getItem('glassbox.rates') || 'null'); if (r && typeof r === 'object') return r; } catch (e) { }
-    return JSON.parse(JSON.stringify(C.RATES));
-  }
-  function saveRates() { try { localStorage.setItem('glassbox.rates', JSON.stringify(S.rates)); } catch (e) { } }
-  const R = (s) => S.share ? '«' + String(s == null ? '' : s).length + ' chars»' : s; // display redaction
+  // ------------------------------------------------------------ theme + density
+  const THEMES = ['', 'light', 'dark'];
+  function applyTheme(t) { if (t) document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme'); const b = $('#theme'); b.textContent = t === 'light' ? '☀' : t === 'dark' ? '☾' : '◐'; b.setAttribute('aria-label', 'Theme: ' + (t || 'system')); b.title = 'Theme: ' + (t || 'system') + ' — click to change'; }
+  applyTheme(store.get('theme') || '');
+  $('#theme').onclick = () => { const cur = document.documentElement.getAttribute('data-theme') || ''; const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length]; store.set('theme', next); applyTheme(next); };
+  const DENS = ['', 'compact', 'comfortable'];
+  function applyDensity(d) { if (d) document.documentElement.setAttribute('data-density', d); else document.documentElement.removeAttribute('data-density'); $('#density').setAttribute('aria-label', 'Density: ' + (d || 'normal')); $('#density').title = 'Density: ' + (d || 'normal') + ' — click to change'; if (S.trace) { renderTimeline(); renderBurn(); } }
+  applyDensity(store.get('density') || '');
+  $('#density').onclick = () => { const cur = document.documentElement.getAttribute('data-density') || ''; const next = DENS[(DENS.indexOf(cur) + 1) % DENS.length]; store.set('density', next); applyDensity(next); };
 
   // ------------------------------------------------------------ loading
   async function readEntry(entry, out, prefix) {
-    if (entry.isFile) {
-      const f = await new Promise((res, rej) => entry.file(res, rej));
-      if (/\.(jsonl|json|txt)$/i.test(f.name)) out.push({ name: prefix + f.name, file: f });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      let batch;
-      do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const e of batch) await readEntry(e, out, prefix + entry.name + '/'); } while (batch.length);
-    }
+    if (entry.isFile) { const f = await new Promise((res, rej) => entry.file(res, rej)); if (/\.(jsonl|json|txt)$/i.test(f.name)) out.push({ name: prefix + f.name, file: f }); }
+    else if (entry.isDirectory) { const reader = entry.createReader(); let batch; do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const e of batch) await readEntry(e, out, prefix + entry.name + '/'); } while (batch.length); }
   }
   async function handleDataTransfer(dt) {
-    const out = [];
-    const items = dt.items ? Array.from(dt.items) : [];
-    let usedEntries = false;
+    const out = []; const items = dt.items ? Array.from(dt.items) : []; let usedEntries = false;
     for (const it of items) { const e = it.webkitGetAsEntry && it.webkitGetAsEntry(); if (e) { usedEntries = true; await readEntry(e, out, ''); } }
     if (!usedEntries) for (const f of Array.from(dt.files || [])) out.push({ name: f.name, file: f });
     await loadFiles(out);
   }
-  async function loadFiles(list) {
-    const files = [];
-    for (const { name, file } of list) files.push({ name: (file.webkitRelativePath || name), text: await file.text() });
-    if (files.length) load(files);
-  }
-  function load(files) {
-    S.files = files;
+  async function loadFiles(list) { const files = []; for (const { name, file } of list) files.push({ name: (file.webkitRelativePath || name), text: await file.text() }); if (files.length) load(files, false); else say('No .jsonl files found in what was dropped.'); }
+  function load(files, isDemo) {
+    S.files = files; S.isDemo = !!isDemo;
     S.records = files.filter((f) => !/\.meta\.json$/.test(f.name)).flatMap((f) => C.parseLines(f.text, f.name).records);
     S.trace = C.parseTrace(files);
     S.findings = C.diagnose(S.trace);
     S.cost = C.estimateCost(S.trace, S.rates);
-    S.sel = null; S.hl = new Set(); S.toolFilter = null; S.view = null;
-    $('#landing').classList.add('hidden'); $('#main').classList.remove('hidden');
+    S.sel = null; S.hl = new Set(); S.toolFilter = null; S.view = null; S.query = ''; S.matches = new Set(); S.focusId = null; $('#q').value = ''; $('#q-n').textContent = '';
+    $('#main').hidden = false; $('#banner').hidden = !isDemo;
     renderAll();
-    window.scrollTo({ top: 0 });
+    const T = S.trace.totals;
+    say(`Loaded ${isDemo ? 'the demo session' : files.length + ' file' + (files.length > 1 ? 's' : '')}: ${T.turns} turns, ${T.toolCalls} tool calls, ${S.findings.length} findings${S.trace.problems.length ? ', ' + S.trace.problems.length + ' unreadable lines skipped' : ''}.`);
+    if (!isDemo) window.scrollTo({ top: 0 });
+    applyHash();
   }
   function recost() { if (!S.trace) return; S.cost = C.estimateCost(S.trace, S.rates); renderStrip(); renderBurn(); renderTurns(); }
 
   // ------------------------------------------------------------ render: all
-  function renderAll() { renderSession(); renderStrip(); renderTimeline(); renderBurn(); renderFindings(); renderTools(); renderTurns(); closeDrawer(); }
+  function renderAll() { closeDrawer(true); renderSession(); renderStrip(); renderFit(); renderTimeline(); renderBurn(); renderFindings(); renderTools(); renderTurns(); }
 
   function renderSession() {
     const m = S.trace.meta, t = S.trace;
@@ -355,8 +406,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     ].filter(Boolean);
     $('#session').innerHTML = parts.join('');
     const p = $('#problems');
-    if (t.problems.length) { p.classList.remove('hidden'); p.textContent = `${t.problems.length} line${t.problems.length > 1 ? 's' : ''} could not be parsed and were skipped (e.g. ${t.problems[0].file}:${t.problems[0].line} — ${t.problems[0].reason}).`; } else p.classList.add('hidden');
-    const share = $('#share'); share.classList.toggle('on', S.share); share.textContent = S.share ? 'Share mode · export' : 'Share mode';
+    if (t.problems.length) { p.hidden = false; p.textContent = `${t.problems.length} line${t.problems.length > 1 ? 's' : ''} could not be parsed and were skipped (e.g. ${t.problems[0].file}:${t.problems[0].line} — ${t.problems[0].reason}).`; } else p.hidden = true;
+    $('#share').setAttribute('aria-pressed', String(S.share)); $('#export').disabled = !S.share;
   }
 
   function renderStrip() {
@@ -372,27 +423,24 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       ['Context served', fmtTok(ctx), `${pct(T.cacheHitRatio)} from cache · peak ${fmtTok(Math.max(0, ...t.requests.map((r) => r.contextTokens)))}`],
       ['Output', fmtTok(u.output), `${u.thinking ? pct(u.thinking / u.output) + ' thinking · ' : ''}${fmtDur(T.modelTimeMs)} generating`],
       ['Est. cost', costV, costS],
-      ['Findings', `<span class="sev error">${errs}</span><span class="sev warn">${warns}</span><span class="sev info">${infos}</span>`, S.findings.length ? esc(S.findings[0].title) : 'nothing flagged', 'f'],
+      ['Findings', `<span class="sev error">${errs}<span class="sr-only"> errors</span></span><span class="sev warn">${warns}<span class="sr-only"> warnings</span></span><span class="sev info">${infos}<span class="sr-only"> info</span></span>`, S.findings.length ? esc(S.findings[0].title) : 'nothing flagged', 'f'],
     ];
     if (t.agents.length > 1) tiles.splice(2, 0, ['Subagents', fmtInt(t.agents.length - 1), `${fmtTok(t.agents.filter((a) => a.id !== 'main').reduce((s, a) => s + a.usage.output, 0))} output tokens`]);
-    $('#strip').innerHTML = tiles.map(([l, v, s, cls]) => `<div class="stat ${cls || ''}"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+    $('#strip').innerHTML = tiles.map(([l, v, s, cls]) => `<div class="stat ${cls || ''}"><dt>${l}</dt><dd class="v">${v}</dd><dd class="s">${s}</dd></div>`).join('');
+  }
+
+  function renderFit() {
+    const sel = $('#fit'); const turns = S.trace.turns.filter((x) => x.agent === 'main' && x.promptKind === 'human');
+    sel.innerHTML = '<option value="">Fit: whole session</option>' + turns.map((tn, i) => `<option value="${tn.index}">Fit: turn ${i + 1}</option>`).join('');
+    sel.onchange = () => { const v = sel.value; if (v === '') { S.view = null; } else { const tn = S.trace.turns[+v]; if (tn && tn.start != null && tn.end != null) { const a = tn.start - TL.base, b = Math.max(tn.end, tn.start + 1000) - TL.base; const pad = (b - a) * .04; S.view = { t0: Math.max(0, a - pad), t1: Math.min(TL.total, b + pad) }; } } renderTimeline(); };
   }
 
   // ------------------------------------------------------------ timeline
-  const TL = { W: 0, left: 130, top: 26, rowH: 18, laneGap: 10, rows: [], t0: 0, t1: 1, drag: null };
-  function packRows(spans) {
-    const rows = [];
-    for (const s of spans.slice().sort((a, b) => a.s - b.s)) {
-      let placed = false;
-      for (const r of rows) { if (r.end <= s.s) { r.items.push(s); r.end = s.e; placed = true; break; } }
-      if (!placed) rows.push({ items: [s], end: s.e });
-    }
-    return rows.map((r) => r.items);
-  }
+  const TL = { W: 0, left: 130, top: 26, laneGap: 10, lanes: [], total: 1, base: 0, drag: null, pinch: null, pointers: new Map(), mmDrag: false };
+  const rowH = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rowh')) || 18;
+  function packRows(spans) { const rows = []; for (const s of spans.slice().sort((a, b) => a.s - b.s)) { let placed = false; for (const r of rows) { if (r.end <= s.s) { r.items.push(s); r.end = s.e; placed = true; break; } } if (!placed) rows.push({ items: [s], end: s.e }); } return rows.map((r) => r.items); }
   function buildLayout() {
-    const t = S.trace; const m = t.meta;
-    const base = m.hasTimestamps ? m.start : 0;
-    // synthesize sequence timing when there are no timestamps: each request/tool = 1 unit
+    const t = S.trace; const m = t.meta; const base = m.hasTimestamps ? m.start : 0;
     let seq = 0; const synth = (o) => { if (o.start == null) { o._s = seq++; o._e = seq; } };
     if (!m.hasTimestamps) { for (const r of t.requests) synth(r); for (const c of t.toolCalls) synth(c); }
     const end = m.hasTimestamps ? m.end : seq;
@@ -408,97 +456,133 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     TL.lanes = lanes; TL.total = Math.max(1, end - base); TL.base = base;
     if (!S.view) S.view = { t0: 0, t1: TL.total };
   }
+  const spanLabel = (sp) => {
+    if (sp.kind === 'tool') { const c = sp.ref; return esc(`${c.name}, ${c.status}${c.durationMs != null ? ', ' + fmtDur(c.durationMs) : ''}${c.isError ? ', error' : ''}, ${R(inputSummary(c)).slice(0, 80)}`); }
+    if (sp.kind === 'req') { const r = sp.ref; return `Request ${S.trace.requests.indexOf(r) + 1}, ${fmtDur(r.responseMs)}, ${fmtTok(r.usage.output)} output tokens, context ${fmtTok(r.contextTokens)}`; }
+    return `Waiting on you, ${fmtDur(sp.ref.idleBeforeMs)}`;
+  };
   function renderTimeline() {
     buildLayout();
-    const box = $('#tl');
-    const width = box.clientWidth || 1000; TL.W = width;
+    const box = $('#tl'); const width = box.clientWidth || 1000; TL.W = width; const RH = rowH();
+    TL.left = width < 600 ? 70 : 130;
     let y = TL.top; const laneY = [];
-    for (const ln of TL.lanes) { laneY.push(y); y += ln.rows.length * TL.rowH + TL.laneGap; }
-    const H = y + 8;
-    const { t0, t1 } = S.view; const span = t1 - t0;
+    for (const ln of TL.lanes) { laneY.push(y); y += ln.rows.length * RH + TL.laneGap; }
+    const H = y + 8; const { t0, t1 } = S.view; const span = t1 - t0;
     const X = (tm) => TL.left + (tm - t0) / span * (width - TL.left - 10);
     const svg = [];
-    svg.push(`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" id="tl-svg">`);
-    svg.push(`<defs><pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--c-idle)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--faint)" stroke-width="1" opacity=".55"/></pattern><clipPath id="clip"><rect x="${TL.left}" y="0" width="${width - TL.left}" height="${H}"/></clipPath></defs>`);
+    const first = S.focusId || (TL.lanes[0] && TL.lanes[0].rows[1] && TL.lanes[0].rows[1][0] ? TL.lanes[0].rows[1][0].ref.id : (TL.lanes[0] && TL.lanes[0].rows[0][0] ? TL.lanes[0].rows[0][0].ref.id : null));
+    svg.push(`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" id="tl-svg" role="group" aria-label="Session timeline: ${TL.lanes.length} lane${TL.lanes.length > 1 ? 's' : ''}, ${S.trace.toolCalls.length} tool calls over ${fmtDur(TL.total)}. Use arrow keys to move between calls.">`);
+    svg.push(`<defs><pattern id="hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="var(--c-idle)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--faint)" stroke-width="1" opacity=".8"/></pattern><clipPath id="clip"><rect x="${TL.left}" y="0" width="${width - TL.left}" height="${H}"/></clipPath></defs>`);
     svg.push(`<rect x="0" y="0" width="${width}" height="${H}" fill="var(--panel)"/>`);
-    // ticks
     const ticks = niceTicks(t0, t1, Math.max(3, Math.floor((width - TL.left) / 110)), S.trace.meta.hasTimestamps);
-    for (const tk of ticks) { const x = X(tk); svg.push(`<line x1="${x}" y1="${TL.top - 4}" x2="${x}" y2="${H}" stroke="var(--line-2)"/><text class="tick" x="${x + 3}" y="${TL.top - 8}">${S.trace.meta.hasTimestamps ? '+' + fmtTick(tk) : '#' + tk}</text>`); }
-    // turn markers (main)
+    for (const tk of ticks) { const x = X(tk); svg.push(`<line x1="${x}" y1="${TL.top - 4}" x2="${x}" y2="${H}" stroke="var(--line-2)" pointer-events="none"/><text class="tick" pointer-events="none" x="${x + 3}" y="${TL.top - 8}">${S.trace.meta.hasTimestamps ? '+' + fmtTick(tk) : '#' + tk}</text>`); }
     svg.push('<g clip-path="url(#clip)">');
-    for (const tn of S.trace.turns) {
-      if (tn.agent !== 'main' || tn.promptKind !== 'human' || tn.start == null) continue;
-      const x = X(tn.start - TL.base); if (x < TL.left || x > width) continue;
-      svg.push(`<line x1="${x}" y1="${TL.top - 2}" x2="${x}" y2="${H}" stroke="var(--muted)" stroke-dasharray="2 3"/><text class="turn-lbl" x="${x + 3}" y="${H - 4}">T${mainTurnNo(tn)}</text>`);
-    }
-    for (const ev of S.trace.events) if (ev.kind === 'compact' && ev.at != null) { const x = X(ev.at - TL.base); svg.push(`<line x1="${x}" y1="${TL.top}" x2="${x}" y2="${H}" stroke="var(--accent)" stroke-width="1.5"/><text class="turn-lbl" x="${x + 3}" y="${H - 4}" fill="var(--accent)">compact</text>`); }
-    // lanes
+    for (const tn of S.trace.turns) { if (tn.agent !== 'main' || tn.promptKind !== 'human' || tn.start == null) continue; const x = X(tn.start - TL.base); if (x < TL.left || x > width) continue; svg.push(`<line x1="${x}" y1="${TL.top - 2}" x2="${x}" y2="${H}" stroke="var(--muted)" stroke-dasharray="2 3" pointer-events="none"/><text class="turn-lbl" pointer-events="none" x="${x + 3}" y="${H - 4}">T${mainTurnNo(tn)}</text>`); }
+    for (const ev of S.trace.events) if (ev.kind === 'compact' && ev.at != null) { const x = X(ev.at - TL.base); svg.push(`<line x1="${x}" y1="${TL.top}" x2="${x}" y2="${H}" stroke="var(--accent)" stroke-width="1.5" pointer-events="none"/><text class="turn-lbl" x="${x + 3}" y="${H - 4}" fill="var(--accent)" pointer-events="none">compact</text>`); }
     TL.lanes.forEach((ln, i) => {
       const ly = laneY[i];
-      for (const id of ln.idle) { const x0 = Math.max(TL.left, X(id.s)), x1 = Math.min(width, X(id.e)); if (x1 > x0) svg.push(`<rect x="${x0}" y="${ly}" width="${x1 - x0}" height="${ln.rows.length * TL.rowH - 2}" fill="url(#hatch)" data-kind="idle" data-ref="${id.ref.index}"/>`); }
+      for (const id of ln.idle) { const x0 = Math.max(TL.left, X(id.s)), x1 = Math.min(width, X(id.e)); if (x1 > x0) svg.push(`<rect x="${x0}" y="${ly}" width="${x1 - x0}" height="${ln.rows.length * RH - 2}" fill="url(#hatch)" data-kind="idle" data-ref="${id.ref.index}" role="img" aria-label="${spanLabel(id)}"><title>${spanLabel(id)}</title></rect>`); }
       ln.rows.forEach((row, ri) => {
-        const ry = ly + ri * TL.rowH;
+        const ry = ly + ri * RH;
         for (const sp of row) {
           let x0 = X(sp.s), x1 = X(sp.e); if (x1 < TL.left || x0 > width) continue;
           x0 = Math.max(TL.left, x0); x1 = Math.min(width, x1); const w = Math.max(2, x1 - x0);
+          const id = sp.ref.id; const tab = id === first ? 0 : -1; const label = spanLabel(sp);
           if (sp.kind === 'req') {
             const r = sp.ref; const thinkOnly = r.blocks.length && r.blocks.every((b) => b.type === 'thinking');
-            const cls = 'span' + (S.sel && S.sel.kind === 'req' && S.sel.ref === r ? ' sel' : '') + (S.hl.has(r.id) ? ' hl' : '');
-            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${TL.rowH - 5}" rx="2" fill="var(--c-model)" opacity="${thinkOnly ? .55 : .9}" data-kind="req" data-ref="${esc(r.id)}"/>`);
+            const cls = 'span' + (S.sel && S.sel.kind === 'req' && S.sel.ref === r ? ' sel' : '') + (S.hl.has(r.id) || S.matches.has(r.id) ? ' hl' : '');
+            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${RH - 5}" rx="2" fill="var(--c-model)" opacity="${thinkOnly ? .55 : .9}" data-kind="req" data-ref="${esc(r.id)}" tabindex="${tab}" role="button" aria-label="${label}"/>`);
           } else {
-            const c = sp.ref; const dim = S.toolFilter && S.toolFilter !== c.name;
-            const cls = 'span' + (c.isError ? ' err' : '') + (S.sel && S.sel.kind === 'tool' && S.sel.ref === c ? ' sel' : '') + (S.hl.has(c.id) ? ' hl' : '');
-            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${TL.rowH - 5}" rx="2" fill="${CAT_COLOR[c.category]}" opacity="${dim ? .18 : (c.status === 'orphan' ? .5 : 1)}" data-kind="tool" data-ref="${esc(c.id)}"/>`);
-            if (w > 40 && !dim) svg.push(`<text x="${x0 + 4}" y="${ry + TL.rowH - 6}" font-size="10" font-family="var(--mono)" fill="#fff" pointer-events="none">${esc(shortName(c.name)).slice(0, Math.floor(w / 6.5))}</text>`);
+            const c = sp.ref; const dim = (S.toolFilter && S.toolFilter !== c.name) || (S.query && !S.matches.has(c.id));
+            const cls = 'span' + (c.isError ? ' err' : '') + (S.sel && S.sel.kind === 'tool' && S.sel.ref === c ? ' sel' : '') + (S.hl.has(c.id) || S.matches.has(c.id) ? ' hl' : '');
+            svg.push(`<rect class="${cls}" x="${x0}" y="${ry + 2}" width="${w}" height="${RH - 5}" rx="2" fill="${CAT_COLOR[c.category]}" opacity="${dim ? .18 : (c.status === 'orphan' ? .5 : 1)}" data-kind="tool" data-ref="${esc(c.id)}" tabindex="${tab}" role="button" aria-label="${label}"/>`);
+            if (w > 40 && !dim) svg.push(`<text x="${x0 + 4}" y="${ry + RH - 6}" font-size="10" font-family="var(--mono)" fill="${CAT_LABEL[c.category]}" pointer-events="none" aria-hidden="true">${esc(shortName(c.name)).slice(0, Math.floor(w / 6.5))}</text>`);
           }
         }
       });
     });
     svg.push('</g>');
-    // lane labels
     TL.lanes.forEach((ln, i) => {
       const ly = laneY[i]; const ag = ln.agent;
-      svg.push(`<rect x="0" y="${ly - 2}" width="${TL.left - 6}" height="${ln.rows.length * TL.rowH}" fill="var(--panel)"/>`);
-      svg.push(`<text class="lane-label" x="10" y="${ly + 12}">${ag.id === 'main' ? 'main' : '↳ ' + esc((ag.agentType || 'subagent').slice(0, 16))}</text>`);
+      svg.push(`<rect x="0" y="${ly - 2}" width="${TL.left - 6}" height="${ln.rows.length * RH}" fill="var(--panel)"/>`);
+      svg.push(`<text class="lane-label" x="10" y="${ly + 12}">${ag.id === 'main' ? 'main' : '↳ ' + esc((ag.agentType || 'subagent').slice(0, width < 600 ? 7 : 16))}</text>`);
       const sub = ag.id === 'main' ? `${ag.requestCount} req · ${ag.toolCount} tools` : esc((ag.description || ag.id).slice(0, 22));
       svg.push(`<text class="lane-sub" x="10" y="${ly + 25}">${sub}</text>`);
     });
+    svg.push(`<g id="cursor" hidden pointer-events="none"><line id="cursor-line" x1="0" y1="${TL.top - 2}" x2="0" y2="${H}" stroke="var(--ink)" opacity=".5"/><text id="cursor-txt" class="cursor-lbl" x="0" y="${TL.top - 8}"></text></g>`);
     svg.push('</svg>');
-    const legend = `<div class="tl-legend"><span><i style="background:var(--c-model)"></i>model</span>${Object.entries(CAT_COLOR).map(([k, v]) => `<span><i style="background:${v}"></i>${k}</span>`).join('')}<span><i style="background:url(#hatch);border:1px solid var(--line)"></i>human idle</span><span><i style="border:1.5px solid var(--err);background:none"></i>error</span>${S.toolFilter ? `<span style="margin-left:auto">filtered: <b>${esc(S.toolFilter)}</b> <a href="#" id="unfilter">clear</a></span>` : ''}</div>`;
-    box.innerHTML = svg.join('') + legend;
+    const mm = []; const MW = width, MH = 44; const mx = (tm) => TL.left + tm / TL.total * (MW - TL.left - 10);
+    mm.push(`<svg class="minimap" id="minimap" viewBox="0 0 ${MW} ${MH}" width="${MW}" height="${MH}" role="img" aria-label="Minimap of the whole session; click to move the view"><rect x="0" y="0" width="${MW}" height="${MH}" fill="var(--panel)"/>`);
+    TL.lanes.forEach((ln, i) => { const lh = Math.max(4, (MH - 10) / TL.lanes.length); const ly = 5 + i * lh; for (const row of ln.rows.slice(1)) for (const sp of row) { const a = mx(sp.s), b = Math.max(a + 1, mx(sp.e)); mm.push(`<rect x="${a}" y="${ly}" width="${b - a}" height="${lh - 2}" fill="${CAT_COLOR[sp.ref.category]}" opacity=".7"/>`); } for (const sp of ln.rows[0]) { const a = mx(sp.s), b = Math.max(a + 1, mx(sp.e)); mm.push(`<rect x="${a}" y="${ly}" width="${b - a}" height="${lh - 2}" fill="var(--c-model)" opacity=".35"/>`); } });
+    mm.push(`<rect x="${mx(t0)}" y="1" width="${Math.max(3, mx(t1) - mx(t0))}" height="${MH - 2}" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5" rx="2"/><text class="lane-label" x="10" y="${MH / 2 + 4}">all</text></svg>`);
+    const legend = `<div class="tl-legend"><span><i style="background:var(--c-model)"></i>model</span>${Object.entries(CAT_COLOR).map(([k, v]) => `<span><i style="background:${v}"></i>${k}</span>`).join('')}<span><i style="background:url(#hatch);border:1px solid var(--faint)"></i>human idle</span><span><i style="border:1.5px solid var(--err);background:none"></i>error</span>${S.toolFilter ? `<span style="margin-left:auto">filtered: <b>${esc(S.toolFilter)}</b> <button class="btn sm" id="unfilter">clear</button></span>` : ''}</div>`;
+    box.innerHTML = svg.join('') + mm.join('') + legend;
     bindTimeline();
+    if (S.focusId && document.activeElement && document.activeElement.closest && document.activeElement.closest('#tl')) { const el = box.querySelector(`[data-ref="${cssEsc(S.focusId)}"]`); if (el) el.focus({ preventScroll: true }); }
   }
+  const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&');
   function mainTurnNo(tn) { let n = 0; for (const x of S.trace.turns) { if (x.agent === 'main' && x.promptKind === 'human') { n++; if (x === tn) return n; } } return '?'; }
   function shortName(n) { return n.startsWith('mcp__') ? n.split('__').slice(1).join(':') : n; }
   function fmtTick(ms) { const s = Math.round(ms / 1000); const m = Math.floor(s / 60), r = s % 60; const h = Math.floor(m / 60); return h ? `${h}:${String(m % 60).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`; }
-  function niceTicks(a, b, n, isTime) {
-    const raw = (b - a) / n; const steps = isTime ? [1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000, 7200000] : [1, 2, 5, 10, 20, 50, 100, 200, 500];
-    const step = steps.find((s) => s >= raw) || steps[steps.length - 1];
-    const out = []; for (let v = Math.ceil(a / step) * step; v <= b; v += step) out.push(v); return out;
+  function niceTicks(a, b, n, isTime) { const raw = (b - a) / n; const steps = isTime ? [1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000, 600000, 900000, 1800000, 3600000, 7200000] : [1, 2, 5, 10, 20, 50, 100, 200, 500]; const step = steps.find((s) => s >= raw) || steps[steps.length - 1]; const out = []; for (let v = Math.ceil(a / step) * step; v <= b; v += step) out.push(v); return out; }
+  function zoomBy(k, frac) {
+    frac = frac == null ? 0.5 : frac; const { t0, t1 } = S.view; const span = t1 - t0; const cursor = t0 + frac * span;
+    let ns = Math.min(TL.total, Math.max(TL.total / 2000, span * k)); let n0 = cursor - frac * ns; n0 = Math.max(0, Math.min(TL.total - ns, n0));
+    S.view = { t0: n0, t1: n0 + ns }; scheduleTL();
   }
+  function panBy(fracOfView) { const { t0, t1 } = S.view; const span = t1 - t0; let n0 = Math.max(0, Math.min(TL.total - span, t0 + span * fracOfView)); S.view = { t0: n0, t1: n0 + span }; scheduleTL(); }
+  function fracAt(svg, clientX) { const rect = svg.getBoundingClientRect(); const px = (clientX - rect.left) * (TL.W / rect.width); return Math.min(1, Math.max(0, (px - TL.left) / (TL.W - TL.left - 10))); }
   function bindTimeline() {
     const svg = $('#tl-svg'); if (!svg) return;
-    const box = $('#tl');
-    const un = $('#unfilter'); if (un) un.onclick = (e) => { e.preventDefault(); S.toolFilter = null; renderTimeline(); renderTools(); };
-    svg.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const rect = svg.getBoundingClientRect(); const px = (e.clientX - rect.left) * (TL.W / rect.width);
-      const frac = Math.min(1, Math.max(0, (px - TL.left) / (TL.W - TL.left - 10)));
-      const { t0, t1 } = S.view; const span = t1 - t0; const cursor = t0 + frac * span;
-      const k = Math.exp(e.deltaY * 0.0015); let ns = Math.min(TL.total, Math.max(TL.total / 2000, span * k));
-      let n0 = cursor - frac * ns; n0 = Math.max(0, Math.min(TL.total - ns, n0));
-      S.view = { t0: n0, t1: n0 + ns }; scheduleTL();
-    }, { passive: false });
-    svg.addEventListener('mousedown', (e) => { TL.drag = { x: e.clientX, t0: S.view.t0, t1: S.view.t1, moved: false }; svg.classList.add('drag'); });
-    window.addEventListener('mousemove', onDragMove); window.addEventListener('mouseup', onDragEnd);
-    svg.addEventListener('mousemove', (e) => { const el = e.target.closest('[data-kind]'); if (el) showTip(e, el); else hideTip(); });
-    svg.addEventListener('mouseleave', hideTip);
-    svg.addEventListener('click', (e) => { if (TL.drag && TL.drag.moved) return; const el = e.target.closest('[data-kind]'); if (!el) return; const k = el.dataset.kind, ref = el.dataset.ref; if (k === 'tool') select({ kind: 'tool', ref: S.trace.toolCalls.find((c) => c.id === ref) }); else if (k === 'req') select({ kind: 'req', ref: S.trace.requests.find((r) => r.id === ref) }); });
-    function onDragMove(e) { if (!TL.drag) return; const dx = e.clientX - TL.drag.x; if (Math.abs(dx) > 3) TL.drag.moved = true; const rect = svg.getBoundingClientRect(); const span = TL.drag.t1 - TL.drag.t0; const dt = -dx / (rect.width * (TL.W - TL.left - 10) / TL.W) * span; let n0 = Math.max(0, Math.min(TL.total - span, TL.drag.t0 + dt)); S.view = { t0: n0, t1: n0 + span }; scheduleTL(); }
-    function onDragEnd() { if (!TL.drag) return; const moved = TL.drag.moved; svg.classList.remove('drag'); setTimeout(() => { TL.drag = null; }, moved ? 50 : 0); window.removeEventListener('mousemove', onDragMove); window.removeEventListener('mouseup', onDragEnd); }
+    const un = $('#unfilter'); if (un) un.onclick = () => { S.toolFilter = null; renderTimeline(); renderTools(); };
+    svg.addEventListener('wheel', (e) => { e.preventDefault(); zoomBy(Math.exp(e.deltaY * 0.0015), fracAt(svg, e.clientX)); }, { passive: false });
+    svg.addEventListener('pointerdown', (e) => { TL.pointers.set(e.pointerId, { x: e.clientX }); if (TL.pointers.size === 1) { TL.drag = { x: e.clientX, t0: S.view.t0, t1: S.view.t1, moved: false }; svg.classList.add('drag'); } else if (TL.pointers.size === 2) { const [a, b] = Array.from(TL.pointers.values()); TL.pinch = { d: Math.max(10, Math.abs(a.x - b.x)), t0: S.view.t0, t1: S.view.t1, mid: fracAt(svg, (a.x + b.x) / 2) }; TL.drag = null; } try { svg.setPointerCapture(e.pointerId); } catch (x) { } });
+    svg.addEventListener('pointermove', (e) => {
+      if (TL.pointers.has(e.pointerId)) TL.pointers.set(e.pointerId, { x: e.clientX });
+      if (TL.pinch && TL.pointers.size === 2) { const [a, b] = Array.from(TL.pointers.values()); const d = Math.max(10, Math.abs(a.x - b.x)); const span0 = TL.pinch.t1 - TL.pinch.t0; let ns = Math.min(TL.total, Math.max(TL.total / 2000, span0 * TL.pinch.d / d)); const cursor = TL.pinch.t0 + TL.pinch.mid * span0; let n0 = Math.max(0, Math.min(TL.total - ns, cursor - TL.pinch.mid * ns)); S.view = { t0: n0, t1: n0 + ns }; scheduleTL(); return; }
+      if (TL.drag) { const dx = e.clientX - TL.drag.x; if (Math.abs(dx) > 3) TL.drag.moved = true; const rect = svg.getBoundingClientRect(); const span = TL.drag.t1 - TL.drag.t0; const dt = -dx / (rect.width * (TL.W - TL.left - 10) / TL.W) * span; let n0 = Math.max(0, Math.min(TL.total - span, TL.drag.t0 + dt)); S.view = { t0: n0, t1: n0 + span }; scheduleTL(); return; }
+      const el = e.target.closest('[data-kind]'); if (el) showTip(e, el); else hideTip();
+      moveCursor(svg, e.clientX);
+    });
+    const endPointer = (e) => { TL.pointers.delete(e.pointerId); if (TL.pointers.size < 2) TL.pinch = null; if (TL.drag) { const moved = TL.drag.moved; svg.classList.remove('drag'); setTimeout(() => { TL.drag = null; }, moved ? 50 : 0); } };
+    svg.addEventListener('pointerup', endPointer); svg.addEventListener('pointercancel', endPointer);
+    svg.addEventListener('mouseleave', () => { hideTip(); const c = $('#cursor'); if (c) c.setAttribute('hidden', ''); });
+    svg.addEventListener('click', (e) => { if (TL.drag && TL.drag.moved) return; let el = e.target.closest('[data-kind]'); if (!el) { const at = document.elementFromPoint(e.clientX, e.clientY); el = at && at.closest ? at.closest('[data-kind]') : null; } if (!el) return; selectEl(el); });
+    svg.addEventListener('focusin', (e) => { const el = e.target.closest && e.target.closest('[data-kind]'); if (el) { S.focusId = el.dataset.ref; showTip(null, el); } });
+    svg.addEventListener('focusout', () => hideTip());
+    svg.addEventListener('keydown', (e) => {
+      const el = e.target.closest && e.target.closest('[data-kind]'); if (!el) return;
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectEl(el); return; }
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) { e.preventDefault(); if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { panBy(e.key === 'ArrowLeft' ? -0.25 : 0.25); return; } moveFocus(el, e.key); }
+    });
+    const mmEl = $('#minimap');
+    if (mmEl) { const go = (clientX) => { const rect = mmEl.getBoundingClientRect(); const px = (clientX - rect.left) * (TL.W / rect.width); const tm = (px - TL.left) / (TL.W - TL.left - 10) * TL.total; const span = S.view.t1 - S.view.t0; let n0 = Math.max(0, Math.min(TL.total - span, tm - span / 2)); S.view = { t0: n0, t1: n0 + span }; scheduleTL(); }; mmEl.addEventListener('pointerdown', (e) => { go(e.clientX); TL.mmDrag = true; }); mmEl.addEventListener('pointermove', (e) => { if (TL.mmDrag) go(e.clientX); }); window.addEventListener('pointerup', () => { TL.mmDrag = false; }); }
   }
+  function moveCursor(svg, clientX) { const c = $('#cursor'); if (!c) return; const frac = fracAt(svg, clientX); const tm = S.view.t0 + frac * (S.view.t1 - S.view.t0); const x = TL.left + frac * (TL.W - TL.left - 10); c.removeAttribute('hidden'); $('#cursor-line').setAttribute('x1', x); $('#cursor-line').setAttribute('x2', x); const t = $('#cursor-txt'); t.setAttribute('x', x + 4); t.textContent = S.trace.meta.hasTimestamps ? '+' + fmtTick(tm) + '  ' + clock(TL.base + tm) : '#' + Math.round(tm); }
+  function spanInfo(el) { const ref = el.dataset.ref; for (let li = 0; li < TL.lanes.length; li++) { const ln = TL.lanes[li]; for (let ri = 0; ri < ln.rows.length; ri++) { const idx = ln.rows[ri].findIndex((s) => s.ref.id === ref); if (idx >= 0) return { li, ri, idx, sp: ln.rows[ri][idx] }; } } return null; }
+  function focusSpan(sp) { if (!sp) return; S.focusId = sp.ref.id; const v = S.view; const mid = (sp.s + sp.e) / 2; if (mid < v.t0 || mid > v.t1) { const span = v.t1 - v.t0; let n0 = Math.max(0, Math.min(TL.total - span, mid - span / 2)); S.view = { t0: n0, t1: n0 + span }; } renderTimeline(); const el = $('#tl').querySelector(`[data-ref="${cssEsc(sp.ref.id)}"]`); if (el) { $$('#tl-svg [tabindex="0"]').forEach((x) => x.setAttribute('tabindex', '-1')); el.setAttribute('tabindex', '0'); el.focus({ preventScroll: true }); } }
+  function moveFocus(el, key) {
+    const info = spanInfo(el); if (!info) return; const { li, ri, sp } = info; const lane = TL.lanes[li];
+    if (key === 'ArrowRight' || key === 'ArrowLeft') { const all = lane.rows.flat().sort((a, b) => a.s - b.s); const i = all.indexOf(sp); const nxt = all[i + (key === 'ArrowRight' ? 1 : -1)]; if (nxt) focusSpan(nxt); return; }
+    const targetLane = TL.lanes[li + (key === 'ArrowDown' ? 1 : -1)];
+    const pool = targetLane ? targetLane.rows.flat() : (key === 'ArrowDown' && ri < lane.rows.length - 1 ? lane.rows[ri + 1] : key === 'ArrowUp' && ri > 0 ? lane.rows[ri - 1] : null);
+    if (!pool || !pool.length) return;
+    const mid = (sp.s + sp.e) / 2; const best = pool.reduce((b, x) => Math.abs((x.s + x.e) / 2 - mid) < Math.abs((b.s + b.e) / 2 - mid) ? x : b);
+    focusSpan(best);
+  }
+  function selectEl(el) { const k = el.dataset.kind, ref = el.dataset.ref; if (k === 'tool') select({ kind: 'tool', ref: S.trace.toolCalls.find((c) => c.id === ref) }); else if (k === 'req') select({ kind: 'req', ref: S.trace.requests.find((r) => r.id === ref) }); }
   let tlRaf = null; function scheduleTL() { if (tlRaf) return; tlRaf = requestAnimationFrame(() => { tlRaf = null; renderTimeline(); }); }
-  document.addEventListener('keydown', (e) => { if (e.key === '0' && S.trace && !/input|textarea/i.test(e.target.tagName)) { S.view = null; renderTimeline(); } if (e.key === 'Escape') closeDrawer(); });
+  $('#z-in').onclick = () => zoomBy(0.6); $('#z-out').onclick = () => zoomBy(1 / 0.6); $('#z-reset').onclick = () => { S.view = null; $('#fit').value = ''; renderTimeline(); };
+  document.addEventListener('keydown', (e) => {
+    if (/input|textarea|select/i.test(e.target.tagName)) { if (e.key === 'Escape') e.target.blur(); return; }
+    if (!S.trace) return;
+    if (e.key === '0') { S.view = null; renderTimeline(); }
+    else if (e.key === '+' || e.key === '=') zoomBy(0.6);
+    else if (e.key === '-') zoomBy(1 / 0.6);
+    else if (e.key === '/') { e.preventDefault(); $('#q').focus(); }
+    else if (e.key === '?') { $('#help-dlg').showModal(); }
+    else if (e.key === 'Escape') closeDrawer();
+  });
   window.addEventListener('resize', () => { if (S.trace) { renderTimeline(); renderBurn(); } });
 
   const tip = $('#tip');
@@ -508,94 +592,117 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     else if (k === 'req') { const r = S.trace.requests.find((x) => x.id === ref); if (!r) return; const i = S.trace.requests.indexOf(r) + 1; html = `<b>Request #${i}</b> <span class="m">${esc(r.blocksSummary)}</span><br><span class="m">${fmtDur(r.responseMs)} · ${fmtTok(r.usage.output)} out (${fmtTok(r.usage.thinking)} thinking) · ctx ${fmtTok(r.contextTokens)}${r.tokensPerSec ? ' · ' + r.tokensPerSec.toFixed(0) + ' tok/s' : ''}</span>${S.cost.byRequest[i - 1] != null ? `<br><span class="m">${fmtUSD(S.cost.byRequest[i - 1])}</span>` : ''}`; }
     else if (k === 'idle') { const tn = S.trace.turns[+ref]; html = `<b>Waiting on you</b> <span class="m">${fmtDur(tn.idleBeforeMs)}</span>`; }
     else if (k === 'bar') { const r = S.trace.requests[+ref]; const i = +ref + 1; html = `<b>Request #${i}</b> <span class="m">${esc(r.blocksSummary)}</span><br><span class="m">cache read ${fmtTok(r.usage.cacheRead)} · cache write ${fmtTok(r.usage.cacheWrite)} · input ${fmtTok(r.usage.input)}</span><br><span class="m">out ${fmtTok(r.usage.output)} · ${fmtUSD(S.cost.byRequest[+ref])} · cumulative ${fmtUSD(cum(+ref))}</span>`; }
-    tip.innerHTML = html; tip.style.display = 'block'; moveTip(e);
+    tip.innerHTML = html; tip.style.display = 'block';
+    if (e) moveTip(e.clientX, e.clientY); else { const b = el.getBoundingClientRect(); moveTip(b.left + Math.min(b.width, 40), b.bottom + 4); }
   }
-  function moveTip(e) { const w = tip.offsetWidth, h = tip.offsetHeight; let x = e.clientX + 14, y = e.clientY + 14; if (x + w > innerWidth - 8) x = e.clientX - w - 10; if (y + h > innerHeight - 8) y = e.clientY - h - 10; tip.style.left = x + 'px'; tip.style.top = y + 'px'; }
+  function moveTip(cx, cy) { const w = tip.offsetWidth, h = tip.offsetHeight; let x = cx + 14, y = cy + 14; if (x + w > innerWidth - 8) x = cx - w - 10; if (y + h > innerHeight - 8) y = cy - h - 10; tip.style.left = Math.max(4, x) + 'px'; tip.style.top = Math.max(4, y) + 'px'; }
   function hideTip() { tip.style.display = 'none'; }
-  document.addEventListener('mousemove', (e) => { if (tip.style.display === 'block') moveTip(e); });
+  document.addEventListener('mousemove', (e) => { if (tip.style.display === 'block' && !(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.kind)) moveTip(e.clientX, e.clientY); });
   function cum(i) { let s = 0; for (let k = 0; k <= i; k++) s += S.cost.byRequest[k] || 0; return s; }
-  function inputSummary(c) {
-    const i = c.input || {};
-    if (i.command) return i.command; if (i.file_path) return i.file_path + (i.pattern ? ' ' + i.pattern : ''); if (i.pattern) return i.pattern; if (i.query) return i.query; if (i.description) return i.description; if (i.url) return i.url; if (i.prompt) return i.prompt; if (i.path) return i.path;
-    const s = JSON.stringify(i); return s === '{}' ? '' : s;
-  }
+  function inputSummary(c) { const i = c.input || {}; if (i.command) return i.command; if (i.file_path) return i.file_path + (i.pattern ? ' ' + i.pattern : ''); if (i.pattern) return i.pattern; if (i.query) return i.query; if (i.description) return i.description; if (i.url) return i.url; if (i.prompt) return i.prompt; if (i.path) return i.path; const s = JSON.stringify(i); return s === '{}' ? '' : s; }
 
   // ------------------------------------------------------------ burn chart
   function renderBurn() {
     const box = $('#burn'); const reqs = S.trace.requests; const width = box.clientWidth || 800; const H = 200, L = 46, Rm = 52, T = 14, B = 22;
     if (!reqs.length) { box.innerHTML = '<div class="empty">No API requests found.</div>'; return; }
-    const maxCtx = Math.max(1, ...reqs.map((r) => r.contextTokens));
-    const costs = S.cost.byRequest; let acc = 0; const cumv = costs.map((c) => (acc += c || 0));
-    const maxCost = Math.max(1e-9, ...cumv);
+    const maxCtx = Math.max(1, ...reqs.map((r) => r.contextTokens)); const costs = S.cost.byRequest; let acc = 0; const cumv = costs.map((c) => (acc += c || 0)); const maxCost = Math.max(1e-9, ...cumv);
     const plotW = width - L - Rm, bw = Math.max(1, plotW / reqs.length - 1);
     const y = (v) => T + (H - T - B) * (1 - v / maxCtx), yc = (v) => T + (H - T - B) * (1 - v / maxCost);
-    const s = [`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}">`];
-    const ticks = [0, .25, .5, .75, 1];
-    for (const f of ticks) { const yy = y(maxCtx * f); s.push(`<line x1="${L}" x2="${width - Rm}" y1="${yy}" y2="${yy}" stroke="var(--line-2)"/><text class="axis" x="${L - 4}" y="${yy + 3}" text-anchor="end">${fmtTok(Math.round(maxCtx * f))}</text>`); }
+    const s = [`<svg viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" role="group" aria-label="Context size per request, ${reqs.length} requests, peak ${fmtTok(maxCtx)} tokens${S.cost.total != null ? ', cumulative cost ' + fmtUSD(S.cost.total) : ''}. Use arrow keys to move between requests.">`];
+    for (const f of [0, .25, .5, .75, 1]) { const yy = y(maxCtx * f); s.push(`<line x1="${L}" x2="${width - Rm}" y1="${yy}" y2="${yy}" stroke="var(--line-2)"/><text class="axis" x="${L - 4}" y="${yy + 3}" text-anchor="end">${fmtTok(Math.round(maxCtx * f))}</text>`); }
     if (S.cost.total != null) for (const f of [.5, 1]) { const yy = yc(maxCost * f); s.push(`<text class="axis" x="${width - Rm + 4}" y="${yy + 3}" fill="var(--accent)">${fmtUSD(maxCost * f)}</text>`); }
+    const focusIdx = S.sel && S.sel.kind === 'req' ? reqs.indexOf(S.sel.ref) : 0;
     reqs.forEach((r, i) => {
-      const x = L + i * (plotW / reqs.length); const u = r.usage; let top = H - B;
-      const seg = (v, fill, op) => { if (!v) return; const h = (H - T - B) * v / maxCtx; top -= h; s.push(`<rect class="bar" x="${x}" y="${top}" width="${bw}" height="${h}" fill="${fill}" opacity="${op}" data-kind="bar" data-ref="${i}"/>`); };
-      const isSub = r.agent !== 'main';
-      seg(u.cacheRead, isSub ? 'var(--c-agent)' : 'var(--c-read)', .35); seg(u.cacheWrite, isSub ? 'var(--c-agent)' : 'var(--c-read)', .7); seg(u.input, isSub ? 'var(--c-agent)' : 'var(--c-read)', 1);
-      if (S.sel && S.sel.kind === 'req' && S.sel.ref === r) s.push(`<rect x="${x - 1}" y="${T}" width="${bw + 2}" height="${H - T - B}" fill="none" stroke="var(--accent)" stroke-width="1.5"/>`);
+      const x = L + i * (plotW / reqs.length); const u = r.usage; let top = H - B; const isSub = r.agent !== 'main'; const col = isSub ? 'var(--c-agent)' : 'var(--c-read)';
+      const label = `Request ${i + 1}: context ${fmtTok(r.contextTokens)} tokens (${fmtTok(u.cacheRead)} cached), ${fmtTok(u.output)} output, ${fmtUSD(costs[i])}`;
+      s.push(`<g class="bar" data-kind="bar" data-ref="${i}" tabindex="${i === focusIdx ? 0 : -1}" role="button" aria-label="${label}">`);
+      const seg = (v, op) => { if (!v) return; const h = (H - T - B) * v / maxCtx; top -= h; s.push(`<rect x="${x}" y="${top}" width="${bw}" height="${h}" fill="${col}" opacity="${op}"/>`); };
+      seg(u.cacheRead, .35); seg(u.cacheWrite, .7); seg(u.input, 1);
+      s.push(`<rect x="${x}" y="${T}" width="${bw}" height="${H - T - B}" fill="transparent"/></g>`);
+      if (S.sel && S.sel.kind === 'req' && S.sel.ref === r) s.push(`<rect x="${x - 1}" y="${T}" width="${bw + 2}" height="${H - T - B}" fill="none" stroke="var(--accent)" stroke-width="1.5" pointer-events="none"/>`);
     });
     for (const ev of S.trace.events) if (ev.kind === 'compact' && ev.at != null) { const idx = reqs.findIndex((r) => r.start != null && r.start >= ev.at); if (idx >= 0) { const x = L + idx * (plotW / reqs.length); s.push(`<line x1="${x}" x2="${x}" y1="${T}" y2="${H - B}" stroke="var(--accent)" stroke-dasharray="3 2"/>`); } }
-    if (S.cost.total != null) { const pts = cumv.map((v, i) => `${(L + i * (plotW / reqs.length) + bw / 2).toFixed(1)},${yc(v).toFixed(1)}`); s.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round"/>`); const lx = L + (reqs.length - 1) * (plotW / reqs.length) + bw / 2; s.push(`<circle cx="${lx}" cy="${yc(cumv[cumv.length - 1])}" r="3" fill="var(--accent)"/>`); }
+    if (S.cost.total != null) { const pts = cumv.map((v, i) => `${(L + i * (plotW / reqs.length) + bw / 2).toFixed(1)},${yc(v).toFixed(1)}`); s.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" pointer-events="none"/>`); const lx = L + (reqs.length - 1) * (plotW / reqs.length) + bw / 2; s.push(`<circle cx="${lx}" cy="${yc(cumv[cumv.length - 1])}" r="3" fill="var(--accent)"/>`); }
     const step = Math.max(1, Math.ceil(reqs.length / Math.max(2, Math.floor(plotW / 60))));
     for (let i = 0; i < reqs.length; i += step) s.push(`<text class="axis" x="${L + i * (plotW / reqs.length)}" y="${H - 6}">#${i + 1}</text>`);
     s.push('</svg>');
     box.innerHTML = s.join('');
-    $('#burn-aux').innerHTML = `bars: prompt size per request (light = cached read, mid = cache write, dark = uncached${S.trace.agents.length > 1 ? ', violet = subagent' : ''}) · <span style="color:var(--accent)">line</span>: cumulative ${S.cost.reported != null ? 'estimated' : 'est.'} cost`;
+    $('#burn-aux').innerHTML = `bars: prompt size per request (light = cached read, mid = cache write, dark = uncached${S.trace.agents.length > 1 ? ', violet = subagent' : ''}) · <span style="color:var(--accent)">line</span>: cumulative est. cost`;
     const svg = box.querySelector('svg');
     svg.addEventListener('mousemove', (e) => { const el = e.target.closest('[data-kind]'); if (el) showTip(e, el); else hideTip(); });
     svg.addEventListener('mouseleave', hideTip);
     svg.addEventListener('click', (e) => { const el = e.target.closest('[data-kind=bar]'); if (el) select({ kind: 'req', ref: S.trace.requests[+el.dataset.ref] }); });
+    svg.addEventListener('focusin', (e) => { const el = e.target.closest('[data-kind=bar]'); if (el) showTip(null, el); });
+    svg.addEventListener('focusout', hideTip);
+    svg.addEventListener('keydown', (e) => { const el = e.target.closest('[data-kind=bar]'); if (!el) return; const i = +el.dataset.ref; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select({ kind: 'req', ref: reqs[i] }); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); const n = svg.querySelector(`[data-ref="${i + (e.key === 'ArrowRight' ? 1 : -1)}"]`); if (n) { el.setAttribute('tabindex', '-1'); n.setAttribute('tabindex', '0'); n.focus(); } } });
   }
 
   // ------------------------------------------------------------ findings
+  function findingMd(f) { return `- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}\n  ${f.detail}`; }
+  function reportMd() {
+    const t = S.trace, T = t.totals, m = t.meta;
+    const head = `# Glassbox report — ${R(m.title || 'session')}\n\n` + `- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'} · started: ${m.start ? new Date(m.start).toISOString() : '—'}\n` + `- wall ${fmtDur(T.wallMs)} (active ${fmtDur(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed)\n` + `- tokens: ${fmtInt(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} context served (${pct(T.cacheHitRatio)} cached), ${fmtInt(T.usage.output)} output (${fmtInt(T.usage.thinking)} thinking) · est. cost ${S.cost.total != null ? fmtUSD(S.cost.total) : '—'}\n\n`;
+    const fs = S.findings.length ? `## Findings (${S.findings.length})\n\n` + S.findings.map(findingMd).join('\n') + '\n' : '## Findings\n\nNothing flagged.\n';
+    const tools = '\n## Tools\n\n| tool | calls | errors | total time |\n|---|---|---|---|\n' + toolRows().map((r) => `| ${r.name} | ${r.calls} | ${r.errors} | ${fmtDur(r.time)} |`).join('\n') + '\n';
+    return head + fs + tools + '\n_Generated by Glassbox._\n';
+  }
+  async function copyText(text, what) { try { await navigator.clipboard.writeText(text); say(what + ' copied to clipboard.'); return true; } catch (e) { say('Clipboard blocked — select the text in the detail panel instead.'); return false; } }
   function renderFindings() {
     const box = $('#findings'); const fs = S.findings;
     $('#find-aux').textContent = fs.length ? `${fs.length} · mechanical rules, no AI` : '';
+    $('#copy-all').disabled = !fs.length;
     if (!fs.length) { box.innerHTML = '<div class="empty">Nothing flagged. Either a clean session or a very short one.</div>'; return; }
-    box.innerHTML = fs.map((f, i) => `<div class="finding ${f.severity}" data-i="${i}" tabindex="0"><div class="bar"></div><div><div class="t">${esc(f.title)}</div><div class="d">${esc(S.share ? f.detail.replace(/«[^»]*»|\/[^\s]+/g, '…') : f.detail)}</div></div><div class="id">${f.id}</div></div>`).join('');
-    $$('.finding', box).forEach((el) => { const go = () => focusFinding(+el.dataset.i); el.onclick = go; el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
+    box.innerHTML = fs.map((f, i) => `<div class="finding ${f.severity}" data-i="${i}"><div class="bar" aria-hidden="true"></div><div><button type="button" class="t" data-go="${i}" aria-label="${esc(f.severity)}: ${esc(f.title)}. Show on timeline.">${esc(f.title)}</button><div class="d">${esc(S.share ? f.detail.replace(/«[^»]*»|\/[^\s]+/g, '…') : f.detail)}</div></div><div class="side"><span class="id">${f.id}</span><button type="button" class="btn sm" data-copy="${i}" aria-label="Copy finding ${i + 1} as Markdown">Copy</button></div></div>`).join('');
+    $$('.finding', box).forEach((el) => { el.onclick = (e) => { if (e.target.closest('[data-copy]')) return; focusFinding(+el.dataset.i); }; });
+    $$('[data-copy]', box).forEach((b) => b.onclick = (e) => { e.stopPropagation(); copyText(findingMd(S.findings[+b.dataset.copy]), 'Finding'); });
   }
+  $('#copy-all').onclick = () => copyText(S.findings.map(findingMd).join('\n'), 'All findings');
+  $('#export-md').onclick = async () => { const md = reportMd(); await copyText(md, 'Report (Markdown)'); download((S.trace.meta.sessionId || 'session').slice(0, 8) + '-glassbox-report.md', md, 'text/markdown'); };
+  function download(name, text, type) { try { const blob = new Blob([text], { type }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); } catch (e) { } }
   function focusFinding(i) {
     const f = S.findings[i]; const ev = f.evidence || {};
     $$('.finding').forEach((el, k) => el.classList.toggle('active', k === i));
     S.hl = new Set([...(ev.toolCallIds || []), ...(ev.requestIds || [])]);
-    // zoom timeline to evidence
     const items = [...(ev.toolCallIds || []).map((id) => S.trace.toolCalls.find((c) => c.id === id)), ...(ev.requestIds || []).map((id) => S.trace.requests.find((r) => r.id === id))].filter(Boolean);
-    if (items.length && S.trace.meta.hasTimestamps) {
-      let a = Infinity, b = -Infinity; for (const it of items) { const s = (it.responseFrom != null ? it.responseFrom : it.start), e = it.end != null ? it.end : S.trace.meta.end; if (s != null) a = Math.min(a, s); if (e != null) b = Math.max(b, e); }
-      if (Number.isFinite(a) && Number.isFinite(b)) { const pad = Math.max((b - a) * .6, 15000); S.view = { t0: Math.max(0, a - TL.base - pad), t1: Math.min(TL.total, b - TL.base + pad) }; }
-    } else if (ev.at != null && S.trace.meta.hasTimestamps) { const c = ev.at - TL.base; S.view = { t0: Math.max(0, c - 60000), t1: Math.min(TL.total, c + 60000) }; }
+    if (items.length && S.trace.meta.hasTimestamps) { let a = Infinity, b = -Infinity; for (const it of items) { const s = (it.responseFrom != null ? it.responseFrom : it.start), e = it.end != null ? it.end : S.trace.meta.end; if (s != null) a = Math.min(a, s); if (e != null) b = Math.max(b, e); } if (Number.isFinite(a) && Number.isFinite(b)) { const pad = Math.max((b - a) * .6, 15000); S.view = { t0: Math.max(0, a - TL.base - pad), t1: Math.min(TL.total, b - TL.base + pad) }; } }
+    else if (ev.at != null && S.trace.meta.hasTimestamps) { const c = ev.at - TL.base; S.view = { t0: Math.max(0, c - 60000), t1: Math.min(TL.total, c + 60000) }; }
     renderTimeline();
     if (items.length === 1) select({ kind: items[0].name ? 'tool' : 'req', ref: items[0] }, true); else closeDrawer();
+    setHash('find=' + (i + 1));
+    say(`${f.title}. ${items.length} item${items.length === 1 ? '' : 's'} highlighted on the timeline.`);
     $('#tl').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   // ------------------------------------------------------------ tools table
   const TT = { sort: 'time', dir: -1 };
-  function renderTools() {
+  function toolRows() {
     const rows = new Map();
-    for (const c of S.trace.toolCalls) {
-      if (c.unmatched) continue;
-      if (!rows.has(c.name)) rows.set(c.name, { name: c.name, category: c.category, calls: 0, errors: 0, time: 0, max: 0, chars: 0, n: 0 });
-      const r = rows.get(c.name); r.calls++; if (c.isError) r.errors++; if (c.durationMs != null) { r.time += c.durationMs; r.n++; r.max = Math.max(r.max, c.durationMs); } r.chars += c.resultChars || 0;
-    }
+    for (const c of S.trace.toolCalls) { if (c.unmatched) continue; if (!rows.has(c.name)) rows.set(c.name, { name: c.name, category: c.category, calls: 0, errors: 0, time: 0, max: 0, chars: 0, n: 0 }); const r = rows.get(c.name); r.calls++; if (c.isError) r.errors++; if (c.durationMs != null) { r.time += c.durationMs; r.n++; r.max = Math.max(r.max, c.durationMs); } r.chars += c.resultChars || 0; }
     const list = Array.from(rows.values()).map((r) => Object.assign(r, { avg: r.n ? r.time / r.n : 0, rate: r.calls ? r.errors / r.calls : 0 }));
     list.sort((a, b) => (typeof a[TT.sort] === 'string' ? a[TT.sort].localeCompare(b[TT.sort]) : a[TT.sort] - b[TT.sort]) * TT.dir);
+    return list;
+  }
+  function renderTools() {
+    const list = toolRows();
     const cols = [['name', 'Tool', ''], ['calls', 'Calls', 'n'], ['errors', 'Errors', 'n'], ['time', 'Total time', 'n'], ['avg', 'Avg', 'n'], ['max', 'Max', 'n'], ['chars', 'Result chars', 'n']];
-    const th = cols.map(([k, l, c]) => `<th class="${c} ${TT.sort === k ? 'sorted' : ''}" data-k="${k}">${l}${TT.sort === k ? (TT.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
-    const tr = list.map((r) => `<tr class="row ${S.toolFilter === r.name ? 'on' : ''}" data-name="${esc(r.name)}"><td><span class="cat" style="background:${CAT_COLOR[r.category]}"></span>${esc(r.name)}</td><td class="n">${r.calls}</td><td class="n">${r.errors ? `<span class="errpill">${r.errors} (${Math.round(r.rate * 100)}%)</span>` : '—'}</td><td class="n">${fmtDur(r.time)}</td><td class="n">${fmtDur(r.avg)}</td><td class="n">${fmtDur(r.max)}</td><td class="n">${fmtInt(r.chars)}</td></tr>`).join('');
-    $('#tools').innerHTML = `<thead><tr>${th}</tr></thead><tbody>${tr || '<tr><td colspan="7" class="empty">No tool calls.</td></tr>'}</tbody>`;
-    $$('#tools th').forEach((el) => el.onclick = () => { const k = el.dataset.k; if (TT.sort === k) TT.dir *= -1; else { TT.sort = k; TT.dir = k === 'name' ? 1 : -1; } renderTools(); });
-    $$('#tools tr.row').forEach((el) => el.onclick = () => { S.toolFilter = S.toolFilter === el.dataset.name ? null : el.dataset.name; renderTools(); renderTimeline(); });
+    const th = cols.map(([k, l, c]) => `<th class="${c}" scope="col" aria-sort="${TT.sort === k ? (TT.dir < 0 ? 'descending' : 'ascending') : 'none'}"><button type="button" data-k="${k}">${l}${TT.sort === k ? (TT.dir < 0 ? ' ↓' : ' ↑') : ''}</button></th>`).join('');
+    const tr = list.map((r) => `<tr class="row" data-name="${esc(r.name)}" tabindex="0" role="button" aria-pressed="${S.toolFilter === r.name}" aria-label="${esc(r.name)}, ${r.calls} calls${r.errors ? ', ' + r.errors + ' errors' : ''}, ${fmtDur(r.time)} total. Filter the timeline to this tool."><td><span class="cat" style="background:${CAT_COLOR[r.category]}" aria-hidden="true"></span>${esc(r.name)}<span class="sr-only"> (${r.category})</span></td><td class="n">${r.calls}</td><td class="n">${r.errors ? `<span class="errpill">${r.errors} (${Math.round(r.rate * 100)}%)</span>` : '—'}</td><td class="n">${fmtDur(r.time)}</td><td class="n">${fmtDur(r.avg)}</td><td class="n">${fmtDur(r.max)}</td><td class="n">${fmtInt(r.chars)}</td></tr>`).join('');
+    $('#tools').innerHTML = `<caption class="sr-only">Tool calls grouped by tool</caption><thead><tr>${th}</tr></thead><tbody>${tr || '<tr><td colspan="7" class="empty">No tool calls.</td></tr>'}</tbody>`;
+    $$('#tools th button').forEach((el) => el.onclick = () => { const k = el.dataset.k; if (TT.sort === k) TT.dir *= -1; else { TT.sort = k; TT.dir = k === 'name' ? 1 : -1; } renderTools(); });
+    const toggle = (el) => { S.toolFilter = S.toolFilter === el.dataset.name ? null : el.dataset.name; renderTools(); renderTimeline(); say(S.toolFilter ? 'Timeline filtered to ' + S.toolFilter : 'Filter cleared'); };
+    $$('#tools tr.row').forEach((el) => { el.onclick = () => toggle(el); el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(el); } }; });
   }
 
-  // ------------------------------------------------------------ turns
+  // ------------------------------------------------------------ turns + search
+  function matchText(s) { return !!S.query && s != null && String(s).toLowerCase().includes(S.query); }
+  function markText(s) { s = String(s == null ? '' : s); if (!S.query) return esc(s); const q = S.query; const out = []; let i = 0; const low = s.toLowerCase(); let j; while ((j = low.indexOf(q, i)) >= 0) { out.push(esc(s.slice(i, j)) + '<mark>' + esc(s.slice(j, j + q.length)) + '</mark>'); i = j + q.length; } out.push(esc(s.slice(i))); return out.join(''); }
+  function runSearch() {
+    const q = $('#q').value.trim().toLowerCase(); S.query = q; S.matches = new Set();
+    if (q) { for (const c of S.trace.toolCalls) if (matchText(c.name) || matchText(inputSummary(c)) || matchText(JSON.stringify(c.input)) || matchText(c.resultText)) S.matches.add(c.id); for (const r of S.trace.requests) if (r.blocks.some((b) => b.type === 'text' && matchText(b.text))) S.matches.add(r.id); }
+    $('#q-n').textContent = q ? `${S.matches.size} hit${S.matches.size === 1 ? '' : 's'}` : '';
+    renderTimeline(); renderTurns();
+  }
+  let qTimer = null; $('#q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(runSearch, 150); });
   function renderTurns() {
     const t = S.trace; const box = $('#turns');
     const turns = t.turns.filter((tn) => tn.agent === 'main');
@@ -610,70 +717,135 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       const prompt = tn.promptText ? R(tn.promptText).replace(/\s+/g, ' ').slice(0, 140) : '(no prompt text)';
       const steps = [];
       for (const r of reqs) {
-        const i = t.requests.indexOf(r);
         const txt = r.blocks.filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim();
-        if (txt) steps.push({ t: r.end, kind: 'model', html: `<span class="what"><span class="n">says</span> <span class="a">${esc(R(txt).replace(/\s+/g, ' ').slice(0, 120))}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)' });
-        else if (!r.blocks.some((b) => b.type === 'tool_use')) steps.push({ t: r.end, kind: 'model', html: `<span class="what"><span class="a">${esc(r.blocksSummary || 'response')}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)' });
-        for (const b of r.blocks) if (b.type === 'tool_use') { const c = t.toolCalls.find((x) => x.id === b.id); if (!c) continue; steps.push({ t: c.start, kind: 'tool', html: `<span class="what"><span class="n">${esc(shortName(c.name))}</span> <span class="a">${esc(R(inputSummary(c)).slice(0, 110))}</span></span>`, r: `${c.status === 'error' ? '<span class="errpill">error</span> · ' : c.status === 'orphan' ? 'no result · ' : ''}${fmtDur(c.durationMs)}${c.resultChars ? ' · ' + fmtTok(c.resultChars) + ' ch' : ''}`, sel: { kind: 'tool', ref: c }, color: CAT_COLOR[c.category] }); }
-        void i;
+        const hit = S.matches.has(r.id);
+        if (txt) steps.push({ t: r.end, kind: 'model', hit, html: `<span class="what"><span class="n">says</span> <span class="a">${markText(R(txt).replace(/\s+/g, ' ').slice(0, 120))}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)', label: `Model reply, ${fmtTok(r.usage.output)} output tokens` });
+        else if (!r.blocks.some((b) => b.type === 'tool_use')) steps.push({ t: r.end, kind: 'model', hit, html: `<span class="what"><span class="a">${esc(r.blocksSummary || 'response')}</span></span>`, r: `${fmtTok(r.usage.output)} out`, sel: { kind: 'req', ref: r }, color: 'var(--c-model)', label: `Model response, ${fmtTok(r.usage.output)} output tokens` });
+        for (const b of r.blocks) if (b.type === 'tool_use') { const c = t.toolCalls.find((x) => x.id === b.id); if (!c) continue; steps.push({ t: c.start, kind: 'tool', hit: S.matches.has(c.id), html: `<span class="what"><span class="n">${esc(shortName(c.name))}</span> <span class="a">${markText(R(inputSummary(c)).slice(0, 110))}</span></span>`, r: `${c.status === 'error' ? '<span class="errpill">error</span> · ' : c.status === 'orphan' ? 'no result · ' : ''}${fmtDur(c.durationMs)}${c.resultChars ? ' · ' + fmtTok(c.resultChars) + ' ch' : ''}`, sel: { kind: 'tool', ref: c }, color: CAT_COLOR[c.category], label: `${c.name}, ${c.status}, ${fmtDur(c.durationMs)}` }); }
       }
-      const stepsHtml = steps.map((s, k) => `<div class="step ${s.kind}" data-turn="${tn.index}" data-step="${k}"><span class="t">${tn.start != null && s.t != null ? '+' + fmtTick(s.t - tn.start) : ''}</span><span class="dot" style="background:${s.color}"></span>${s.html}<span class="r">${s.r}</span></div>`).join('');
+      const anyHit = !S.query || steps.some((s) => s.hit) || matchText(tn.promptText);
+      const stepsHtml = steps.map((s, k) => `<div class="step ${s.kind}" data-turn="${tn.index}" data-step="${k}" tabindex="0" role="button" aria-label="${esc(s.label)}. Open detail." ${S.query && !s.hit ? 'hidden' : ''}><span class="t">${tn.start != null && s.t != null ? '+' + fmtTick(s.t - tn.start) : ''}</span><span class="dot" style="background:${s.color}" aria-hidden="true"></span>${s.html}<span class="r">${s.r}</span></div>`).join('');
       tn._steps = steps;
-      return `<details class="turn"><summary><span class="no">${label}</span><span class="p ${human ? '' : 'meta'}">${esc(prompt)}</span><span class="stats">${tn.toolCallIds.length} tools · ${fmtTok(tn.usage.output)} out · ${fmtDur(dur)}${cost ? ' · ' + fmtUSD(cost) : ''}${tn.idleBeforeMs > 60000 ? ' · after ' + fmtDur(tn.idleBeforeMs) + ' idle' : ''}</span></summary><div class="body">${tn.promptText ? `<div class="prompt ${S.share ? 'redacted' : ''}">${esc(R(tn.promptText).slice(0, 4000))}</div>` : ''}${stepsHtml || '<div class="empty">No model activity in this turn.</div>'}</div></details>`;
+      return `<details class="turn" ${S.query && anyHit ? 'open' : ''} ${anyHit ? '' : 'hidden'}><summary><span class="no">${label}</span><span class="p ${human ? '' : 'meta'}">${markText(prompt)}</span><span class="stats">${tn.toolCallIds.length} tools · ${fmtTok(tn.usage.output)} out · ${fmtDur(dur)}${cost ? ' · ' + fmtUSD(cost) : ''}${tn.idleBeforeMs > 60000 ? ' · after ' + fmtDur(tn.idleBeforeMs) + ' idle' : ''}</span></summary><div class="body">${tn.promptText ? `<div class="prompt ${S.share ? 'redacted' : ''}">${markText(R(tn.promptText).slice(0, 4000))}</div>` : ''}${stepsHtml || '<div class="empty">No model activity in this turn.</div>'}</div></details>`;
     }).join('') || '<div class="empty">No turns.</div>';
-    $$('.step', box).forEach((el) => el.onclick = () => { const tn = t.turns[+el.dataset.turn]; const s = tn._steps[+el.dataset.step]; select(s.sel, true); });
+    $$('.step', box).forEach((el) => { const go = () => { const tn = t.turns[+el.dataset.turn]; const s = tn._steps[+el.dataset.step]; select(s.sel, true); }; el.onclick = go; el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
   }
 
   // ------------------------------------------------------------ selection / drawer
+  function kv(pairs) { return '<dl class="kv">' + pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>'; }
   function select(sel, keepHl) {
+    if (!sel || !sel.ref) return;
     S.sel = sel; if (!keepHl) S.hl = new Set();
+    if (!$('#drawer').contains(document.activeElement)) S.lastFocus = document.activeElement;
     renderTimeline(); renderBurn();
     const d = $('#drawer'), body = $('#d-body');
     if (sel.kind === 'tool') {
       const c = sel.ref; const i = S.trace.toolCalls.indexOf(c);
       $('#d-title').textContent = c.name;
       const sub = c.subagentId ? S.trace.agents.find((a) => a.id === c.subagentId) : null;
-      body.innerHTML = `<div class="kv"><span class="k">status</span><span class="v">${c.status}${c.isError ? ' <span class="errpill">error</span>' : ''}</span><span class="k">category</span><span class="v">${c.category}</span><span class="k">started</span><span class="v">${c.start != null ? clock(c.start) + ' · +' + fmtTick(c.start - S.trace.meta.start) : '—'}</span><span class="k">duration</span><span class="v">${fmtDur(c.durationMs)}</span><span class="k">agent</span><span class="v">${esc(c.agent)}</span><span class="k">turn</span><span class="v">${c.turnIndex + 1}</span><span class="k">input size</span><span class="v">${fmtInt(c.inputChars)} chars</span><span class="k">result size</span><span class="v">${fmtInt(c.resultChars)} chars</span>${sub ? `<span class="k">spawned</span><span class="v">${esc(sub.agentType || 'subagent')} · ${sub.requestCount} req · ${sub.toolCount} tools · ${fmtTok(sub.usage.output)} out</span>` : ''}<span class="k">call #</span><span class="v">${i + 1} of ${S.trace.toolCalls.length}</span></div>
-        <h4>Input</h4><pre>${esc(S.share ? '«' + c.inputChars + ' chars»' : JSON.stringify(c.input, null, 2))}</pre>
-        <h4>Result</h4><pre>${esc(S.share ? '«' + c.resultChars + ' chars»' : (c.resultText || (c.resultStructured ? JSON.stringify(c.resultStructured, null, 2) : '(empty)')).slice(0, 30000))}${!S.share && c.resultText && c.resultText.length > 30000 ? '\n… ' + fmtInt(c.resultText.length - 30000) + ' more chars' : ''}</pre>`;
+      body.innerHTML = kv([['status', `${c.status}${c.isError ? ' <span class="errpill">error</span>' : ''}`], ['category', c.category], ['started', c.start != null ? clock(c.start) + ' · +' + fmtTick(c.start - S.trace.meta.start) : '—'], ['duration', fmtDur(c.durationMs)], ['agent', esc(c.agent)], ['turn', c.turnIndex + 1], ['input size', fmtInt(c.inputChars) + ' chars'], ['result size', fmtInt(c.resultChars) + ' chars'], ...(sub ? [['spawned', `${esc(sub.agentType || 'subagent')} · ${sub.requestCount} req · ${sub.toolCount} tools · ${fmtTok(sub.usage.output)} out`]] : []), ['call #', `${i + 1} of ${S.trace.toolCalls.length}`]]) +
+        `<h4>Input</h4><pre tabindex="0">${esc(S.share ? '«' + c.inputChars + ' chars»' : JSON.stringify(c.input, null, 2))}</pre>
+        <h4>Result</h4><pre tabindex="0">${esc(S.share ? '«' + c.resultChars + ' chars»' : (c.resultText || (c.resultStructured ? JSON.stringify(c.resultStructured, null, 2) : '(empty)')).slice(0, 30000))}${!S.share && c.resultText && c.resultText.length > 30000 ? '\n… ' + fmtInt(c.resultText.length - 30000) + ' more chars' : ''}</pre>`;
+      setHash('tool=' + c.id);
     } else {
       const r = sel.ref; const i = S.trace.requests.indexOf(r); const u = r.usage;
       $('#d-title').textContent = `Request #${i + 1}`;
-      body.innerHTML = `<div class="kv"><span class="k">model</span><span class="v">${esc(r.model || '—')}</span><span class="k">stop reason</span><span class="v">${esc(r.stopReason || '—')}</span><span class="k">response</span><span class="v">${fmtDur(r.responseMs)}${r.tokensPerSec ? ' · ' + r.tokensPerSec.toFixed(1) + ' tok/s' : ''}</span><span class="k">context</span><span class="v">${fmtInt(r.contextTokens)} tokens</span><span class="k">cache read</span><span class="v">${fmtInt(u.cacheRead)}</span><span class="k">cache write</span><span class="v">${fmtInt(u.cacheWrite)}${u.cacheWrite1h ? ' (1h: ' + fmtInt(u.cacheWrite1h) + ')' : ''}</span><span class="k">uncached input</span><span class="v">${fmtInt(u.input)}</span><span class="k">output</span><span class="v">${fmtInt(u.output)} (${fmtInt(u.thinking)} thinking)</span><span class="k">cost</span><span class="v">${fmtUSD(S.cost.byRequest[i])}</span><span class="k">agent</span><span class="v">${esc(r.agent)}</span><span class="k">blocks</span><span class="v">${esc(r.blocksSummary)}</span></div>
-        ${r.blocks.map((b) => b.type === 'text' ? `<h4>Text</h4><pre>${esc(S.share ? '«' + b.text.length + ' chars»' : b.text)}</pre>` : b.type === 'thinking' ? `<h4>Thinking</h4><pre>${esc(S.share || !b.text ? '«' + (b.text || '').length + ' chars»' : b.text.slice(0, 8000))}</pre>` : b.type === 'tool_use' ? `<h4>Tool call</h4><pre>${esc(b.name)}</pre>` : '').join('')}`;
+      body.innerHTML = kv([['model', esc(r.model || '—')], ['stop reason', esc(r.stopReason || '—')], ['response', `${fmtDur(r.responseMs)}${r.tokensPerSec ? ' · ' + r.tokensPerSec.toFixed(1) + ' tok/s' : ''}`], ['context', fmtInt(r.contextTokens) + ' tokens'], ['cache read', fmtInt(u.cacheRead)], ['cache write', `${fmtInt(u.cacheWrite)}${u.cacheWrite1h ? ' (1h: ' + fmtInt(u.cacheWrite1h) + ')' : ''}`], ['uncached input', fmtInt(u.input)], ['output', `${fmtInt(u.output)} (${fmtInt(u.thinking)} thinking)`], ['cost', fmtUSD(S.cost.byRequest[i])], ['agent', esc(r.agent)], ['blocks', esc(r.blocksSummary)]]) +
+        r.blocks.map((b) => b.type === 'text' ? `<h4>Text</h4><pre tabindex="0">${esc(S.share ? '«' + b.text.length + ' chars»' : b.text)}</pre>` : b.type === 'thinking' ? `<h4>Thinking</h4><pre tabindex="0">${esc(S.share || !b.text ? '«' + (b.text || '').length + ' chars»' : b.text.slice(0, 8000))}</pre>` : b.type === 'tool_use' ? `<h4>Tool call</h4><pre>${esc(b.name)}</pre>` : '').join('');
+      setHash('req=' + (i + 1));
     }
-    d.classList.add('open'); d.setAttribute('aria-hidden', 'false');
+    d.hidden = false; requestAnimationFrame(() => d.classList.add('open'));
+    $('#d-title').focus();
   }
-  function closeDrawer() { const d = $('#drawer'); if (d.classList.contains('open')) { d.classList.remove('open'); d.setAttribute('aria-hidden', 'true'); if (S.sel) { S.sel = null; renderTimeline(); renderBurn(); } } }
-  $('#d-close').onclick = closeDrawer;
+  function closeDrawer(silent) {
+    const d = $('#drawer'); if (d.hidden) return; d.classList.remove('open'); d.hidden = true;
+    const lf = S.lastFocus; const ref = lf && lf.dataset ? lf.dataset.ref : null;
+    if (S.sel) { S.sel = null; if (!silent) { renderTimeline(); renderBurn(); } }
+    if (silent) return;
+    let target = lf && lf.isConnected ? lf : (ref != null ? document.querySelector(`#tl [data-ref="${cssEsc(ref)}"], #burn [data-ref="${cssEsc(ref)}"]`) : null);
+    if (target) { if (target.closest('#tl-svg')) { $$('#tl-svg [tabindex="0"]').forEach((x) => x.setAttribute('tabindex', '-1')); target.setAttribute('tabindex', '0'); } try { target.focus({ preventScroll: true }); } catch (e) { } }
+  }
+  $('#d-close').onclick = () => closeDrawer();
 
-  // ------------------------------------------------------------ share mode
-  $('#share').onclick = () => {
-    if (!S.trace) { S.share = !S.share; $('#share').classList.toggle('on', S.share); return; }
-    if (!S.share) { S.share = true; renderAll(); return; }
-    // second click: export
-    const red = C.redact(S.records);
-    const blob = new Blob([C.toJsonl(red)], { type: 'application/x-ndjson' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (S.trace.meta.sessionId || 'trace').slice(0, 8) + '-redacted.jsonl'; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
-  $('#share').addEventListener('contextmenu', (e) => { e.preventDefault(); S.share = false; if (S.trace) renderAll(); else $('#share').classList.remove('on'); });
+  // ------------------------------------------------------------ permalinks
+  let hashLock = false;
+  function setHash(h) { hashLock = true; try { history.replaceState(null, '', '#' + h); } catch (e) { } setTimeout(() => { hashLock = false; }, 0); }
+  function applyHash() {
+    const h = location.hash.slice(1); if (!h || !S.trace) return;
+    const eq = h.indexOf('='); if (eq < 0) return; const k = h.slice(0, eq), v = decodeURIComponent(h.slice(eq + 1)); if (!v) return;
+    if (k === 'req') { const r = S.trace.requests[+v - 1]; if (r) select({ kind: 'req', ref: r }); }
+    else if (k === 'tool') { const c = S.trace.toolCalls.find((x) => x.id === v); if (c) select({ kind: 'tool', ref: c }); }
+    else if (k === 'find') { if (S.findings[+v - 1]) focusFinding(+v - 1); }
+    else if (k === 'turn') { const tn = S.trace.turns.filter((x) => x.agent === 'main' && x.promptKind === 'human')[+v - 1]; if (tn) { $('#fit').value = String(tn.index); $('#fit').onchange(); } }
+  }
+  window.addEventListener('hashchange', () => { if (!hashLock) applyHash(); });
+
+  // ------------------------------------------------------------ share / export
+  $('#share').onclick = () => { S.share = !S.share; $('#share').setAttribute('aria-pressed', String(S.share)); $('#export').disabled = !S.share; if (S.trace) renderAll(); say(S.share ? 'Share mode on: text is blanked in the view.' : 'Share mode off.'); };
+  $('#export').onclick = () => { if (!S.trace) return; download((S.trace.meta.sessionId || 'trace').slice(0, 8) + '-redacted.jsonl', C.toJsonl(C.redact(S.records)), 'application/x-ndjson'); say('Redacted transcript download started.'); };
 
   // ------------------------------------------------------------ rates dialog
   const rd = $('#rates-dlg');
+  const COLN = { in: 'Input', out: 'Output', w5m: 'Cache write 5m', w1h: 'Cache write 1h', read: 'Cache read' };
   function renderRates() {
     const cols = ['in', 'out', 'w5m', 'w1h', 'read'];
-    $('#rates-tbl').innerHTML = `<thead><tr><th>Model prefix</th>${cols.map((c) => `<th class="n">${{ in: 'Input', out: 'Output', w5m: 'Cache write 5m', w1h: 'Cache write 1h', read: 'Cache read' }[c]}</th>`).join('')}<th></th></tr></thead><tbody>${Object.entries(S.rates).map(([m, r]) => `<tr data-m="${esc(m)}"><td class="mono">${esc(m)}</td>${cols.map((c) => `<td class="n"><input type="number" step="0.01" min="0" data-c="${c}" value="${r[c]}"></td>`).join('')}<td><button class="x" data-del="${esc(m)}" title="Remove">×</button></td></tr>`).join('')}</tbody>`;
+    $('#rates-tbl').innerHTML = `<thead><tr><th scope="col">Model prefix</th>${cols.map((c) => `<th class="n" scope="col">${COLN[c]}</th>`).join('')}<th scope="col"><span class="sr-only">Remove</span></th></tr></thead><tbody>${Object.entries(S.rates).map(([m, r]) => `<tr data-m="${esc(m)}"><td class="mono">${esc(m)}</td>${cols.map((c) => `<td class="n"><input type="number" step="0.01" min="0" data-c="${c}" value="${r[c]}" aria-label="${esc(m)} ${COLN[c]} price"></td>`).join('')}<td><button class="x" data-del="${esc(m)}" aria-label="Remove ${esc(m)}">×</button></td></tr>`).join('')}</tbody>`;
     $$('#rates-tbl [data-del]').forEach((b) => b.onclick = () => { delete S.rates[b.dataset.del]; renderRates(); });
   }
   $('#rates').onclick = () => { renderRates(); rd.showModal(); };
   $('#rates-close').onclick = () => rd.close();
   $('#rate-add').onclick = () => { const m = $('#rate-new').value.trim(); if (!m) return; S.rates[m] = { in: 0, out: 0, w5m: 0, w1h: 0, read: 0 }; $('#rate-new').value = ''; renderRates(); };
   $('#rates-reset').onclick = () => { S.rates = JSON.parse(JSON.stringify(C.RATES)); renderRates(); };
-  $('#rates-save').onclick = () => { $$('#rates-tbl tbody tr').forEach((tr) => { const m = tr.dataset.m; if (!S.rates[m]) return; $$('input', tr).forEach((inp) => { S.rates[m][inp.dataset.c] = parseFloat(inp.value) || 0; }); }); saveRates(); rd.close(); recost(); };
+  $('#rates-save').onclick = () => { $$('#rates-tbl tbody tr').forEach((tr) => { const m = tr.dataset.m; if (!S.rates[m]) return; $$('input', tr).forEach((inp) => { S.rates[m][inp.dataset.c] = parseFloat(inp.value) || 0; }); }); store.set('rates', JSON.stringify(S.rates)); rd.close(); recost(); say('Rates applied.'); };
+
+  // ------------------------------------------------------------ folder picker (File System Access API)
+  const FSA = 'showDirectoryPicker' in window;
+  const idb = { open() { return new Promise((res, rej) => { const r = indexedDB.open('glassbox', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+    async get(k) { try { const db = await this.open(); return await new Promise((res) => { const t = db.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => res(null); }); } catch (e) { return null; } },
+    async set(k, v) { try { const db = await this.open(); await new Promise((res) => { const t = db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); t.onsuccess = res; t.onerror = res; }); } catch (e) { } } };
+  const decodeProject = (n) => n.replace(/^-/, '/').replace(/-/g, '/');
+  async function scanProjects(dir) {
+    const sessions = [];
+    for await (const [pname, ph] of dir.entries()) {
+      if (ph.kind !== 'directory') continue;
+      for await (const [fname, fh] of ph.entries()) {
+        if (fh.kind !== 'file' || !/\.jsonl$/.test(fname)) continue;
+        const f = await fh.getFile();
+        sessions.push({ project: decodeProject(pname), pdir: ph, id: fname.replace(/\.jsonl$/, ''), handle: fh, size: f.size, mtime: f.lastModified });
+      }
+    }
+    sessions.sort((a, b) => b.mtime - a.mtime);
+    return sessions;
+  }
+  async function sessionTitle(s) {
+    try { const f = await s.handle.getFile(); const head = await f.slice(0, 262144).text(); let first = null;
+      for (const line of head.split('\n')) { if (!line.trim()) continue; let r; try { r = JSON.parse(line); } catch (e) { continue; } if (r.type === 'summary' && r.summary) return r.summary; if (!first && r.type === 'user' && typeof (r.message && r.message.content) === 'string' && !/^\s*</.test(r.message.content)) first = r.message.content.replace(/\s+/g, ' ').slice(0, 90); }
+      return first || '(no prompt found)'; } catch (e) { return '(unreadable)'; }
+  }
+  async function loadSession(s) {
+    const files = [{ name: s.id + '.jsonl', text: await (await s.handle.getFile()).text() }];
+    try { const sdir = await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'); for await (const [n, h] of sdir.entries()) if (h.kind === 'file' && /\.(jsonl|json)$/.test(n)) files.push({ name: s.id + '/subagents/' + n, text: await (await h.getFile()).text() }); } catch (e) { }
+    $('#sessions-dlg').close(); load(files, false);
+  }
+  async function showSessions(dir) {
+    const dlg = $('#sessions-dlg'); $('#sessions-note').textContent = 'Scanning ' + dir.name + '…'; $('#sessions-tbl').innerHTML = ''; dlg.showModal();
+    const list = (await scanProjects(dir)).slice(0, 60);
+    $('#sessions-note').textContent = list.length ? `${list.length} most recent sessions in ${dir.name}. Subagent files are picked up automatically.` : 'No .jsonl sessions found. Pick the "projects" folder inside ~/.claude.';
+    $('#sessions-tbl').innerHTML = `<thead><tr><th scope="col">When</th><th scope="col">Project</th><th scope="col">Session</th><th class="n" scope="col">Size</th></tr></thead><tbody>${list.map((s, i) => `<tr class="row" data-i="${i}" tabindex="0" role="button" aria-label="Open session ${s.id.slice(0, 8)} from ${esc(s.project)}"><td class="mono">${new Date(s.mtime).toLocaleString()}</td><td class="mono">${esc(s.project)}</td><td id="st-${i}">…</td><td class="n">${Math.round(s.size / 1024)} KB</td></tr>`).join('')}</tbody>`;
+    $$('#sessions-tbl tr.row').forEach((tr) => { const go = () => loadSession(list[+tr.dataset.i]); tr.onclick = go; tr.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
+    for (let i = 0; i < list.length; i++) { const t = await sessionTitle(list[i]); const el = $('#st-' + i); if (el) el.textContent = t; }
+  }
+  if (FSA) {
+    $('#open-folder').hidden = false;
+    $('#open-folder').onclick = async () => { try { const dir = await window.showDirectoryPicker({ id: 'claude-projects', mode: 'read' }); await idb.set('projects', dir); $('#recent').hidden = false; await showSessions(dir); } catch (e) { if (e && e.name !== 'AbortError') say('Could not open the folder: ' + e.message); } };
+    idb.get('projects').then((h) => { if (h) $('#recent').hidden = false; });
+    $('#recent').onclick = async () => { const h = await idb.get('projects'); if (!h) return; try { let p = await h.queryPermission({ mode: 'read' }); if (p !== 'granted') p = await h.requestPermission({ mode: 'read' }); if (p === 'granted') await showSessions(h); else say('Permission to read the folder was not granted.'); } catch (e) { say('Could not reopen the folder: ' + e.message); } };
+  }
+  $('#sessions-close').onclick = () => $('#sessions-dlg').close();
 
   // ------------------------------------------------------------ help + inputs
   $('#help').onclick = () => $('#help-dlg').showModal(); $('#help-close').onclick = () => $('#help-dlg').close();
+  $('#banner-x').onclick = () => { $('#banner').hidden = true; };
   const drop = $('#drop');
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
   drop.addEventListener('dragleave', () => drop.classList.remove('over'));
@@ -684,8 +856,10 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } });
 
   const DEMO = /*__DEMO__*/null;
-  function loadDemo(e) { if (e) e.preventDefault(); if (!DEMO) { alert('No demo embedded in this build.'); return; } load(DEMO.map((f) => ({ name: f.name, text: f.text }))); }
-  $('#demo').onclick = loadDemo; $('#demo2').onclick = loadDemo;
-  if (location.hash === '#demo') loadDemo();
+  const EMBED = /*__EMBED__*/null;
+  function loadDemo(e) { if (e) e.preventDefault(); if (!DEMO) { say('No demo embedded in this build.'); return; } load(DEMO.map((f) => ({ name: f.name, text: f.text })), true); }
+  $('#demo').onclick = loadDemo;
+  if (EMBED && EMBED.length) load(EMBED.map((f) => ({ name: f.name, text: f.text })), false);
+  else if (DEMO) loadDemo();
 })();
 </script>

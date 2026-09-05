@@ -1,502 +1,145 @@
 {
   "axe": {
-    "light:landing": [
-      {
-        "id": "aria-hidden-focus",
-        "impact": "serious",
-        "help": "ARIA hidden element must not be focusable or contain focusable elements",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
-        "nodes": 1,
-        "sample": [
-          "#drawer"
-        ]
-      },
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 1,
-        "sample": [
-          "#demo2"
-        ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "#landing"
-        ]
-      }
-    ],
     "light:loaded": [
       {
-        "id": "aria-hidden-focus",
-        "impact": "serious",
-        "help": "ARIA hidden element must not be focusable or contain focusable elements",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
+        "id": "aria-allowed-role",
+        "impact": "minor",
+        "help": "ARIA role should be appropriate for the element",
+        "wcag": [],
         "nodes": 1,
         "sample": [
           "#drawer"
-        ]
-      },
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 42,
-        "sample": [
-          "span:nth-child(2) > .k",
-          "span:nth-child(3) > .k",
-          "span:nth-child(4) > .k"
-        ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 8,
-        "sample": [
-          "#session",
-          "#strip",
-          "section:nth-child(4) > .sec-h"
-        ]
-      },
-      {
-        "id": "scrollable-region-focusable",
-        "impact": "serious",
-        "help": "Scrollable region must have keyboard access",
-        "wcag": [
-          "wcag2a",
-          "wcag211",
-          "wcag213"
-        ],
-        "nodes": 1,
-        "sample": [
-          ".tbl-wrap.panel"
         ]
       }
     ],
     "light:drawer": [
       {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 42,
-        "sample": [
-          "span:nth-child(2) > .k",
-          "span:nth-child(3) > .k",
-          "span:nth-child(4) > .k"
-        ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 9,
-        "sample": [
-          "#session",
-          "#strip",
-          "section:nth-child(4) > .sec-h"
-        ]
-      },
-      {
-        "id": "scrollable-region-focusable",
-        "impact": "serious",
-        "help": "Scrollable region must have keyboard access",
-        "wcag": [
-          "wcag2a",
-          "wcag211",
-          "wcag213"
-        ],
-        "nodes": 2,
-        "sample": [
-          ".tbl-wrap.panel",
-          "pre:nth-child(3)"
-        ]
-      }
-    ],
-    "light:rates-dialog": [
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 7,
-        "sample": [
-          "#rates-tbl > thead > tr > th:nth-child(1)",
-          "#rates-tbl > thead > tr > th:nth-child(2)",
-          "#rates-tbl > thead > tr > th:nth-child(3)"
-        ]
-      },
-      {
-        "id": "empty-table-header",
+        "id": "aria-allowed-role",
         "impact": "minor",
-        "help": "Table header text should not be empty",
+        "help": "ARIA role should be appropriate for the element",
         "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "#rates-tbl > thead > tr > th:nth-child(7)"
-        ]
-      },
-      {
-        "id": "label",
-        "impact": "critical",
-        "help": "Form elements must have labels",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
-        "nodes": 75,
-        "sample": [
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(2) > input[value=\"10\"][data-c=\"in\"][type=\"number\"]",
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(3) > input[value=\"50\"][data-c=\"out\"][type=\"number\"]",
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(4) > input[value=\"12.5\"][data-c=\"w5m\"][type=\"number\"]"
-        ]
-      }
-    ],
-    "light:help-dialog": [],
-    "dark:landing": [
-      {
-        "id": "aria-hidden-focus",
-        "impact": "serious",
-        "help": "ARIA hidden element must not be focusable or contain focusable elements",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
         "nodes": 1,
         "sample": [
           "#drawer"
         ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "#landing"
-        ]
       }
     ],
+    "light:rates-dialog": [],
+    "light:help-dialog": [],
     "dark:loaded": [
       {
-        "id": "aria-hidden-focus",
-        "impact": "serious",
-        "help": "ARIA hidden element must not be focusable or contain focusable elements",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
+        "id": "aria-allowed-role",
+        "impact": "minor",
+        "help": "ARIA role should be appropriate for the element",
+        "wcag": [],
         "nodes": 1,
         "sample": [
           "#drawer"
-        ]
-      },
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 41,
-        "sample": [
-          "span:nth-child(2) > .k",
-          "span:nth-child(3) > .k",
-          "span:nth-child(4) > .k"
-        ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 8,
-        "sample": [
-          "#session",
-          "#strip",
-          "section:nth-child(4) > .sec-h"
-        ]
-      },
-      {
-        "id": "scrollable-region-focusable",
-        "impact": "serious",
-        "help": "Scrollable region must have keyboard access",
-        "wcag": [
-          "wcag2a",
-          "wcag211",
-          "wcag213"
-        ],
-        "nodes": 1,
-        "sample": [
-          ".tbl-wrap.panel"
         ]
       }
     ],
     "dark:drawer": [
       {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 41,
-        "sample": [
-          "span:nth-child(2) > .k",
-          "span:nth-child(3) > .k",
-          "span:nth-child(4) > .k"
-        ]
-      },
-      {
-        "id": "landmark-one-main",
-        "impact": "moderate",
-        "help": "Document should have one main landmark",
-        "wcag": [],
-        "nodes": 1,
-        "sample": [
-          "html"
-        ]
-      },
-      {
-        "id": "region",
-        "impact": "moderate",
-        "help": "All page content should be contained by landmarks",
-        "wcag": [],
-        "nodes": 9,
-        "sample": [
-          "#session",
-          "#strip",
-          "section:nth-child(4) > .sec-h"
-        ]
-      },
-      {
-        "id": "scrollable-region-focusable",
-        "impact": "serious",
-        "help": "Scrollable region must have keyboard access",
-        "wcag": [
-          "wcag2a",
-          "wcag211",
-          "wcag213"
-        ],
-        "nodes": 2,
-        "sample": [
-          ".tbl-wrap.panel",
-          "pre:nth-child(3)"
-        ]
-      }
-    ],
-    "dark:rates-dialog": [
-      {
-        "id": "color-contrast",
-        "impact": "serious",
-        "help": "Elements must meet minimum color contrast ratio thresholds",
-        "wcag": [
-          "wcag2aa",
-          "wcag143"
-        ],
-        "nodes": 6,
-        "sample": [
-          "#rates-tbl > thead > tr > th:nth-child(1)",
-          "#rates-tbl > thead > tr > th:nth-child(2)",
-          "#rates-tbl > thead > tr > th:nth-child(3)"
-        ]
-      },
-      {
-        "id": "empty-table-header",
+        "id": "aria-allowed-role",
         "impact": "minor",
-        "help": "Table header text should not be empty",
+        "help": "ARIA role should be appropriate for the element",
         "wcag": [],
         "nodes": 1,
         "sample": [
-          "#rates-tbl > thead > tr > th:nth-child(7)"
-        ]
-      },
-      {
-        "id": "label",
-        "impact": "critical",
-        "help": "Form elements must have labels",
-        "wcag": [
-          "wcag2a",
-          "wcag412"
-        ],
-        "nodes": 75,
-        "sample": [
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(2) > input[value=\"10\"][data-c=\"in\"][type=\"number\"]",
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(3) > input[value=\"50\"][data-c=\"out\"][type=\"number\"]",
-          "tr[data-m=\"claude-fable-5-1\"] > td:nth-child(4) > input[value=\"12.5\"][data-c=\"w5m\"][type=\"number\"]"
+          "#drawer"
         ]
       }
     ],
+    "dark:rates-dialog": [],
     "dark:help-dialog": []
   },
   "keyboard": {
     "tabOrder": [
-      "#share \"Share mode\"",
-      "#rates \"Rates\"",
-      "#help \"?\"",
-      "div.finding \"Context reached 224,487 t\"",
-      "div.finding \"1 tool call never got a r\"",
-      "div.finding \"5m 15s writing 31,013 tok\"",
-      "div.finding \"2m 34s writing 16,623 tok\"",
-      "div.finding \"1m 20s writing 8,681 toke\"",
-      "div.finding \"1m 11s writing 5,174 toke\"",
-      "div.finding \"Agent took 1m 05sSubagent\"",
-      "div.finding \"AskUserQuestion took 1m 0\"",
-      "div.finding \"31,084 tokens re-cached a\"",
-      "div.finding \"Turn 3 made 40 tool calls\"",
-      "div.panel \"ToolCallsErrorsTotal time\"",
-      "summary \"meta<system-reminder>«108\"",
-      "summary \"T1whats up alpha ai?0 too\"",
-      "summary \"T2I want you to go wild, \"",
-      "summary \"meta«15682 chars»13 tools\"",
-      "#d-close \"×\"",
-      null,
       "#drop \"Drop a session .jsonl (or\"",
+      "#file",
+      "#open-folder \"Open folder…\"",
+      "#recent \"Recent\"",
       "#demo \"Load demo\"",
       "#share \"Share mode\"",
       "#rates \"Rates\"",
+      "#theme \"◐\"",
+      "#density \"Aa\"",
       "#help \"?\"",
-      "div.finding \"Context reached 224,487 t\"",
-      "div.finding \"1 tool call never got a r\"",
-      "div.finding \"5m 15s writing 31,013 tok\"",
-      "div.finding \"2m 34s writing 16,623 tok\"",
-      "div.finding \"1m 20s writing 8,681 toke\"",
-      "div.finding \"1m 11s writing 5,174 toke\"",
-      "div.finding \"Agent took 1m 05sSubagent\"",
-      "div.finding \"AskUserQuestion took 1m 0\"",
-      "div.finding \"31,084 tokens re-cached a\"",
-      "div.finding \"Turn 3 made 40 tool calls\"",
-      "div.panel \"ToolCallsErrorsTotal time\"",
-      "summary \"meta<system-reminder>«108\"",
-      "summary \"T1whats up alpha ai?0 too\"",
-      "summary \"T2I want you to go wild, \"",
-      "summary \"meta«15682 chars»13 tools\"",
-      "#d-close \"×\"",
-      null,
-      "#drop \"Drop a session .jsonl (or\"",
-      "#demo \"Load demo\"",
-      "#share \"Share mode\"",
-      "#rates \"Rates\"",
-      "#help \"?\"",
-      "div.finding \"Context reached 224,487 t\"",
-      "div.finding \"1 tool call never got a r\"",
-      "div.finding \"5m 15s writing 31,013 tok\"",
-      "div.finding \"2m 34s writing 16,623 tok\"",
-      "div.finding \"1m 20s writing 8,681 toke\"",
-      "div.finding \"1m 11s writing 5,174 toke\"",
-      "div.finding \"Agent took 1m 05sSubagent\"",
-      "div.finding \"AskUserQuestion took 1m 0\"",
-      "div.finding \"31,084 tokens re-cached a\"",
-      "div.finding \"Turn 3 made 40 tool calls\"",
-      "div.panel \"ToolCallsErrorsTotal time\"",
-      "summary \"meta<system-reminder>«108\"",
-      "summary \"T1whats up alpha ai?0 too\""
+      "#banner-x \"×\"",
+      "#q",
+      "#fit \"Fit: whole sessionFit: tu\"",
+      "#z-out \"−\"",
+      "#z-in \"+\"",
+      "#z-reset \"⟲\"",
+      "#tl-svg \"+0:00+5:00+10:00+15:00+20\"",
+      "rect.[object",
+      "svg.[object \"056k112k168k224k$5.16$10.\"",
+      "g.[object",
+      "#copy-all \"Copy all\"",
+      "#export-md \"Export report\"",
+      "button.t \"Context reached 224,487 t\"",
+      "button.btn \"Copy\"",
+      "button.t \"1 tool call never got a r\"",
+      "button.btn \"Copy\"",
+      "button.t \"5m 15s writing 31,013 tok\"",
+      "button.btn \"Copy\"",
+      "button.t \"2m 34s writing 16,623 tok\"",
+      "button.btn \"Copy\"",
+      "button.t \"1m 20s writing 8,681 toke\"",
+      "button.btn \"Copy\"",
+      "button.t \"1m 11s writing 5,174 toke\"",
+      "button.btn \"Copy\"",
+      "button.t \"Agent took 1m 05s\"",
+      "button.btn \"Copy\"",
+      "button.t \"AskUserQuestion took 1m 0\"",
+      "button.btn \"Copy\"",
+      "button.t \"31,084 tokens re-cached a\"",
+      "button.btn \"Copy\"",
+      "button.t \"Turn 3 made 40 tool calls\"",
+      "button.btn \"Copy\"",
+      "div.panel \"Tool calls grouped by too\"",
+      "button \"Tool\"",
+      "button \"Calls\"",
+      "button \"Errors\"",
+      "button \"Total time ↓\"",
+      "button \"Avg\"",
+      "button \"Max\"",
+      "button \"Result chars\"",
+      "tr.row \"Agent (agent)1—1m 05s1m 0\"",
+      "tr.row \"AskUserQuestion (user)1—1\"",
+      "tr.row \"WebFetch (read)4—35 s8.7 \"",
+      "tr.row \"Bash (exec)23—19 s842 ms5\"",
+      "tr.row \"mcp__memory__memory_write\"",
+      "tr.row \"Write (write)8—232 ms29 m\"",
+      "tr.row \"TaskUpdate (other)9—81 ms\"",
+      "tr.row \"TaskCreate (other)6—72 ms\"",
+      "tr.row \"Skill (other)1—36 ms36 ms\"",
+      "tr.row \"Read (read)1—26 ms26 ms26\""
     ],
     "reachable": {
-      "timelineSpans": false,
-      "tableRows": false,
+      "timelineSpans": true,
+      "tableRows": true,
       "tableHeaders": false,
-      "turnSteps": false,
+      "turnSteps": true,
       "findings": true,
-      "burnBars": false,
-      "drawerFocusMoves": false,
-      "keyboardZoom": false,
-      "touchZoom": false,
+      "burnBars": true,
+      "drawerFocusMoves": true,
+      "keyboardZoom": true,
+      "touchZoom": true,
       "escapeClosesDrawer": true
     },
     "semantics": {
-      "timelineSvgHasTitleOrLabel": false,
-      "burnSvgHasLabel": false,
-      "statTilesHaveRoles": false,
-      "tableHeadersAriaSort": false,
-      "drawerRole": null,
-      "drawerLabelledBy": null,
-      "tooltipRole": null,
-      "shareToggleAriaPressed": null,
-      "shareExitMethod": "right-click (contextmenu) — undiscoverable",
-      "liveRegionForLoad": false,
-      "dropZoneLabel": "Drop a session .jsonl (or the whole session folder with its ",
+      "timelineSvgHasTitleOrLabel": true,
+      "burnSvgHasLabel": true,
+      "statTilesHaveRoles": true,
+      "tableHeadersAriaSort": true,
+      "drawerRole": "dialog",
+      "drawerLabelledBy": "d-title",
+      "tooltipRole": "tooltip",
+      "shareToggleAriaPressed": "false",
+      "shareExitMethod": "toggle button (aria-pressed)",
+      "liveRegionForLoad": true,
+      "dropZoneLabel": "Drop a session .jsonl file or folder here, or press Enter to choose files",
       "fileInputLabel": true,
       "headingsOutline": [
         "H1:Glassbox",
@@ -509,6 +152,7 @@
         "H4:Input",
         "H4:Result",
         "H3:Rate card · USD per million to",
+        "H3:Sessions",
         "H3:How to read Glassbox"
       ],
       "langAttr": "en",
@@ -521,33 +165,33 @@
     "phone": {
       "width": 390,
       "horizontalOverflow": true,
-      "timelineHeightPx": 194,
+      "timelineHeightPx": 238,
       "statColumns": 2
     },
     "tablet": {
       "width": 768,
       "horizontalOverflow": false,
-      "timelineHeightPx": 162,
+      "timelineHeightPx": 206,
       "statColumns": 4
     },
     "laptop": {
       "width": 1280,
       "horizontalOverflow": false,
-      "timelineHeightPx": 162,
+      "timelineHeightPx": 206,
       "statColumns": 8
     }
   },
   "perf": {
-    "parseMs": 258,
-    "diagnoseMs": 22,
+    "parseMs": 301,
+    "diagnoseMs": 11,
     "toolCalls": 5000,
     "requests": 5040,
     "findings": 45,
     "bytes": 16578505,
-    "uiLoadMs": 1428,
-    "svgNodes": 10186,
-    "zoomStepMs": 33,
-    "heapMB": 104
+    "uiLoadMs": 2370,
+    "svgNodes": 10189,
+    "zoomStepMs": 42,
+    "heapMB": 133
   },
   "contrast": [
     {
@@ -570,144 +214,200 @@
       "scheme": "light",
       "name": "muted on panel",
       "use": "labels, detail text",
-      "ratio": 5.83,
-      "fg": "#5B6675",
+      "ratio": 7,
+      "fg": "#4F5A69",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "faint on panel",
       "use": "tile labels, ids, ticks (small text)",
-      "ratio": 3.03,
-      "fg": "#8B95A3",
+      "ratio": 5.43,
+      "fg": "#5F6B7A",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "muted on ground",
       "use": "section headers",
-      "ratio": 5.29,
-      "fg": "#5B6675",
+      "ratio": 6.36,
+      "fg": "#4F5A69",
       "bg": "#F2F4F7"
     },
     {
       "scheme": "light",
       "name": "faint on ground",
       "use": "aux hints",
-      "ratio": 2.75,
-      "fg": "#8B95A3",
+      "ratio": 4.92,
+      "fg": "#5F6B7A",
       "bg": "#F2F4F7"
     },
     {
       "scheme": "light",
       "name": "accent on panel",
       "use": "links, cost line",
-      "ratio": 3.58,
-      "fg": "#E8590C",
+      "ratio": 5.49,
+      "fg": "#B8420A",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "accent-ink on accent",
       "use": "primary button text",
-      "ratio": 3.58,
+      "ratio": 5.49,
       "fg": "#FFFFFF",
-      "bg": "#E8590C"
+      "bg": "#B8420A"
     },
     {
       "scheme": "light",
       "name": "err on panel",
       "use": "error pill text",
-      "ratio": 4.64,
-      "fg": "#D63B2F",
+      "ratio": 5.42,
+      "fg": "#C4342A",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "warn on panel",
       "use": "warn count",
-      "ratio": 2.95,
-      "fg": "#C98A0B",
+      "ratio": 5.65,
+      "fg": "#8A5F00",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "info on panel",
       "use": "info count",
-      "ratio": 4.11,
-      "fg": "#3B7DD8",
+      "ratio": 5.87,
+      "fg": "#2A63B8",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
-      "name": "white on c-read",
+      "name": "label on c-read",
       "use": "span labels",
-      "ratio": 4.11,
-      "fg": "#fff",
+      "ratio": 4.57,
+      "fg": "#0E1217",
       "bg": "#3B7DD8"
     },
     {
       "scheme": "light",
-      "name": "white on c-write",
+      "name": "label on c-write",
       "use": "span labels",
-      "ratio": 2.3,
-      "fg": "#fff",
-      "bg": "#D9A21B"
+      "ratio": 5.31,
+      "fg": "#0E1217",
+      "bg": "#B27F00"
     },
     {
       "scheme": "light",
-      "name": "white on c-exec",
+      "name": "label on c-exec",
       "use": "span labels",
-      "ratio": 3.36,
-      "fg": "#fff",
+      "ratio": 5.59,
+      "fg": "#0E1217",
       "bg": "#1F9D8A"
     },
     {
       "scheme": "light",
-      "name": "white on c-agent",
+      "name": "label on c-agent",
       "use": "span labels",
       "ratio": 4.82,
-      "fg": "#fff",
+      "fg": "#FFFFFF",
       "bg": "#7C5CD6"
     },
     {
       "scheme": "light",
-      "name": "white on c-user",
+      "name": "label on c-user",
       "use": "span labels",
       "ratio": 4.82,
-      "fg": "#fff",
+      "fg": "#FFFFFF",
       "bg": "#C2417F"
     },
     {
       "scheme": "light",
-      "name": "white on c-mcp",
+      "name": "label on c-mcp",
       "use": "span labels",
-      "ratio": 4.36,
-      "fg": "#fff",
-      "bg": "#6B7A90"
+      "ratio": 5.5,
+      "fg": "#FFFFFF",
+      "bg": "#5B6A80"
+    },
+    {
+      "scheme": "light",
+      "name": "label on c-other",
+      "use": "span labels",
+      "ratio": 7.45,
+      "fg": "#0E1217",
+      "bg": "#9AA4B2"
     },
     {
       "scheme": "light",
       "name": "line on panel",
       "use": "borders / UI components (3:1 needed)",
-      "ratio": 1.3,
-      "fg": "#DDE2E9",
+      "ratio": 1.49,
+      "fg": "#CDD4DD",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
       "name": "c-model on panel",
       "use": "model spans vs background (3:1)",
-      "ratio": 1.8,
-      "fg": "#B9C2CE",
+      "ratio": 3.26,
+      "fg": "#8290A0",
       "bg": "#FFFFFF"
     },
     {
       "scheme": "light",
-      "name": "c-idle on panel",
-      "use": "idle hatch vs background",
-      "ratio": 1.24,
-      "fg": "#E3E7ED",
+      "name": "idle hatch stroke on panel",
+      "use": "idle hatch lines vs background",
+      "ratio": 5.43,
+      "fg": "#5F6B7A",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-read on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 4.11,
+      "fg": "#3B7DD8",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-write on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 3.54,
+      "fg": "#B27F00",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-exec on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 3.36,
+      "fg": "#1F9D8A",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-agent on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 4.82,
+      "fg": "#7C5CD6",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-user on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 4.82,
+      "fg": "#C2417F",
+      "bg": "#FFFFFF"
+    },
+    {
+      "scheme": "light",
+      "name": "c-mcp on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 5.5,
+      "fg": "#5B6A80",
       "bg": "#FFFFFF"
     },
     {
@@ -730,56 +430,56 @@
       "scheme": "dark",
       "name": "muted on panel",
       "use": "labels, detail text",
-      "ratio": 6.71,
-      "fg": "#98A3B3",
+      "ratio": 7.63,
+      "fg": "#A3AEBE",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
       "name": "faint on panel",
       "use": "tile labels, ids, ticks (small text)",
-      "ratio": 3.93,
-      "fg": "#6E7A8A",
+      "ratio": 5.84,
+      "fg": "#8A98AA",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
       "name": "muted on ground",
       "use": "section headers",
-      "ratio": 7.36,
-      "fg": "#98A3B3",
+      "ratio": 8.37,
+      "fg": "#A3AEBE",
       "bg": "#0E1217"
     },
     {
       "scheme": "dark",
       "name": "faint on ground",
       "use": "aux hints",
-      "ratio": 4.31,
-      "fg": "#6E7A8A",
+      "ratio": 6.4,
+      "fg": "#8A98AA",
       "bg": "#0E1217"
     },
     {
       "scheme": "dark",
       "name": "accent on panel",
       "use": "links, cost line",
-      "ratio": 6.6,
-      "fg": "#FF7A33",
+      "ratio": 7.34,
+      "fg": "#FF8A4D",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
       "name": "accent-ink on accent",
       "use": "primary button text",
-      "ratio": 6.6,
-      "fg": "#161C24",
-      "bg": "#FF7A33"
+      "ratio": 8.05,
+      "fg": "#0E1217",
+      "bg": "#FF8A4D"
     },
     {
       "scheme": "dark",
       "name": "err on panel",
       "use": "error pill text",
-      "ratio": 5.66,
-      "fg": "#F06A5F",
+      "ratio": 6.45,
+      "fg": "#F27C72",
       "bg": "#161C24"
     },
     {
@@ -794,80 +494,136 @@
       "scheme": "dark",
       "name": "info on panel",
       "use": "info count",
-      "ratio": 5.99,
-      "fg": "#5D9BEA",
+      "ratio": 7.77,
+      "fg": "#7FB2F0",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
-      "name": "white on c-read",
+      "name": "label on c-read",
       "use": "span labels",
-      "ratio": 2.86,
-      "fg": "#fff",
-      "bg": "#5D9BEA"
+      "ratio": 8.36,
+      "fg": "#0E1217",
+      "bg": "#7DB0F0"
     },
     {
       "scheme": "dark",
-      "name": "white on c-write",
+      "name": "label on c-write",
       "use": "span labels",
-      "ratio": 1.87,
-      "fg": "#fff",
-      "bg": "#E9B63A"
+      "ratio": 11.2,
+      "fg": "#0E1217",
+      "bg": "#F0C24A"
     },
     {
       "scheme": "dark",
-      "name": "white on c-exec",
+      "name": "label on c-exec",
       "use": "span labels",
-      "ratio": 2.46,
-      "fg": "#fff",
-      "bg": "#37B8A3"
+      "ratio": 9.91,
+      "fg": "#0E1217",
+      "bg": "#4FD0BB"
     },
     {
       "scheme": "dark",
-      "name": "white on c-agent",
+      "name": "label on c-agent",
       "use": "span labels",
-      "ratio": 3,
-      "fg": "#fff",
-      "bg": "#9E84EE"
+      "ratio": 8.04,
+      "fg": "#0E1217",
+      "bg": "#B39CF5"
     },
     {
       "scheme": "dark",
-      "name": "white on c-user",
+      "name": "label on c-user",
       "use": "span labels",
-      "ratio": 3.16,
-      "fg": "#fff",
-      "bg": "#DD6AA0"
+      "ratio": 7.98,
+      "fg": "#0E1217",
+      "bg": "#F088B8"
     },
     {
       "scheme": "dark",
-      "name": "white on c-mcp",
+      "name": "label on c-mcp",
       "use": "span labels",
-      "ratio": 2.93,
-      "fg": "#fff",
-      "bg": "#8A98AD"
+      "ratio": 8.75,
+      "fg": "#0E1217",
+      "bg": "#A5B2C6"
+    },
+    {
+      "scheme": "dark",
+      "name": "label on c-other",
+      "use": "span labels",
+      "ratio": 6.33,
+      "fg": "#0E1217",
+      "bg": "#8B97A6"
     },
     {
       "scheme": "dark",
       "name": "line on panel",
       "use": "borders / UI components (3:1 needed)",
-      "ratio": 1.34,
-      "fg": "#2A3340",
+      "ratio": 1.62,
+      "fg": "#33404F",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
       "name": "c-model on panel",
       "use": "model spans vs background (3:1)",
-      "ratio": 2.3,
-      "fg": "#4A5666",
+      "ratio": 4.55,
+      "fg": "#75859A",
       "bg": "#161C24"
     },
     {
       "scheme": "dark",
-      "name": "c-idle on panel",
-      "use": "idle hatch vs background",
-      "ratio": 1.12,
-      "fg": "#1E2630",
+      "name": "idle hatch stroke on panel",
+      "use": "idle hatch lines vs background",
+      "ratio": 5.84,
+      "fg": "#8A98AA",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-read on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 7.62,
+      "fg": "#7DB0F0",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-write on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 10.22,
+      "fg": "#F0C24A",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-exec on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 9.03,
+      "fg": "#4FD0BB",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-agent on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 7.34,
+      "fg": "#B39CF5",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-user on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 7.28,
+      "fg": "#F088B8",
+      "bg": "#161C24"
+    },
+    {
+      "scheme": "dark",
+      "name": "c-mcp on panel",
+      "use": "tool spans vs background (3:1)",
+      "ratio": 7.98,
+      "fg": "#A5B2C6",
       "bg": "#161C24"
     }
   ]
