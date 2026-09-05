@@ -8,7 +8,8 @@
     "build": "node scripts/build.mjs",
     "sanitize": "node scripts/sanitize.mjs",
     "e2e": "node test/browser.e2e.mjs",
-    "check": "npm test && npm run build && npm run e2e"
+    "check": "npm test && npm run build && npm run e2e",
+    "audit": "node test/audit.mjs"
   },
   "license": "MIT",
   "author": "Aldo Hushi"
