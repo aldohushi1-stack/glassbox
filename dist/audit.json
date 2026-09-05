@@ -164,7 +164,7 @@
   "responsive": {
     "phone": {
       "width": 390,
-      "horizontalOverflow": true,
+      "horizontalOverflow": false,
       "timelineHeightPx": 238,
       "statColumns": 2
     },
@@ -182,16 +182,16 @@
     }
   },
   "perf": {
-    "parseMs": 301,
-    "diagnoseMs": 11,
+    "parseMs": 303,
+    "diagnoseMs": 10,
     "toolCalls": 5000,
     "requests": 5040,
     "findings": 45,
     "bytes": 16578505,
-    "uiLoadMs": 2370,
+    "uiLoadMs": 2402,
     "svgNodes": 10189,
-    "zoomStepMs": 42,
-    "heapMB": 133
+    "zoomStepMs": 46,
+    "heapMB": 117
   },
   "contrast": [
     {

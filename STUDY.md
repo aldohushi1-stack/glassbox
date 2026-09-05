@@ -2,6 +2,8 @@
 
 *v0.1.0 · 5 September 2026 · method: axe-core 4.13 in Chromium across five UI states in light and dark, computed WCAG contrast for every colour-token pair the page uses, a scripted keyboard walk, semantic inspection of the DOM, 390 / 768 / 1280 px viewports with touch emulation, and a stress run on a 16.6 MB synthetic session (5,000 tool calls, 5,040 requests). Harness: `test/audit.mjs`; raw output: `dist/audit.json`.*
 
+> **Status (later on 5 Sep 2026):** Tier A, Tier B and the CLI from Tier C are implemented in v0.2. `npm run audit` now passes with zero serious/critical violations and every text pair at AA; the remaining Tier C items (Stop hook, compare, live tail, importers) are open.
+
 ## 1. Summary
 
 Glassbox works well for a sighted mouse user on a laptop, which is who it was built for in twenty minutes. For everyone else it has real gaps. Screen-reader and keyboard users cannot reach the two things the page is for — the timeline spans and the tool rows — and the drawer that shows detail is announced as hidden even when open. Contrast fails WCAG AA in the light theme for the accent, the faint labels and most span labels, and in the dark theme for the span labels. Touch users can't zoom or pan the timeline at all. None of this is structural; the fixes are token changes, attributes and a few dozen lines of focus handling, and the page is fast enough (a 16 MB transcript parses in 0.26 s and renders in 1.4 s) that adding them costs nothing.

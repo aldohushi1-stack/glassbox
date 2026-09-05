@@ -16,13 +16,31 @@ Agents can't see their own traces. Humans reviewing agent work can't either. Gla
 
 ## Use it
 
-1. Open `dist/glassbox.html` in a browser (double-click it — no server needed).
-2. Drop the session file, or drop the whole `<session-id>` folder to get subagent lanes.
-3. Read top to bottom: stats → timeline → context & cost → findings → tools → turns.
+**Fastest:** `npx glassbox` opens your newest Claude Code session in the browser.
 
-Finding the file: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
+```
+glassbox                              open the newest session
+glassbox list --last 10               list sessions (id, time, size, project, title)
+glassbox list --grep "npm test"       only sessions containing the text
+glassbox open 81c4                    open a session by id prefix (or a .jsonl path)
+glassbox open 81c4 --out trace.html   write a self-contained HTML you can send to someone
+glassbox check                        print findings; exit 1 on any error-level finding
+glassbox check --fail-on warn --json  stricter, machine-readable (CI, hooks, agents)
+```
 
-**Share mode** blanks every prompt, tool input, result and assistant text, then exports a structure-only `.jsonl` that keeps timestamps, usage and tool names — safe to post in an issue or a tweet.
+Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
+
+**In the browser:** open `dist/glassbox.html` (double-click, no server). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
+
+Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → context & cost → findings → tools → turns. Click anything for detail. Every selection is a permalink (`#req=17`, `#tool=…`, `#find=3`, `#turn=2`).
+
+**Keyboard:** `Tab` into the timeline, `←`/`→` previous/next call, `↑`/`↓` change lane, `Enter` opens detail, `Esc` closes it; `+` `−` `0` zoom, `Shift+←/→` pan, `/` search, `?` help. Touch: drag to pan, pinch to zoom.
+
+**Findings → Copy / Copy all / Export report** give you Markdown to paste into an issue or back into the agent ("here's what went wrong last time").
+
+**Share mode** blanks every prompt, tool input, result and assistant text in the view; **Export redacted** downloads a structure-only `.jsonl` that keeps timestamps, usage and tool names — safe to post publicly.
+
+**Accessibility:** WCAG 2.2 AA contrast in both themes, full keyboard operation with roving focus on the timeline and chart, screen-reader names on every span and row, live announcements on load and search, focus-managed detail panel, reduced-motion respected. `npm run audit` re-checks all of it with axe-core and fails the build on regressions.
 
 ## What it flags
 
@@ -33,6 +51,7 @@ Finding the file: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%
 | `orphan-tool` | a tool call with no result (abort, crash, or still running) |
 | `exploration-run` | ≥ 8 read-only calls in a row with no write or exec (warn at 15) |
 | `oversized-result` | a single tool result ≥ 20k chars (error at 60k) |
+| `image-heavy` | screenshots / image reads totalling ≥ 0.5 MB (warn at 2 MB) — they're tokens on every later request |
 | `context-bloat` | prompt size ≥ 120k tokens (error at 170k), with the request that first crossed it |
 | `cache-churn` | ≥ 20k tokens re-cached mid-session — the cached prefix was invalidated |
 | `low-cache-hit` | < 50% of input served from cache over ≥ 5 requests |
@@ -57,9 +76,10 @@ Claude Code transcripts (main + subagents + `meta.json`), Agent SDK / `claude -p
 ## Develop
 
 ```
-npm test          # unit tests (node:test) — parser, every diagnostic rule, cost, redaction, real fixtures
+npm test          # unit tests (node:test) — parser, every diagnostic rule, cost, redaction, CLI, real fixtures
 npm run build     # dist/glassbox.html (standalone) + dist/glassbox.artifact.html (fragment)
-npm run e2e       # Playwright: loads the demo in Chromium light+dark, checks tiles against the core, screenshots
+npm run e2e       # Playwright: demo in light+dark, tiles vs core, keyboard nav, drawer focus, search, clipboard, permalinks
+npm run audit     # axe-core + contrast + keyboard reachability + responsive + 16 MB stress run; fails on regressions
 ```
 
 Layout:
@@ -67,10 +87,12 @@ Layout:
 ```
 src/trace-core.js     pure engine: parseTrace · diagnose · estimateCost · redact  (no DOM, no deps)
 src/viewer.html       the UI; the build inlines trace-core and the demo
+src/cli.mjs           CLI library (session discovery, embed, check); bin/glassbox.mjs is the entry point
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
-test/                 unit + e2e tests, fixtures
+test/                 unit, e2e and audit harnesses, fixtures
 DESIGN.md             design doc — data model, rules, thresholds, UI, privacy
+STUDY.md              accessibility & ease-of-use study that drove v0.2
 ```
 
 Use the engine on its own:

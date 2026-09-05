@@ -339,3 +339,18 @@ test('records from several files interleave by timestamp even when some records 
   const tr = parseTrace([file('S.jsonl', main), file('agent-sub1.jsonl', sub)]);
   assert.deepEqual(tr.requests.map((r) => r.agent), ['main', 'sub1', 'sub1', 'main']);
 });
+
+test('image results are counted as images, not as oversized text; image-heavy fires on total bytes', () => {
+  const s = session(); s.user('look');
+  const png = 'A'.repeat(800000); // ~600 KB decoded
+  const [a] = s.assistant([{ tool: 'Read', input: { file_path: 'shot.png' } }]);
+  s.advance(300); s.records.push({ ...JSON.parse(JSON.stringify(s.records[s.records.length - 1])), type: 'user', uuid: 'img1', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: a, content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }] }] }, toolUseResult: { type: 'image', file: { base64: png } } });
+  const tr = parseTrace(file('a', s));
+  const c = tr.toolCalls[0];
+  assert.equal(c.resultImages, 1);
+  assert.equal(c.resultChars, 0);
+  assert.ok(c.imageBytes > 500000);
+  const fs2 = findings(tr);
+  assert.equal(ids(fs2).includes('oversized-result'), false);
+  assert.equal(fs2.find((x) => x.id === 'image-heavy').severity, 'info');
+});

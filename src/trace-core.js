@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -40,6 +40,8 @@
     explorationRunWarn: 15,
     oversizedResultWarn: 20000,
     oversizedResultError: 60000,
+    imageHeavyInfoBytes: 512 * 1024,
+    imageHeavyWarnBytes: 2 * 1048576,
     contextBloatWarn: 120000,
     contextBloatError: 170000,
     cacheChurnMin: 20000,
@@ -335,9 +337,12 @@
               call.status = tr.is_error ? 'error' : 'ok';
               call.isError = !!tr.is_error;
               call.resultText = text;
-              call.resultChars = text.length + (structured ? 0 : 0);
+              call.resultChars = text.length;
               call.resultStructured = structured != null ? structured : null;
-              if (structured && typeof structured === 'object' && !text) call.resultChars = JSON.stringify(structured).length;
+              const imgs = Array.isArray(tr.content) ? tr.content.filter((b) => b && b.type === 'image') : [];
+              call.resultImages = imgs.length;
+              call.imageBytes = imgs.reduce((s, b) => s + Math.round(((b.source && b.source.data) || '').length * 0.75), 0);
+              if (structured && typeof structured === 'object' && !text && !imgs.length) call.resultChars = JSON.stringify(structured).length;
               // stream-json puts is_error only in block; Claude Code also stores toolUseResult as an Error string
               if (!tr.is_error && typeof structured === 'string' && /^Error/i.test(structured)) { call.status = 'error'; call.isError = true; }
             } else {
@@ -396,7 +401,7 @@
               id: b.id || (key + ':' + blockIndex), agent: a.id, requestId: req.id, name: b.name || 'unknown', input: b.input || {},
               start: t, end: null, durationMs: null, status: 'orphan', isError: false, resultText: '', resultChars: 0,
               resultStructured: null, category: toolCategory(b.name), turnIndex: req.turnIndex, subagentId: null,
-              inputChars: JSON.stringify(b.input || {}).length,
+              inputChars: JSON.stringify(b.input || {}).length, resultImages: 0, imageBytes: 0,
             };
             toolCalls.push(call);
             toolCallById.set(call.id, call);
@@ -569,6 +574,16 @@
         evidence: { toolCallIds: [c.id], turnIndex: c.turnIndex }, metric: c.resultChars,
       });
     }
+
+    // image-heavy: screenshots and image reads stay in context as tokens for the rest of the session
+    const imgCalls = calls.filter((c) => c.imageBytes > 0);
+    const imgBytes = imgCalls.reduce((s, c) => s + c.imageBytes, 0);
+    if (imgBytes >= o.imageHeavyInfoBytes) push({
+      id: 'image-heavy', severity: imgBytes >= o.imageHeavyWarnBytes ? 'warn' : 'info',
+      title: `${imgCalls.reduce((s, c) => s + c.resultImages, 0)} image${imgCalls.length > 1 ? 's' : ''} (${(imgBytes / 1048576).toFixed(1)} MB) returned by tools`,
+      detail: 'Screenshots and image reads are billed as tokens on every later request. Crop, downscale, or read fewer of them: ' + summariseNames(imgCalls),
+      evidence: { toolCallIds: imgCalls.map((c) => c.id) }, metric: imgBytes,
+    });
 
     // context-bloat
     let crossed = null; let peak = null;
