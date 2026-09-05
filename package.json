@@ -1,6 +1,6 @@
 {
   "name": "glassbox-trace",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The flight recorder viewer for Claude Code / Agent SDK sessions. Drop a session .jsonl on a single HTML file; get a timeline, token/cost burn and auto-diagnostics.",
   "main": "src/trace-core.js",
   "scripts": {

@@ -101,11 +101,81 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   return { text: lines.join('\n'), json, markdown: md, failed: failing.length > 0 };
 }
 
+
+// ---------------------------------------------------------------------------
+// Claude Code hook: the agent reads its own flight recorder.
+// Claude Code sends JSON on stdin for Stop / SessionEnd:
+//   { session_id, transcript_path, cwd, hook_event_name, stop_hook_active }
+// We reply with JSON: a systemMessage (shown to the human) and, in feedback mode,
+// decision:"block" + reason so the findings go back into the model's context once.
+// ---------------------------------------------------------------------------
+export function sessionFromTranscriptPath(p) {
+  const file = path.resolve(p);
+  return { id: path.basename(file).replace(/\.jsonl$/, ''), file, project: null, projectDir: path.dirname(file), size: fs.existsSync(file) ? fs.statSync(file).size : 0, mtime: fs.existsSync(file) ? fs.statSync(file).mtimeMs : 0 };
+}
+
+export function hookResponse(input, opts = {}) {
+  const failOn = opts.failOn || 'warn';
+  const feedback = !!opts.feedback;
+  if (!input || !input.transcript_path || !fs.existsSync(input.transcript_path)) return { systemMessage: 'Glassbox: no transcript_path in hook input.', suppressOutput: true };
+  const s = sessionFromTranscriptPath(input.transcript_path);
+  const res = analyse(loadSessionFiles(s), opts.rates);
+  const rep = checkReport(res, { failOn });
+  const T = res.trace.totals;
+  const usd = (v) => v == null ? '' : ' · ' + (v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2));
+  const top = res.findings.filter((f) => SEV[f.severity] <= SEV[failOn]);
+  const head = `Glassbox · ${T.turns} turns · ${T.toolCalls} tool calls (${T.toolErrors} failed) · ctx peak ${core.fmtInt(Math.max(0, ...res.trace.requests.map((r) => r.contextTokens)))} tokens${usd(rep.json.summary.cost)}`;
+  const list = top.slice(0, 6).map((f) => `${f.severity.toUpperCase()} ${f.id}: ${f.title}`);
+  const out = { systemMessage: head + (list.length ? '\n' + list.join('\n') + (top.length > 6 ? `\n… ${top.length - 6} more (glassbox check)` : '') : '\nno findings at or above ' + failOn), suppressOutput: true };
+  // Feedback loop: only on Stop, only once (stop_hook_active guards against loops), only when something is worth saying.
+  if (feedback && input.hook_event_name === 'Stop' && !input.stop_hook_active && top.length) {
+    out.decision = 'block';
+    out.reason = `Glassbox read this session's flight recorder. ${head}\n\nFindings at or above "${failOn}":\n` + top.map((f) => `- ${f.severity.toUpperCase()} \`${f.id}\` — ${f.title}. ${f.detail}`).join('\n') + `\n\nIn one or two sentences, tell the user what you would do differently next session (no need to redo work), then stop.`;
+  }
+  return out;
+}
+
+export function readStdinJson() {
+  return new Promise((resolve) => { let buf = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { buf += d; }); process.stdin.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch (e) { resolve({}); } }); if (process.stdin.isTTY) resolve({}); });
+}
+
+const HOOK_MARK = 'glassbox hook';
+export function settingsPath(home) { return path.join(home || claudeHome(), 'settings.json'); }
+export function installHook(opts = {}) {
+  const file = settingsPath(opts.home);
+  let settings = {};
+  if (fs.existsSync(file)) { try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
+  settings.hooks = settings.hooks || {};
+  const cmd = `${opts.command || 'npx -y glassbox'} hook${opts.feedback ? ' --feedback' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  for (const ev of opts.events || ['Stop']) {
+    const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
+    const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(HOOK_MARK))));
+    kept.push({ hooks: [{ type: 'command', command: cmd, timeout: 60 }] });
+    settings.hooks[ev] = kept;
+  }
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+  return { file, command: cmd };
+}
+export function uninstallHook(opts = {}) {
+  const file = settingsPath(opts.home);
+  if (!fs.existsSync(file)) return { file, removed: 0 };
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  let removed = 0;
+  for (const ev of Object.keys(settings.hooks || {})) {
+    const list = settings.hooks[ev]; if (!Array.isArray(list)) continue;
+    const kept = list.filter((entry) => { const ours = entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(HOOK_MARK)); if (ours) removed++; return !ours; });
+    if (kept.length) settings.hooks[ev] = kept; else delete settings.hooks[ev];
+  }
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
+  return { file, removed };
+}
+
 export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -120,6 +190,11 @@ export const HELP = `glassbox — the flight recorder viewer for Claude Code ses
                                  build a self-contained HTML for a session (id prefix or .jsonl path)
   glassbox check [ID|FILE] [--fail-on error|warn|info] [--json] [--markdown]
                                  print findings; exit 1 when any finding is at/above --fail-on (default: error)
+  glassbox hook install [--feedback] [--fail-on warn]
+                                 add a Claude Code Stop hook so every session ends with a Glassbox summary;
+                                 --feedback also hands the findings back to the agent once, so it can learn from them
+  glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
+  glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
             --version    --help
@@ -156,6 +231,14 @@ export async function main(argv, io = {}) {
       fs.writeFileSync(outFile, html);
       out(`${outFile}  (${files.length} file${files.length > 1 ? 's' : ''}, ${Math.round(html.length / 1024)} KB)`);
       if (!args.flags['no-open'] && !io.noOpen) openInBrowser(outFile);
+      return 0;
+    }
+    if (cmd === 'hook') {
+      const sub = args._[1];
+      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, failOn: args.flags['fail-on'], command: args.flags.command, events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed Stop hook in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}. Restart Claude Code to pick it up.`); return 0; }
+      if (sub === 'uninstall') { const r = uninstallHook({ home }); out(`Removed ${r.removed} Glassbox hook${r.removed === 1 ? '' : 's'} from ${r.file}`); return 0; }
+      const input = io.stdin !== undefined ? io.stdin : await readStdinJson();
+      out(JSON.stringify(hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback })));
       return 0;
     }
     err('Unknown command: ' + cmd + '\n'); out(HELP); return 2;

@@ -30,6 +30,14 @@ glassbox check --fail-on warn --json  stricter, machine-readable (CI, hooks, age
 
 Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
+**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings are handed back to the agent once — it reads them and says, in a sentence, what it would do differently next time. It never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
+
+```
+glassbox hook install --feedback --fail-on warn   # summary + one-shot feedback to the agent
+glassbox hook install                             # summary only
+glassbox hook uninstall
+```
+
 **In the browser:** open `dist/glassbox.html` (double-click, no server). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
 
 Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → context & cost → findings → tools → turns. Click anything for detail. Every selection is a permalink (`#req=17`, `#tool=…`, `#find=3`, `#turn=2`).

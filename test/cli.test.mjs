@@ -110,3 +110,65 @@ test('main: list, check (exit codes), open --no-open writes a file, unknown comm
   assert.equal(await main(['check', 'zzzz'], io), 2);
   assert.match(errs[errs.length - 1], /No session or file/);
 });
+
+import { hookResponse, installHook, uninstallHook, settingsPath } from '../src/cli.mjs';
+
+test('hookResponse: summary as systemMessage; feedback only on Stop, only once, only with findings', () => {
+  const home = fakeHome();
+  const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
+  const clean = path.join(home, 'projects/-home-aldo-proj-one/bbbb2222-0000.jsonl');
+  const r1 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false, session_id: 'aaaa1111-0000' }, { feedback: true, failOn: 'warn' });
+  assert.equal(r1.decision, 'block');
+  assert.match(r1.reason, /retry-loop/);
+  assert.match(r1.systemMessage, /^Glassbox · 1 turns · 3 tool calls \(3 failed\)/);
+  assert.equal(r1.suppressOutput, true);
+  const r2 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: true }, { feedback: true });
+  assert.equal(r2.decision, undefined, 'never blocks twice (stop_hook_active)');
+  const r3 = hookResponse({ hook_event_name: 'SessionEnd', transcript_path: bad, stop_hook_active: false }, { feedback: true });
+  assert.equal(r3.decision, undefined, 'SessionEnd cannot block');
+  const r4 = hookResponse({ hook_event_name: 'Stop', transcript_path: clean, stop_hook_active: false }, { feedback: true });
+  assert.equal(r4.decision, undefined, 'nothing to say → no block');
+  assert.match(r4.systemMessage, /no findings/);
+  const r5 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false }, { feedback: false });
+  assert.equal(r5.decision, undefined, 'feedback off → summary only');
+  assert.match(hookResponse({}).systemMessage, /no transcript_path/);
+});
+
+test('hook install merges into settings.json, is idempotent, keeps other hooks, backs up, uninstalls', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-settings-'));
+  const file = settingsPath(home);
+  fs.writeFileSync(file, JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }], PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo pre' }] }] } }, null, 2));
+  const r = installHook({ home, feedback: true, failOn: 'warn' });
+  assert.equal(r.command, 'npx -y glassbox hook --feedback --fail-on warn');
+  let s = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(s.permissions, { allow: ['Bash(ls:*)'] }, 'unrelated settings untouched');
+  assert.equal(s.hooks.Stop.length, 2, 'existing Stop hook kept');
+  assert.equal(s.hooks.PreToolUse.length, 1);
+  assert.ok(fs.existsSync(file + '.glassbox-backup'));
+  installHook({ home, feedback: false });
+  s = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(s.hooks.Stop.length, 2, 'reinstall replaces, does not duplicate');
+  assert.equal(s.hooks.Stop[1].hooks[0].command, 'npx -y glassbox hook');
+  const u = uninstallHook({ home });
+  assert.equal(u.removed, 1);
+  s = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(s.hooks.Stop.length, 1);
+  assert.equal(s.hooks.Stop[0].hooks[0].command, 'echo bye');
+  // fresh home with no settings.json
+  const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-settings-'));
+  installHook({ home: home2 });
+  assert.equal(JSON.parse(fs.readFileSync(settingsPath(home2), 'utf8')).hooks.Stop.length, 1);
+  // corrupt settings → refuse, nothing changed
+  fs.writeFileSync(file, '{not json');
+  assert.throws(() => installHook({ home }), /not valid JSON/);
+  assert.equal(fs.readFileSync(file, 'utf8'), '{not json');
+});
+
+test('main: hook reads stdin JSON and prints JSON', async () => {
+  const home = fakeHome();
+  const lines = []; const io = { stdout: (s) => lines.push(s), stderr: () => {}, home, stdin: { hook_event_name: 'Stop', transcript_path: path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl'), stop_hook_active: false } };
+  assert.equal(await main(['hook', '--feedback', '--fail-on', 'warn'], io), 0);
+  const j = JSON.parse(lines[0]);
+  assert.equal(j.decision, 'block');
+  assert.match(j.reason, /flight recorder/);
+});
