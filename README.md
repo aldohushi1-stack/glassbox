@@ -1,5 +1,7 @@
 # Glassbox
 
+[![ci](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml/badge.svg)](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml)
+
 **The flight recorder viewer for Claude Code and Agent SDK sessions.**
 
 Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call, where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context bloat, stalls. Nothing leaves your browser.
@@ -115,4 +117,4 @@ console.log(trace.totals, diagnose(trace), estimateCost(trace).total);
 
 The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). Transcripts contain everything the agent saw; that's why share mode exists.
 
-MIT © Aldo Hushi
+Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
