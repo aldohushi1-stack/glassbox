@@ -99,6 +99,7 @@ for (const scheme of ['light', 'dark']) {
   assert.ok(w1 < w0, 'zoom in narrows the minimap viewport');
   await page.click('#z-reset'); await page.waitForTimeout(80);
   // screenshot: top of page
+  await page.evaluate(() => window.scrollTo(0, 0)); await page.waitForTimeout(150);
   await page.screenshot({ path: path.join(root, `dist/screenshot-${scheme}.png`), fullPage: false });
   await ctx.close();
 }

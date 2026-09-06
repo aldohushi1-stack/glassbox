@@ -139,17 +139,17 @@ export function readStdinJson() {
   return new Promise((resolve) => { let buf = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { buf += d; }); process.stdin.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch (e) { resolve({}); } }); if (process.stdin.isTTY) resolve({}); });
 }
 
-const HOOK_MARK = 'glassbox hook';
+const HOOK_RE = /\bglassbox(?:-trace)?\s+hook\b/;
 export function settingsPath(home) { return path.join(home || claudeHome(), 'settings.json'); }
 export function installHook(opts = {}) {
   const file = settingsPath(opts.home);
   let settings = {};
   if (fs.existsSync(file)) { try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
-  const cmd = `${opts.command || 'npx -y glassbox'} hook${opts.feedback ? ' --feedback' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
   for (const ev of opts.events || ['Stop']) {
     const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
-    const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(HOOK_MARK))));
+    const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
     kept.push({ hooks: [{ type: 'command', command: cmd, timeout: 60 }] });
     settings.hooks[ev] = kept;
   }
@@ -164,7 +164,7 @@ export function uninstallHook(opts = {}) {
   let removed = 0;
   for (const ev of Object.keys(settings.hooks || {})) {
     const list = settings.hooks[ev]; if (!Array.isArray(list)) continue;
-    const kept = list.filter((entry) => { const ours = entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && h.command.includes(HOOK_MARK)); if (ours) removed++; return !ours; });
+    const kept = list.filter((entry) => { const ours = entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command)); if (ours) removed++; return !ours; });
     if (kept.length) settings.hooks[ev] = kept; else delete settings.hooks[ev];
   }
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');

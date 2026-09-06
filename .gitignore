@@ -1,2 +1,6 @@
 node_modules/
 .DS_Store
+dist/audit-*.png
+dist/big-fixture.jsonl
+dist/audit.json
+*.glassbox-backup

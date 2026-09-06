@@ -139,7 +139,7 @@ test('hook install merges into settings.json, is idempotent, keeps other hooks, 
   const file = settingsPath(home);
   fs.writeFileSync(file, JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo bye' }] }], PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo pre' }] }] } }, null, 2));
   const r = installHook({ home, feedback: true, failOn: 'warn' });
-  assert.equal(r.command, 'npx -y glassbox hook --feedback --fail-on warn');
+  assert.equal(r.command, 'npx -y glassbox-trace hook --feedback --fail-on warn');
   let s = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual(s.permissions, { allow: ['Bash(ls:*)'] }, 'unrelated settings untouched');
   assert.equal(s.hooks.Stop.length, 2, 'existing Stop hook kept');
@@ -148,7 +148,7 @@ test('hook install merges into settings.json, is idempotent, keeps other hooks, 
   installHook({ home, feedback: false });
   s = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(s.hooks.Stop.length, 2, 'reinstall replaces, does not duplicate');
-  assert.equal(s.hooks.Stop[1].hooks[0].command, 'npx -y glassbox hook');
+  assert.equal(s.hooks.Stop[1].hooks[0].command, 'npx -y glassbox-trace hook');
   const u = uninstallHook({ home });
   assert.equal(u.removed, 1);
   s = JSON.parse(fs.readFileSync(file, 'utf8'));

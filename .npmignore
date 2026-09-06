@@ -1,0 +1,7 @@
+test/
+scripts/
+.github/
+dist/screenshot-*.png
+dist/glassbox.artifact.html
+DESIGN.md
+STUDY.md

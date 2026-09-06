@@ -16,10 +16,10 @@ Agents can't see their own traces. Humans reviewing agent work can't either. Gla
 
 ## Use it
 
-**Fastest:** `npx glassbox` opens your newest Claude Code session in the browser.
+**Fastest:** `npx glassbox-trace` opens your newest Claude Code session in the browser.
 
 ```
-glassbox                              open the newest session
+npx glassbox-trace                    open the newest session (or `npm i -g glassbox-trace`, then `glassbox …`)
 glassbox list --last 10               list sessions (id, time, size, project, title)
 glassbox list --grep "npm test"       only sessions containing the text
 glassbox open 81c4                    open a session by id prefix (or a .jsonl path)
@@ -28,7 +28,7 @@ glassbox check                        print findings; exit 1 on any error-level 
 glassbox check --fail-on warn --json  stricter, machine-readable (CI, hooks, agents)
 ```
 
-Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
+The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
 **Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings are handed back to the agent once — it reads them and says, in a sentence, what it would do differently next time. It never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
 

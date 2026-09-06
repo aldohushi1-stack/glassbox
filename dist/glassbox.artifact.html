@@ -1,5 +1,6 @@
 <title>Glassbox</title>
 <meta name="description" content="The flight recorder viewer for Claude Code and Agent SDK sessions. Drop a session .jsonl; get a timeline, token and cost burn, and auto-diagnostics. Nothing leaves your browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2712%27 fill=%27%23161C24%27/%3E%3Crect x=%2712%27 y=%2728%27 width=%2740%27 height=%278%27 rx=%272%27 fill=%27%23FF8A4D%27/%3E%3Crect x=%2712%27 y=%2716%27 width=%2724%27 height=%278%27 rx=%272%27 fill=%27%237DB0F0%27/%3E%3Crect x=%2724%27 y=%2740%27 width=%2728%27 height=%278%27 rx=%272%27 fill=%27%234FD0BB%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
@@ -221,6 +222,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 .sessions tr.row td{white-space:normal}
 .hidden{display:none!important}
 .redacted{color:var(--faint);font-style:italic}
+@media print{.mast,.tooltip,.drawer,.sec-h .tools,.tl-legend button,.banner{display:none!important}.panel{border-color:#999}body{background:#fff;color:#000}}
 @media (max-width:600px){.lane-sub{display:none}.brand .tag{display:none}.turn summary{grid-template-columns:auto 1fr}.turn .stats{grid-column:1 / -1;white-space:normal}.step{grid-template-columns:48px 12px 1fr}.step .r{grid-column:3;justify-self:start}}
 </style>
 
@@ -305,12 +307,17 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 
 <dialog id="sessions-dlg" aria-labelledby="sessions-h">
   <div class="dh"><h3 id="sessions-h">Sessions</h3><button class="x" id="sessions-close" aria-label="Close">×</button></div>
-  <div class="db"><p class="note" id="sessions-note" style="margin:0 0 10px"></p><div class="tbl-wrap" style="max-height:60vh"><table class="sessions" id="sessions-tbl"></table></div></div>
+  <div class="db" tabindex="0"><p class="note" id="sessions-note" style="margin:0 0 10px"></p><div class="tbl-wrap" style="max-height:60vh"><table class="sessions" id="sessions-tbl"></table></div></div>
+</dialog>
+
+<dialog id="copy-dlg" aria-labelledby="copy-h">
+  <div class="dh"><h3 id="copy-h">Copy</h3><button class="x" id="copy-close" aria-label="Close">×</button></div>
+  <div class="db"><p class="note" style="margin:0 0 8px">The clipboard isn't available here — the text is selected below, press <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>C</kbd>.</p><label class="sr-only" for="copy-text">Text to copy</label><textarea id="copy-text" style="width:100%;height:240px;font:12px/1.45 var(--mono);background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px"></textarea></div>
 </dialog>
 
 <dialog id="help-dlg" aria-labelledby="help-h">
   <div class="dh"><h3 id="help-h">How to read Glassbox</h3><button class="x" id="help-close" aria-label="Close">×</button></div>
-  <div class="db" style="font-size:13.5px;line-height:1.55">
+  <div class="db" style="font-size:13.5px;line-height:1.55" tabindex="0">
     <p><b>Timeline.</b> One lane per agent; the main session first, subagents below it. Grey blocks are model time (from the moment the model had its input to its last streamed block). Coloured blocks are tool calls, by category. Hatched grey between turns is human idle time. Red edge = the tool returned an error. The strip underneath is a minimap of the whole session; click it to jump.</p>
     <p><b>Context &amp; cost.</b> One bar per API request: the size of the prompt the model saw, split into cached reads (light), cache writes (mid) and uncached input (dark). The line is cumulative estimated cost.</p>
     <p><b>Findings.</b> Mechanical rules, no AI: identical calls repeated in a turn, tool error rates, results over 20k characters, context over 120k tokens, mid-session cache invalidation, responses that took over a minute and produced little, truncated outputs, hook and API errors, compaction events. Select one to highlight its evidence on the timeline; copy one or all as Markdown to paste into an issue or back into the agent.</p>
@@ -324,7 +331,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       <span><kbd>/</kbd></span><span>jump to search</span>
       <span><kbd>?</kbd></span><span>this help</span>
     </div>
-    <p class="note" style="margin-top:12px">Glassbox is a single HTML file with no network calls. Source, tests and the CLI (<code class="mono">npx glassbox</code>) are in the README.</p>
+    <p class="note" style="margin-top:12px">Glassbox is a single HTML file that makes no network requests apart from the optional font stylesheet. Source, tests and the CLI (<code class="mono">npx glassbox-trace</code>) are in the README.</p>
   </div>
 </dialog>
 
@@ -1151,6 +1158,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     $('#main').hidden = false; $('#banner').hidden = !isDemo;
     renderAll();
     const T = S.trace.totals;
+    if (!S.trace.requests.length && !S.trace.toolCalls.length) { const p = $('#problems'); p.hidden = false; p.textContent = 'No API requests or tool calls were found — this does not look like a Claude Code / Agent SDK transcript. Expected a .jsonl with "type":"assistant" and "type":"user" records.'; }
     say(`Loaded ${isDemo ? 'the demo session' : files.length + ' file' + (files.length > 1 ? 's' : '')}: ${T.turns} turns, ${T.toolCalls} tool calls, ${S.findings.length} findings${S.trace.problems.length ? ', ' + S.trace.problems.length + ' unreadable lines skipped' : ''}.`);
     if (!isDemo) window.scrollTo({ top: 0 });
     applyHash();
@@ -1415,7 +1423,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     const tools = '\n## Tools\n\n| tool | calls | errors | total time |\n|---|---|---|---|\n' + toolRows().map((r) => `| ${r.name} | ${r.calls} | ${r.errors} | ${fmtDur(r.time)} |`).join('\n') + '\n';
     return head + fs + tools + '\n_Generated by Glassbox._\n';
   }
-  async function copyText(text, what) { try { await navigator.clipboard.writeText(text); say(what + ' copied to clipboard.'); return true; } catch (e) { say('Clipboard blocked — select the text in the detail panel instead.'); return false; } }
+  async function copyText(text, what) { try { await navigator.clipboard.writeText(text); say(what + ' copied to clipboard.'); return true; } catch (e) { const dlg = $('#copy-dlg'); $('#copy-text').value = text; dlg.showModal(); $('#copy-text').select(); say('Clipboard blocked — text shown for manual copy.'); return false; } }
+  $('#copy-close').onclick = () => $('#copy-dlg').close();
   function renderFindings() {
     const box = $('#findings'); const fs = S.findings;
     $('#find-aux').textContent = fs.length ? `${fs.length} · mechanical rules, no AI` : '';
