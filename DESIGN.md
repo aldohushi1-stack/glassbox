@@ -22,7 +22,7 @@ Goals
 - Share/redact mode: strip all content, keep structure, export the redacted `.jsonl`.
 
 Non-goals (v1)
-- Live tailing of a running session.
+- Live tailing of a running session. *(Shipped in v0.4 — see §11.)*
 - Editing or replaying transcripts.
 - Anything server-side.
 
@@ -129,6 +129,8 @@ Single page, dark/light aware, no external assets.
 ```
 src/trace-core.js     pure, no DOM. parseTrace(files) → Trace; diagnose(trace, opts) → findings[]; estimateCost(trace, rates); redact(records)
 src/viewer.html       UI; imports nothing — build inlines trace-core.js at the marker
+src/cli.mjs           CLI library: discovery, embed, check, compare, hook
+src/tail.mjs          live tail: byte-offset tailer + loopback SSE server (v0.4)
 scripts/build.mjs     produces dist/glassbox.html (+ embeds fixtures/demo.jsonl)
 scripts/sanitize.mjs  turns a real transcript into a shareable fixture
 test/*.test.mjs       node:test; fixtures under test/fixtures
@@ -148,3 +150,48 @@ test/*.test.mjs       node:test; fixtures under test/fixtures
 ## 10. Privacy
 
 The file is parsed in the browser and never sent anywhere; there are no network calls in the page at all. Share mode exists precisely because transcripts contain everything the agent saw.
+
+## 11. v0.4.0 — compare, live tail, agent-ready findings
+
+Positioning that drives this release: *claude-code-log shows what happened. Glassbox tells you what went wrong.* Everything below either sharpens the "what went wrong" side or removes a reason to pick the other tool.
+
+### 11.1 Agent-ready findings (`glassbox check --format md`)
+
+The Markdown report exists to be pasted back into an agent, so it has to carry what a model needs to act, not just what a human needs to read:
+
+- **Evidence, not just titles.** Each finding lists the concrete tool calls it is about (tool name, one-line input summary, turn number) and the request numbers, so the agent can recognise its own moves.
+- **Advice per rule.** A fixed `ADVICE` table in `trace-core.js` maps every rule id to one sentence of what to do differently. Mechanical, not generated — same as the rules.
+- **Closing instruction.** The report ends with a short block telling the reader what to do with it (acknowledge, say what changes next session, don't redo work). The Stop-hook `--feedback` reason uses the same generator so the hook and the CLI never drift.
+- One implementation: `reportMarkdown(trace, findings, cost, opts)` lives in the core and is used by the CLI, the hook and the viewer's *Export report*.
+
+`--format text|json|md` replaces `--json` / `--markdown` (both kept as aliases).
+
+### 11.2 Session compare
+
+`compare(a, b)` in the core takes two analysed sessions (`{trace, findings, cost}`) and returns:
+
+```
+{ metrics: [{ key, label, a, b, delta, ratio, better: 'a'|'b'|null, fmt }],   // wall, active, turns, requests, tool calls, errors, context served, cache hit, output, thinking share, peak context, cost
+  tools:   [{ name, a: {calls, errors, time}, b: {...}, deltaCalls }],         // union of tool names, sorted by |deltaCalls|
+  findings:{ onlyA: [...], onlyB: [...], both: [{ id, a, b }] },               // matched by rule id
+  verdict: { cheaper: 'a'|'b'|null, faster: 'a'|'b'|null, cleaner: 'a'|'b'|null } }
+```
+
+`better` is by rule: lower is better for time, tokens, cost, errors, findings; higher for cache hit ratio; null when equal or meaningless (turns).
+
+- **CLI:** `glassbox compare A B [--format text|json|md] [--out x.html]` — A and B are id prefixes or paths. `--out` writes one HTML with both sessions embedded, opening in compare mode.
+- **Viewer:** *Compare…* in the masthead loads a second session (drop, file picker, or folder list). A compare section appears above the timeline: metric rows with a two-sided delta bar, tool diff table, findings diff. The primary session stays the one on the timeline; *Swap* exchanges them; *Close* returns to single mode. Permalink `#compare`.
+- Embedding: `/*__EMBED__*/` accepts either an array of files (single) or `{ files, compare }`.
+
+### 11.3 Live tail (`glassbox watch`)
+
+`glassbox watch [ID|FILE]` (alias: `glassbox open --watch`) serves the viewer from `127.0.0.1:<random port>` and pushes transcript changes to it over Server-Sent Events. Nothing leaves the machine; the server binds loopback only and dies with the CLI.
+
+- **Tailer** (`src/tail.mjs`): tracks byte offsets per file; on change reads only the new bytes; holds back a trailing partial line until its newline arrives (Claude Code writes lines atomically in practice, but the tailer must not depend on it); a size *decrease* means the file was rewritten → resend whole. Subagent files appearing under `<id>/subagents/` are picked up on the next tick. `fs.watch` where it works, with a 1 s poll fallback (`fs.watchFile`) because `fs.watch` misses events on some filesystems and on network drives.
+- **Wire:** `GET /` → viewer HTML with `/*__LIVE__*/{ url: '/events' }`; `GET /events` → SSE stream; first event `snapshot` carries all files, later events `append { name, text }` or `replace { name, text }`; `ping` every 15 s keeps proxies quiet.
+- **Viewer:** with `LIVE` set, an `EventSource` is opened; a `LIVE` pill in the masthead shows connection state and last update; *Follow* (on by default) keeps the timeline's right edge pinned to now and re-fits when the session grows; turning it off (or zooming/panning) freezes the view and new spans arrive without moving it. Re-parse is whole-file (parse of a 1 MB transcript is well under 100 ms), and the selection, tool filter, search and drawer survive a re-render.
+- **Tests:** tailer unit tests (append, partial line, truncate, new subagent file); server test starts it on port 0, opens `/events` with `http.get`, appends to the file, asserts the `append` event arrives with exactly the new line.
+
+### 11.4 What is deliberately not in 0.4.0
+
+Other-agent importers (Codex, Antigravity). Their transcript formats are moving; the parser's loose-record path already accepts `{role, content}` arrays, and a real importer should be written against a fixture, not a guess. Tracked as the next open item.

@@ -85,3 +85,7 @@ Tier A first, because the tool's name is Glassbox and it currently isn't transpa
 ## Appendix — numbers
 
 Contrast table, tab order, semantics flags, responsive metrics and performance figures are in `dist/audit.json`. Reproduce with `npm run build && node test/audit.mjs`.
+
+---
+
+*Status, v0.4.0 (2026-09-11): Tier C is complete — CLI (0.2), Stop-hook self-review (0.3), session compare and live tail (0.4). Remaining open lane: other-agent importers (Codex, Antigravity), waiting on stable transcript formats to write fixtures against.*

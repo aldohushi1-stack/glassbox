@@ -1,7 +1,7 @@
 {
   "name": "glassbox-trace",
-  "version": "0.3.0",
-  "description": "The flight recorder viewer for Claude Code / Agent SDK sessions: drop a session .jsonl on one HTML file and get a timeline, token and cost burn, and auto-diagnostics. Includes a CLI and a Claude Code Stop hook.",
+  "version": "0.4.1",
+  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. Timeline, token and cost burn, auto-diagnostics with evidence and advice, session compare, live tail, a CLI and a Claude Code Stop hook that feeds the findings back to the agent.",
   "main": "src/trace-core.js",
   "scripts": {
     "test": "node --test test/*.test.mjs",
@@ -29,6 +29,9 @@
   },
   "keywords": [
     "claude-code",
+    "claude-code-log",
+    "compare",
+    "live-tail",
     "claude",
     "agent",
     "agent-sdk",

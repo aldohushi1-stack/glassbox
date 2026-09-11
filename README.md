@@ -2,9 +2,9 @@
 
 [![ci](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml/badge.svg)](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml)
 
-**The flight recorder viewer for Claude Code and Agent SDK sessions.**
+**Other tools show you what happened in a Claude Code session. Glassbox tells you what went wrong.**
 
-Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call, where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context bloat, stalls. Nothing leaves your browser.
+Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call, where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context bloat, stalls — each with the evidence and one line on what to do differently. Compare two sessions side by side. Watch one live while Claude Code writes it. Hand the findings back to the agent. Nothing leaves your machine.
 
 ![Glassbox showing the trace of the session that built it](dist/screenshot-dark.png)
 
@@ -27,12 +27,24 @@ glassbox list --grep "npm test"       only sessions containing the text
 glassbox open 81c4                    open a session by id prefix (or a .jsonl path)
 glassbox open 81c4 --out trace.html   write a self-contained HTML you can send to someone
 glassbox check                        print findings; exit 1 on any error-level finding
-glassbox check --fail-on warn --json  stricter, machine-readable (CI, hooks, agents)
+glassbox check --format md            the findings as Markdown written for the agent: evidence + what to do next time
+glassbox check --fail-on warn --format json   stricter, machine-readable (CI, hooks, agents); add --redact before sharing
+glassbox compare 81c4 9f0a            same task, two sessions: time, tokens, cost, tools and findings side by side
+glassbox compare 81c4 9f0a --out cmp.html     …as one HTML with both sessions in it
+glassbox watch                        live tail: the viewer follows the newest session as Claude Code writes it
 ```
 
 The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
-**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings are handed back to the agent once — it reads them and says, in a sentence, what it would do differently next time. It never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
+**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema`; `--redact` blanks prompt text, tool inputs and quoted output. A GitHub Actions example for Agent SDK runs is in [docs/CI.md](docs/CI.md).
+
+**Feed it back to Claude.** `glassbox check --format md` prints the findings the way an agent needs them: each one with the concrete tool calls and request numbers it is about, and a fixed "next time" line per rule. Paste it into the next session ("here's what went wrong last time"), pipe it into a file, or let the Stop hook below deliver it automatically.
+
+**Compare two sessions.** `glassbox compare A B` (or **Compare…** in the viewer) lines up the same task done twice: wall and active time, requests, tool calls and errors, context served, peak prompt, cache hit, output, cost, findings — each with the change and who did better — plus tool use side by side and the findings that appear in only one of them. Handy for "did the new CLAUDE.md help?", "Sonnet vs Opus on this job", or "before and after I fixed that hook".
+
+**Watch a session live.** `glassbox watch` serves the viewer from `127.0.0.1` and streams the transcript to it as it grows — new tool calls land on the timeline within a second, tiles and findings update, **Follow** keeps the right edge on now (pan or zoom and it lets go). Loopback only; nothing leaves the machine.
+
+**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings — with their evidence and the "next time" advice — are handed back to the agent once; it reads them and says, in a sentence, what it would do differently. It never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
 
 ```
 glassbox hook install --feedback --fail-on warn   # summary + one-shot feedback to the agent
@@ -40,13 +52,13 @@ glassbox hook install                             # summary only
 glassbox hook uninstall
 ```
 
-**In the browser:** open `dist/glassbox.html` (double-click, no server). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
+**In the browser:** the viewer is one HTML file — open `dist/glassbox.html` (double-click, no server; the CLI, compare-from-terminal and live tail need Node 18+). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
 
 Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → context & cost → findings → tools → turns. Click anything for detail. Every selection is a permalink (`#req=17`, `#tool=…`, `#find=3`, `#turn=2`).
 
 **Keyboard:** `Tab` into the timeline, `←`/`→` previous/next call, `↑`/`↓` change lane, `Enter` opens detail, `Esc` closes it; `+` `−` `0` zoom, `Shift+←/→` pan, `/` search, `?` help. Touch: drag to pan, pinch to zoom.
 
-**Findings → Copy / Copy all / Export report** give you Markdown to paste into an issue or back into the agent ("here's what went wrong last time").
+**Findings → Copy / Copy all / Export report** give you Markdown to paste into an issue or back into the agent — the exported report is the same agent-ready format as `check --format md`. **Compare…** loads a second session next to this one; **Swap** puts it on the timeline.
 
 **Share mode** blanks every prompt, tool input, result and assistant text in the view; **Export redacted** downloads a structure-only `.jsonl` that keeps timestamps, usage and tool names — safe to post publicly.
 
@@ -70,7 +82,7 @@ Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → c
 | `slow-tool` | a tool call ≥ 60 s (warn at 5 min) |
 | `max-tokens`, `api-error`, `hook-error`, `compaction`, `thinking-heavy`, `subagent-share`, `long-turn` | what they say |
 
-All mechanical, no AI. Thresholds are in `TraceCore.DEFAULTS` and can be overridden when calling `diagnose(trace, opts)`.
+All mechanical, no AI. Thresholds are in `TraceCore.DEFAULTS` and can be overridden when calling `diagnose(trace, opts)`. Every rule has a one-line "next time" in `TraceCore.ADVICE`, which is what the Markdown report and the Stop hook hand back to the agent.
 
 ## Token and cost accounting
 
@@ -86,9 +98,9 @@ Claude Code transcripts (main + subagents + `meta.json`), Agent SDK / `claude -p
 ## Develop
 
 ```
-npm test          # unit tests (node:test) — parser, every diagnostic rule, cost, redaction, CLI, real fixtures
+npm test          # unit tests (node:test) — parser, every diagnostic rule, cost, redaction, report, compare, tailer + SSE server, CLI, real fixtures
 npm run build     # dist/glassbox.html (standalone) + dist/glassbox.artifact.html (fragment)
-npm run e2e       # Playwright: demo in light+dark, tiles vs core, keyboard nav, drawer focus, search, clipboard, permalinks
+npm run e2e       # Playwright: demo in light+dark, tiles vs core, keyboard nav, drawer focus, search, clipboard, permalinks, compare, live tail
 npm run audit     # axe-core + contrast + keyboard reachability + responsive + 16 MB stress run; fails on regressions
 ```
 
@@ -97,24 +109,31 @@ Layout:
 ```
 src/trace-core.js     pure engine: parseTrace · diagnose · estimateCost · redact  (no DOM, no deps)
 src/viewer.html       the UI; the build inlines trace-core and the demo
-src/cli.mjs           CLI library (session discovery, embed, check); bin/glassbox.mjs is the entry point
+src/cli.mjs           CLI library (session discovery, embed, check, compare, hook); bin/glassbox.mjs is the entry point
+src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
 test/                 unit, e2e and audit harnesses, fixtures
 DESIGN.md             design doc — data model, rules, thresholds, UI, privacy
 STUDY.md              accessibility & ease-of-use study that drove v0.2
+STUDY-IMPLEMENTATION.md  adoption study (solo dev, Cowork/SDK, CI, feedback loop) that drove v0.4.1
+docs/                 CI recipe, feedback-loop study protocol, Community Extensions PR, post copy
+scripts/feedback-study.mjs  measures with/without --feedback session groups
 ```
 
 Use the engine on its own:
 
 ```js
-const { parseTrace, diagnose, estimateCost } = require('./src/trace-core.js');
+const { parseTrace, diagnose, estimateCost, reportMarkdown, compare } = require('./src/trace-core.js');
 const trace = parseTrace([{ name: 'session.jsonl', text: fs.readFileSync(p, 'utf8') }]);
-console.log(trace.totals, diagnose(trace), estimateCost(trace).total);
+const findings = diagnose(trace), cost = estimateCost(trace);
+console.log(trace.totals, findings, cost.total);
+console.log(reportMarkdown(trace, findings, cost));          // the agent-ready report
+console.log(compare({ trace, findings, cost }, other));      // other = the same three for a second session
 ```
 
 ## Privacy
 
-The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). Transcripts contain everything the agent saw; that's why share mode exists.
+The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). `glassbox watch` binds to `127.0.0.1` only and stops with the command. Transcripts contain everything the agent saw; that's why share mode exists.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
