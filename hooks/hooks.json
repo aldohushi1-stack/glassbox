@@ -1,0 +1,30 @@
+{
+  "description": "Glassbox: a one-screen session summary after every turn. Plugin options: `feedback` hands new findings back to the agent once each; `context` keeps them in <project>/.glassbox/last-session.md and gives them to the next session in that project.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs"],
+            "timeout": 60,
+            "statusMessage": "Glassbox: reading the flight recorder"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs"],
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
