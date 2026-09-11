@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.3.0';
+  const VERSION = '0.4.1';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -66,18 +66,25 @@
   const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
   const EXEC_TOOLS = new Set(['Bash', 'BashOutput', 'KillShell']);
   const AGENT_TOOLS = new Set(['Agent', 'Task', 'Workflow']);
-  const USER_TOOLS = new Set(['AskUserQuestion']);
+  const USER_TOOLS = new Set(['AskUserQuestion', 'SendUserMessage', 'SendUserFile', 'ExitPlanMode', 'EnterPlanMode']);
+  // Cowork: Artifact publishes a page (a write), Skill loads instructions (a read); Task* are bookkeeping (other).
+  const COWORK_READ = new Set(['Skill', 'ListSkills', 'SearchSkills', 'TaskList', 'TaskGet']);
+  const COWORK_WRITE = new Set(['Artifact']);
+  // MCP leaf names are verb_noun or noun_verb ("memory_read", "device_list_dir", "send_message"): match the verb as a word.
+  const MCP_READ = /(^|_)(get|list|search|read|find|fetch|query|describe|show|stage|screenshot|context|status|info|check)(_|$)/i;
+  const MCP_WRITE = /(^|_)(write|set|put|create|update|delete|remove|commit|send|reply|forward|upload|str_replace|append|label|move|rename|save)(_|$)/i;
 
   function toolCategory(name) {
     if (!name) return 'other';
-    if (READ_TOOLS.has(name)) return 'read';
-    if (WRITE_TOOLS.has(name)) return 'write';
+    if (READ_TOOLS.has(name) || COWORK_READ.has(name)) return 'read';
+    if (WRITE_TOOLS.has(name) || COWORK_WRITE.has(name)) return 'write';
     if (EXEC_TOOLS.has(name) || /device_bash$/.test(name)) return 'exec';
     if (AGENT_TOOLS.has(name)) return 'agent';
     if (USER_TOOLS.has(name)) return 'user';
     if (name.startsWith('mcp__')) {
       const leaf = name.split('__').pop() || '';
-      if (/^(get|list|search|read|find|fetch|query|describe|show)/i.test(leaf)) return 'read';
+      if (MCP_READ.test(leaf)) return 'read';
+      if (MCP_WRITE.test(leaf)) return 'write';
       return 'mcp';
     }
     return 'other';
@@ -233,7 +240,7 @@
     const meta = {
       sessionId: null, version: null, cwd: null, gitBranch: null, entrypoint: null, title: null,
       models: [], start: null, end: null, hasTimestamps, files: fileMeta, format: 'claude-code',
-      reportedCost: null, reportedUsage: null, recordCounts: {},
+      reportedCost: null, reportedUsage: null, reportedTurns: null, reportedDurationMs: null, recordCounts: {},
     };
 
     const agents = new Map(); // id -> agent
@@ -300,6 +307,8 @@
       if (type === 'result') {
         meta.format = 'stream-json';
         if (typeof rec.total_cost_usd === 'number') meta.reportedCost = rec.total_cost_usd;
+        if (typeof rec.num_turns === 'number') meta.reportedTurns = rec.num_turns;
+        if (typeof rec.duration_ms === 'number') meta.reportedDurationMs = rec.duration_ms;
         if (rec.usage) meta.reportedUsage = usageFrom(rec.usage);
         if (rec.is_error) events.push({ kind: 'api_error', at: t, detail: textOf(rec.result) || 'result is_error' });
         continue;
@@ -465,12 +474,15 @@
     const usage = emptyUsage();
     for (const r of requests) addUsage(usage, r.usage);
     const humanIdleMs = turns.reduce((s, tn) => s + (tn.idleBeforeMs || 0), 0);
-    const wallMs = (meta.start != null && meta.end != null) ? meta.end - meta.start : null;
+    // stream-json runs carry no per-record timestamps and no human prompt record, but the result
+    // record reports duration_ms and num_turns; use those rather than showing "—" and 0.
+    const wallMs = (meta.start != null && meta.end != null) ? meta.end - meta.start : (meta.reportedDurationMs != null ? meta.reportedDurationMs : null);
+    const humanTurns = turns.filter((tn) => tn.promptKind === 'human' && tn.agent === 'main').length;
     const totals = {
       usage, wallMs, humanIdleMs, activeMs: wallMs != null ? Math.max(0, wallMs - humanIdleMs) : null,
       requests: requests.length, toolCalls: toolCalls.length, toolErrors: toolCalls.filter((c) => c.isError).length,
       orphans: toolCalls.filter((c) => c.status === 'orphan').length,
-      turns: turns.filter((tn) => tn.promptKind === 'human' && tn.agent === 'main').length,
+      turns: humanTurns || (meta.reportedTurns != null ? meta.reportedTurns : 0),
       toolTimeMs: toolCalls.filter((c) => c.agent === 'main').reduce((s, c) => s + (c.durationMs || 0), 0),
       modelTimeMs: agents.get('main').modelTimeMs || 0,
       cacheHitRatio: (usage.cacheRead + usage.cacheWrite + usage.input) ? usage.cacheRead / (usage.cacheRead + usage.cacheWrite + usage.input) : null,
@@ -737,6 +749,202 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Advice — one sentence per rule on what to do differently. Mechanical, like the rules.
+  // ---------------------------------------------------------------------------
+  const ADVICE = {
+    'retry-loop': 'When a call fails, change something before calling again: read the error, fix the input or the environment, or ask the user — never repeat an identical call.',
+    'failed-tool': 'Check the first error message of the failing tool before retrying; if the tool itself is broken, switch tools or tell the user instead of pushing on.',
+    'orphan-tool': 'A call with no result means the session ended mid-call; if you resume, re-run it or confirm its side effects before building on it.',
+    'exploration-run': 'Batch exploration: use one Grep or Glob with a wider pattern, or delegate a broad search to a subagent, then commit to an edit or command sooner.',
+    'oversized-result': 'Ask tools for less: head/limit/offset on reads, a tighter grep pattern, a file listing instead of a dump, or a subagent that returns a summary.',
+    'image-heavy': 'Take fewer screenshots and crop or downscale them; read text with a page-text tool where one exists, since every image is re-billed on each later request.',
+    'context-bloat': 'Keep the prompt small: summarise long results into notes, avoid re-reading files already in context, and hand large investigations to subagents.',
+    'cache-churn': 'Avoid changing anything at the top of the prompt mid-session (system prompt, tool list, early messages), because it invalidates the cached prefix and re-bills it.',
+    'low-cache-hit': 'Long stable prefixes cache well; frequent tool-list or system-prompt changes and many tiny sessions do not.',
+    'slow-tool': 'For calls that take minutes, run them in the background, tighten the command, or set a timeout, instead of blocking the whole turn.',
+    'slow-model': 'A slow, small response is usually API latency or a stall; nothing to fix in the session itself, but note it when reporting session time.',
+    'long-generation': 'Large single outputs are normal for file writes; split very large files into parts if a stall (low tok/s) shows up.',
+    'max-tokens': 'The output was truncated: write large files in sections and keep single responses under the output limit.',
+    'api-error': 'An API error interrupted the session; check what was lost and re-run the affected step rather than assuming it completed.',
+    'hook-error': 'A hook failed; read the hook error, fix the hook command or its permissions, then re-run the step it guarded.',
+    'compaction': 'Context was compacted; state that matters later (decisions, file paths, test status) should be written to a file or note before it is summarised away.',
+    'thinking-heavy': 'Most output tokens were thinking; fine for hard problems, but for routine tool loops a lower effort setting is cheaper and just as good.',
+    'subagent-share': 'Most spend was in subagents; give them narrower briefs and ask for short structured returns so the parent pays for less.',
+    'long-turn': 'A very long autonomous turn; check in with a short progress summary at natural checkpoints so wasted work is caught earlier.',
+  };
+
+  // Advice for a concrete finding: the rule's line, except where the evidence says otherwise.
+  function adviceFor(f, trace) {
+    if (f.id === 'slow-tool') {
+      const ids = (f.evidence && f.evidence.toolCallIds) || [];
+      const c = trace.toolCalls.find((x) => x.id === ids[0]);
+      if (c && c.category === 'user') return null; // waiting on the human is not the agent's time
+      if (c && c.category === 'agent') return 'Subagent run time: give it a narrower brief and ask for a short structured return so the parent is not blocked for as long.';
+    }
+    return ADVICE[f.id] || null;
+  }
+
+  function inputSummary(c) {
+    const i = (c && c.input) || {};
+    if (i.command) return String(i.command);
+    if (i.file_path) return String(i.file_path) + (i.pattern ? ' ' + i.pattern : '');
+    if (i.pattern) return String(i.pattern);
+    if (i.query) return String(i.query);
+    if (i.description) return String(i.description);
+    if (i.url) return String(i.url);
+    if (i.prompt) return String(i.prompt);
+    if (i.path) return String(i.path);
+    const s = JSON.stringify(i);
+    return s === '{}' ? '' : s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Markdown report — written to be handed back to the agent as well as read by a human.
+  // opts: { redact, advice=true, instruction=true, maxEvidence=6, title }
+  // ---------------------------------------------------------------------------
+  function usd(v) { return v == null ? '—' : v < 0.01 ? '$' + v.toFixed(4) : v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2); }
+  function pctStr(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
+  function oneLine(s, n) { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+  function blank(s) { return '«' + String(s == null ? '' : s).length + ' chars»'; }
+
+  function toolTable(trace) {
+    const rows = new Map();
+    for (const c of trace.toolCalls) { if (c.unmatched) continue; if (!rows.has(c.name)) rows.set(c.name, { name: c.name, calls: 0, errors: 0, time: 0 }); const r = rows.get(c.name); r.calls++; if (c.isError) r.errors++; r.time += c.durationMs || 0; }
+    return Array.from(rows.values()).sort((a, b) => b.time - a.time || b.calls - a.calls);
+  }
+
+  // Rules whose detail quotes tool output or model text (everything else is names and numbers).
+  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error']);
+  function redactDetail(f) { return CONTENT_DETAIL.has(f.id) ? blank(f.detail) : f.detail; }
+
+  function reportMarkdown(trace, findings, cost, opts) {
+    opts = opts || {};
+    const redact = !!opts.redact, maxEv = opts.maxEvidence || 6;
+    const T = trace.totals, m = trace.meta, u = T.usage;
+    const R = (s) => redact ? blank(s) : s;
+    const total = cost ? (cost.reported != null ? cost.reported : cost.total) : null;
+    const turnNo = (idx) => idx != null ? idx + 1 : null; // same numbering as the finding details and the viewer drawer
+    const advised = new Set();
+    const out = [];
+    out.push(`# Glassbox report — ${oneLine(R(m.title || opts.title || 'session'), 90)}`, '');
+    out.push(`- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'}${m.start ? ' · started: ' + new Date(m.start).toISOString() : ''}`);
+    out.push(`- wall ${fmtDur(T.wallMs)} (active ${fmtDur(T.activeMs)}) · ${T.turns} turn${T.turns === 1 ? '' : 's'} · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
+    out.push(`- tokens: ${fmtInt(u.input + u.cacheRead + u.cacheWrite)} context served (${pctStr(T.cacheHitRatio)} cached) · peak prompt ${fmtInt(Math.max(0, ...trace.requests.map((r) => r.contextTokens)))} · ${fmtInt(u.output)} output (${fmtInt(u.thinking)} thinking) · est. cost ${usd(total)}${cost && cost.source === 'reported' ? ' (reported)' : ''}`, '');
+    if (!findings.length) out.push('## Findings', '', 'Nothing flagged — a clean session, or a very short one.', '');
+    else {
+      out.push(`## Findings (${findings.length})`, '');
+      findings.forEach((f, i) => {
+        out.push(`### ${i + 1}. ${f.severity.toUpperCase()} \`${f.id}\` — ${f.title}`, '', redact ? redactDetail(f) : f.detail, '');
+        const ev = f.evidence || {};
+        const lines = [];
+        for (const id of ev.toolCallIds || []) { const c = trace.toolCalls.find((x) => x.id === id); if (!c) continue; const tn = turnNo(c.turnIndex); lines.push(`- ${c.name}${c.isError ? ' (error)' : ''}${c.durationMs != null ? ' · ' + fmtDur(c.durationMs) : ''}${tn != null ? ' · turn ' + tn : ''}${c.agent !== 'main' ? ' · subagent' : ''}: \`${oneLine(R(inputSummary(c)), 100).replace(/`/g, "'") || '(no input)'}\``); }
+        for (const id of ev.requestIds || []) { const r = trace.requests.find((x) => x.id === id); if (!r) continue; const n = trace.requests.indexOf(r) + 1; const tn = turnNo(r.turnIndex); lines.push(`- request #${n}${tn != null ? ' · turn ' + tn : ''}: context ${fmtInt(r.contextTokens)} · output ${fmtInt(r.usage.output)}${r.responseMs != null ? ' · ' + fmtDur(r.responseMs) : ''}`); }
+        if (lines.length) { out.push('Evidence:', ''); out.push(...lines.slice(0, maxEv)); if (lines.length > maxEv) out.push(`- … ${lines.length - maxEv} more`); out.push(''); }
+        const adv = opts.advice !== false && !advised.has(f.id) ? adviceFor(f, trace) : null;
+        if (adv) { advised.add(f.id); out.push(`Next time: ${adv}`, ''); }
+      });
+    }
+    const tools = toolTable(trace);
+    if (tools.length) { out.push('## Tools', '', '| tool | calls | errors | total time |', '|---|---|---|---|'); for (const r of tools) out.push(`| ${r.name} | ${r.calls} | ${r.errors} | ${fmtDur(r.time)} |`); out.push(''); }
+    if (opts.instruction !== false) out.push('## What to do with this', '', 'This is a mechanical review of the session transcript, generated by Glassbox (no AI involved). If you are the agent that ran this session: acknowledge the findings that apply, say in one or two sentences what you will do differently next session, and do not redo any work. If you are a human: the evidence lines are permalinks into the Glassbox viewer for this session.', '');
+    out.push('_Generated by Glassbox ' + VERSION + '._', '');
+    return out.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compare two analysed sessions ({trace, findings, cost}).
+  // ---------------------------------------------------------------------------
+  const METRICS = [
+    { key: 'wallMs', label: 'Wall time', fmt: 'dur', dir: 'low', get: (s) => s.trace.totals.wallMs },
+    { key: 'activeMs', label: 'Active time', fmt: 'dur', dir: 'low', get: (s) => s.trace.totals.activeMs },
+    { key: 'turns', label: 'Turns', fmt: 'int', dir: null, get: (s) => s.trace.totals.turns },
+    { key: 'requests', label: 'API requests', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.requests },
+    { key: 'toolCalls', label: 'Tool calls', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.toolCalls },
+    { key: 'toolErrors', label: 'Tool errors', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.toolErrors },
+    { key: 'toolTimeMs', label: 'Time in tools', fmt: 'dur', dir: 'low', get: (s) => s.trace.meta.hasTimestamps ? s.trace.totals.toolTimeMs : null },
+    { key: 'modelTimeMs', label: 'Time generating', fmt: 'dur', dir: 'low', get: (s) => s.trace.meta.hasTimestamps ? s.trace.totals.modelTimeMs : null },
+    { key: 'contextServed', label: 'Context served', fmt: 'tok', dir: 'low', get: (s) => { const u = s.trace.totals.usage; const v = u.input + u.cacheRead + u.cacheWrite; return v || (s.trace.requests.length ? 0 : null); } },
+    { key: 'peakContext', label: 'Peak prompt', fmt: 'tok', dir: 'low', get: (s) => s.trace.requests.length ? Math.max(0, ...s.trace.requests.map((r) => r.contextTokens)) : null },
+    { key: 'cacheHitRatio', label: 'Cache hit', fmt: 'pct', dir: 'high', get: (s) => s.trace.totals.cacheHitRatio },
+    { key: 'output', label: 'Output tokens', fmt: 'tok', dir: 'low', get: (s) => s.trace.requests.length ? s.trace.totals.usage.output : null },
+    { key: 'thinkingShare', label: 'Thinking share', fmt: 'pct', dir: null, get: (s) => { const u = s.trace.totals.usage; return u.output ? u.thinking / u.output : null; } },
+    { key: 'cost', label: 'Est. cost', fmt: 'usd', dir: 'low', get: (s) => s.cost ? (s.cost.reported != null ? s.cost.reported : s.cost.total) : null },
+    { key: 'findings', label: 'Findings', fmt: 'int', dir: 'low', get: (s) => s.findings.length },
+    { key: 'errorFindings', label: 'Error-level findings', fmt: 'int', dir: 'low', get: (s) => s.findings.filter((f) => f.severity === 'error').length },
+  ];
+  function fmtMetric(v, fmt) {
+    if (v == null) return '—';
+    if (fmt === 'dur') return fmtDur(v);
+    if (fmt === 'pct') return pctStr(v);
+    if (fmt === 'usd') return usd(v);
+    return fmtInt(v);
+  }
+  // "×2.4" when B is bigger, "÷2.4" when smaller; never "×0.00".
+  function fmtRatio(r) {
+    if (r == null || !Number.isFinite(r)) return '—';
+    if (r === 1) return '×1.00';
+    const v = r >= 1 ? r : 1 / r; const t = v >= 100 ? Math.round(v).toString() : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+    return (r >= 1 ? '×' : '÷') + t;
+  }
+  // Change of B relative to A: a signed percentage where that reads well, ×N for big increases,
+  // the absolute delta when A is 0 (no ratio) or B is 0 (no "÷∞").
+  function fmtChange(m) {
+    if (m.delta == null) return '—';
+    const r = m.ratio;
+    if (r == null || !m.a || !m.b) return (m.delta > 0 ? '+' : m.delta < 0 ? '−' : '') + fmtMetric(Math.abs(m.delta), m.fmt);
+    if (r === 1) return '0%';
+    if (r < 1) { const p = (1 - r) * 100; return '−' + (p < 10 || p > 99 ? p.toFixed(1) : Math.round(p)) + '%'; }
+    if (r < 10) { const p = (r - 1) * 100; return '+' + (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; }
+    return fmtRatio(r);
+  }
+  function compare(A, B) {
+    const metrics = METRICS.map((d) => {
+      const a = d.get(A), b = d.get(B);
+      const ok = a != null && b != null && Number.isFinite(a) && Number.isFinite(b);
+      const delta = ok ? b - a : null;
+      const ratio = ok && a ? b / a : (ok && !a && !b ? 1 : null);
+      let better = null;
+      if (ok && d.dir && a !== b) better = (d.dir === 'low') === (a < b) ? 'a' : 'b';
+      return { key: d.key, label: d.label, fmt: d.fmt, dir: d.dir, a, b, delta, ratio, better, aText: fmtMetric(a, d.fmt), bText: fmtMetric(b, d.fmt) };
+    });
+    const ta = toolTable(A.trace), tb = toolTable(B.trace);
+    const names = new Set([...ta.map((t) => t.name), ...tb.map((t) => t.name)]);
+    const zero = { calls: 0, errors: 0, time: 0 };
+    const tools = Array.from(names).map((name) => { const a = ta.find((t) => t.name === name) || zero, b = tb.find((t) => t.name === name) || zero; return { name, a: { calls: a.calls, errors: a.errors, time: a.time }, b: { calls: b.calls, errors: b.errors, time: b.time }, deltaCalls: b.calls - a.calls, deltaTime: b.time - a.time }; });
+    tools.sort((x, y) => Math.abs(y.deltaCalls) - Math.abs(x.deltaCalls) || (y.a.calls + y.b.calls) - (x.a.calls + x.b.calls) || x.name.localeCompare(y.name));
+    const byId = (fs) => { const m = new Map(); for (const f of fs) { if (!m.has(f.id)) m.set(f.id, []); m.get(f.id).push(f); } return m; };
+    const fa = byId(A.findings), fb = byId(B.findings);
+    const slim = (f) => ({ id: f.id, severity: f.severity, title: f.title });
+    const onlyA = [], onlyB = [], both = [];
+    for (const [id, list] of fa) { if (fb.has(id)) both.push({ id, a: list.map(slim), b: fb.get(id).map(slim) }); else onlyA.push(...list.map(slim)); }
+    for (const [id, list] of fb) if (!fa.has(id)) onlyB.push(...list.map(slim));
+    const pick = (key) => { const m = metrics.find((x) => x.key === key); return m ? m.better : null; };
+    const cleaner = (() => { const ea = A.findings.filter((f) => f.severity === 'error').length, eb = B.findings.filter((f) => f.severity === 'error').length; if (ea !== eb) return ea < eb ? 'a' : 'b'; const wa = A.findings.length, wb = B.findings.length; return wa === wb ? null : (wa < wb ? 'a' : 'b'); })();
+    const verdict = { cheaper: pick('cost'), faster: pick('wallMs') || pick('activeMs'), cleaner };
+    return { metrics, tools, findings: { onlyA, onlyB, both }, verdict, a: { sessionId: A.trace.meta.sessionId, title: A.trace.meta.title, models: A.trace.meta.models }, b: { sessionId: B.trace.meta.sessionId, title: B.trace.meta.title, models: B.trace.meta.models } };
+  }
+  function compareMarkdown(c, opts) {
+    opts = opts || {};
+    const la = opts.labelA || 'A', lb = opts.labelB || 'B';
+    const out = [`# Glassbox compare — ${la} vs ${lb}`, ''];
+    out.push(`- ${la}: ${c.a.sessionId || '—'}${c.a.title ? ' · ' + oneLine(c.a.title, 70) : ''}${c.a.models.length ? ' · ' + c.a.models.join(', ') : ''}`);
+    out.push(`- ${lb}: ${c.b.sessionId || '—'}${c.b.title ? ' · ' + oneLine(c.b.title, 70) : ''}${c.b.models.length ? ' · ' + c.b.models.join(', ') : ''}`, '');
+    const v = c.verdict; const who = (x) => x === 'a' ? la : x === 'b' ? lb : 'tie';
+    out.push(`**Verdict** — cheaper: ${who(v.cheaper)} · faster: ${who(v.faster)} · cleaner: ${who(v.cleaner)}`, '');
+    out.push(`| metric | ${la} | ${lb} | change |`, '|---|---|---|---|');
+    for (const m of c.metrics) { const ch = fmtChange(m); out.push(`| ${m.label} | ${m.aText} | ${m.bText} | ${ch}${m.better ? ' (' + who(m.better) + ' better)' : ''} |`); }
+    out.push('');
+    if (c.tools.length) { out.push('## Tools', '', `| tool | ${la} calls (errors) | ${lb} calls (errors) | Δ calls |`, '|---|---|---|---|'); for (const t of c.tools) out.push(`| ${t.name} | ${t.a.calls} (${t.a.errors}) | ${t.b.calls} (${t.b.errors}) | ${t.deltaCalls > 0 ? '+' : ''}${t.deltaCalls} |`); out.push(''); }
+    out.push('## Findings', '');
+    if (!c.findings.onlyA.length && !c.findings.onlyB.length && !c.findings.both.length) out.push('Neither session was flagged.', '');
+    if (c.findings.onlyA.length) { out.push(`Only in ${la}:`, ''); for (const f of c.findings.onlyA) out.push(`- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}`); out.push(''); }
+    if (c.findings.onlyB.length) { out.push(`Only in ${lb}:`, ''); for (const f of c.findings.onlyB) out.push(`- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}`); out.push(''); }
+    if (c.findings.both.length) { out.push('In both:', ''); for (const f of c.findings.both) out.push(`- \`${f.id}\` — ${la}: ${f.a.length}, ${lb}: ${f.b.length}`); out.push(''); }
+    out.push('_Generated by Glassbox ' + VERSION + '._', '');
+    return out.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
   // Redaction — keep structure, timestamps, usage, tool names; blank every string.
   // ---------------------------------------------------------------------------
   const KEEP_KEYS = new Set(['type', 'subtype', 'role', 'name', 'id', 'tool_use_id', 'uuid', 'parentUuid', 'requestId', 'sessionId', 'session_id', 'agentId', 'timestamp', 'model', 'stop_reason', 'version', 'entrypoint', 'operation', 'trigger', 'status', 'level', 'userType', 'apiBlockIndex', 'isSidechain', 'isMeta', 'isCompactSummary', 'isApiErrorMessage', 'is_error', 'effort', 'permissionMode', 'promptSource', 'sourceToolAssistantUUID', 'promptId', 'leafUuid', 'toolUseID', 'agentType', 'toolUseId', 'spawnDepth']);
@@ -764,5 +972,5 @@
   }
   function toJsonl(records) { return records.map((r) => JSON.stringify(r)).join('\n') + '\n'; }
 
-  return { VERSION, RATES, DEFAULTS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, stableStringify };
+  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable };
 });

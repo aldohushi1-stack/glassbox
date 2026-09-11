@@ -4,12 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+// fileURLToPath, not URL.pathname: on Windows the latter gives "/C:/…" which path.resolve turns into "\C:\…".
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const claudeHome = (env = process.env) => env.GLASSBOX_HOME || path.join(env.HOME || env.USERPROFILE || os.homedir(), '.claude');
-export const decodeProject = (n) => n.replace(/^-/, '/').replace(/-/g, '/');
+// Claude Code encodes the project path with '-' for every separator: "/home/aldo/x" → "-home-aldo-x",
+// and on Windows "C:\Users\aldo" → "C--Users-aldo".
+export const decodeProject = (n) => { const m = n.match(/^([A-Za-z])--(.*)$/); if (m) return m[1] + ':/' + m[2].replace(/-/g, '/'); return n.replace(/^-/, '/').replace(/-/g, '/'); };
 
 export function findSessions(opts = {}) {
   const home = opts.home || claudeHome();
@@ -41,13 +45,18 @@ export function sessionTitle(file) {
 
 // Resolve a user-supplied target: a path to a .jsonl, or a session-id prefix.
 export function resolveTarget(target, opts = {}) {
-  if (!target) { const s = findSessions({ home: opts.home, last: 1 })[0]; if (!s) throw new Error('No sessions found under ' + path.join(opts.home || claudeHome(), 'projects')); return s; }
+  if (!target) { const s = findSessions({ home: opts.home, last: 1 })[0]; if (!s) throw new Error(noSessionsMessage(opts.home)); return s; }
   if (fs.existsSync(target) && fs.statSync(target).isFile()) { const file = path.resolve(target); return { id: path.basename(file).replace(/\.jsonl$/, ''), file, project: null, projectDir: path.dirname(file), size: fs.statSync(file).size, mtime: fs.statSync(file).mtimeMs }; }
   const all = findSessions({ home: opts.home });
   const hits = all.filter((s) => s.id.startsWith(target));
   if (hits.length === 1) return hits[0];
   if (hits.length > 1) throw new Error(`"${target}" matches ${hits.length} sessions; give more of the id: ${hits.slice(0, 5).map((h) => h.id.slice(0, 12)).join(', ')}`);
   throw new Error(`No session or file matches "${target}"`);
+}
+
+export function noSessionsMessage(home) {
+  const dir = path.join(home || claudeHome(), 'projects');
+  return `No sessions found under ${dir}\n  Run a Claude Code session first — every session writes ${path.join(dir, '<project>', '<session-id>.jsonl')}.\n  Or point at a file:      glassbox open <file.jsonl>   (also check / compare / watch)\n  Or another home:         GLASSBOX_HOME=/path/to/.claude glassbox   (or --home)`;
 }
 
 // Session file + its subagent transcripts, as the {name, text} list the core expects.
@@ -66,7 +75,8 @@ export function embed(files, opts = {}) {
   if (!fs.existsSync(template)) throw new Error('dist/glassbox.html not found — run `npm run build` first');
   const html = fs.readFileSync(template, 'utf8');
   if (!html.includes('/*__EMBED__*/null')) throw new Error('template has no embed marker');
-  return html.replace('/*__EMBED__*/null', () => safe(JSON.stringify(files)));
+  const payload = Array.isArray(files) ? files : { files: files.files, compare: files.compare || null, labels: files.labels || null };
+  return html.replace('/*__EMBED__*/null', () => safe(JSON.stringify(payload)));
 }
 
 export function openInBrowser(file, env = process.env) {
@@ -86,8 +96,9 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   const T = trace.totals, m = trace.meta;
   const fmt = core.fmtDur, fi = core.fmtInt;
   const usd = (v) => v == null ? '—' : '$' + (v < 1 ? v.toFixed(3) : v.toFixed(2));
-  const summary = { session: m.sessionId, title: m.title || null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source };
-  const json = { summary, findings: findings.map((f) => ({ id: f.id, severity: f.severity, title: f.title, detail: f.detail, metric: f.metric })), failOn, failed: failing.length > 0 };
+  const redact = !!opts.redact;
+  const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source };
+  const json = { glassbox: core.VERSION, schema: 1, redacted: redact, summary, findings: findings.map((f) => ({ id: f.id, severity: f.severity, title: f.title, detail: redact ? core.redactDetail(f) : f.detail, metric: f.metric, evidence: f.evidence })), failOn, failed: failing.length > 0 };
   const lines = [];
   lines.push(`Glassbox · ${m.sessionId ? m.sessionId.slice(0, 8) : 'session'} · ${m.models.join(', ') || 'unknown model'}`);
   lines.push(`  wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
@@ -95,9 +106,10 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   lines.push('');
   if (!findings.length) lines.push('  no findings');
   for (const f of findings) lines.push(`  ${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}`);
+  if (redact) lines.push('', '  (redacted: prompt text, tool inputs and result text blanked)');
   lines.push('');
   lines.push(failing.length ? `  FAIL: ${failing.length} finding${failing.length > 1 ? 's' : ''} at or above "${failOn}"` : `  OK: nothing at or above "${failOn}"`);
-  const md = ['# Glassbox report', '', `- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'}`, `- wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed)`, `- context served ${fi(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} · output ${fi(T.usage.output)} · est. cost ${usd(summary.cost)}`, '', `## Findings (${findings.length})`, '', ...(findings.length ? findings.map((f) => `- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}\n  ${f.detail}`) : ['Nothing flagged.']), ''].join('\n');
+  const md = core.reportMarkdown(trace, findings, cost, { redact, maxEvidence: opts.maxEvidence });
   return { text: lines.join('\n'), json, markdown: md, failed: failing.length > 0 };
 }
 
@@ -130,7 +142,7 @@ export function hookResponse(input, opts = {}) {
   // Feedback loop: only on Stop, only once (stop_hook_active guards against loops), only when something is worth saying.
   if (feedback && input.hook_event_name === 'Stop' && !input.stop_hook_active && top.length) {
     out.decision = 'block';
-    out.reason = `Glassbox read this session's flight recorder. ${head}\n\nFindings at or above "${failOn}":\n` + top.map((f) => `- ${f.severity.toUpperCase()} \`${f.id}\` — ${f.title}. ${f.detail}`).join('\n') + `\n\nIn one or two sentences, tell the user what you would do differently next session (no need to redo work), then stop.`;
+    out.reason = `Glassbox read this session's flight recorder (${head}).\n\n` + core.reportMarkdown(res.trace, top, null, { maxEvidence: 3, instruction: false, title: 'this session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '') + `\nIn one or two sentences, tell the user what you would do differently next session (no need to redo work), then stop.`;
   }
   return out;
 }
@@ -175,21 +187,27 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
 }
 
-export const HELP = `glassbox — the flight recorder viewer for Claude Code sessions
+export const HELP = `glassbox — other tools show you what happened in a Claude Code session; Glassbox tells you what went wrong
 
   glassbox                       open the newest session in your browser
   glassbox list [--last N] [--grep TEXT] [--project PATH]
                                  list sessions, newest first
   glassbox open [ID|FILE] [--out FILE.html] [--no-open]
                                  build a self-contained HTML for a session (id prefix or .jsonl path)
-  glassbox check [ID|FILE] [--fail-on error|warn|info] [--json] [--markdown]
-                                 print findings; exit 1 when any finding is at/above --fail-on (default: error)
+  glassbox check [ID|FILE] [--fail-on error|warn|info] [--format text|json|md] [--redact]
+                                 print findings; exit 1 when any finding is at/above --fail-on (default: error), 2 on a usage error
+                                 --format md is written to be pasted back to the agent: evidence + advice per finding
+                                 --redact blanks prompt text, tool inputs and result text so the report can be shared
+  glassbox compare A B [--format text|json|md] [--out FILE.html] [--label-a NAME --label-b NAME]
+                                 same task, two sessions: what changed in time, tokens, cost, tools and findings
+  glassbox watch [ID|FILE] [--port N] [--no-open]
+                                 live tail: serves the viewer on 127.0.0.1 and pushes the transcript as it grows
   glassbox hook install [--feedback] [--fail-on warn]
                                  add a Claude Code Stop hook so every session ends with a Glassbox summary;
                                  --feedback also hands the findings back to the agent once, so it can learn from them
@@ -202,6 +220,29 @@ export const HELP = `glassbox — the flight recorder viewer for Claude Code ses
 
 Nothing leaves your machine. Subagent transcripts next to the session are included automatically.`;
 
+export function outputFormat(flags) {
+  const f = flags.format ? String(flags.format).toLowerCase() : (flags.json ? 'json' : flags.markdown ? 'md' : 'text');
+  if (f === 'markdown') return 'md';
+  if (!['text', 'json', 'md'].includes(f)) throw new Error(`--format must be text, json or md (got "${f}")`);
+  return f;
+}
+
+export function compareReport(A, B, opts = {}) {
+  const c = core.compare(A, B);
+  const la = opts.labelA || (A.trace.meta.sessionId || 'A').slice(0, 8), lb = opts.labelB || (B.trace.meta.sessionId || 'B').slice(0, 8);
+  const who = (x) => x === 'a' ? la : x === 'b' ? lb : 'tie';
+  const lines = [`Glassbox compare · ${la} vs ${lb}`, `  cheaper: ${who(c.verdict.cheaper)} · faster: ${who(c.verdict.faster)} · cleaner: ${who(c.verdict.cleaner)}`, ''];
+  const w = Math.max(la.length, lb.length, 10);
+  lines.push('  ' + 'metric'.padEnd(22) + la.padStart(w) + '  ' + lb.padStart(w) + '  change');
+  for (const m of c.metrics) { const ch = core.fmtChange(m); lines.push('  ' + m.label.padEnd(22) + m.aText.padStart(w) + '  ' + m.bText.padStart(w) + '  ' + ch + (m.better ? ' (' + who(m.better) + ')' : '')); }
+  lines.push('');
+  const fl = (list, label) => { if (!list.length) return; lines.push(`  only in ${label}:`); for (const f of list) lines.push(`    ${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}`); };
+  fl(c.findings.onlyA, la); fl(c.findings.onlyB, lb);
+  if (c.findings.both.length) lines.push(`  in both: ${c.findings.both.map((f) => f.id).join(', ')}`);
+  if (!c.findings.onlyA.length && !c.findings.onlyB.length && !c.findings.both.length) lines.push('  no findings in either session');
+  return { text: lines.join('\n'), json: c, markdown: core.compareMarkdown(c, { labelA: la, labelB: lb }), compare: c };
+}
+
 export async function main(argv, io = {}) {
   const out = io.stdout || ((s) => process.stdout.write(s + '\n'));
   const err = io.stderr || ((s) => process.stderr.write(s + '\n'));
@@ -213,15 +254,32 @@ export async function main(argv, io = {}) {
   try {
     if (cmd === 'list') {
       const list = findSessions({ home, last: args.flags.last ? +args.flags.last : 20, grep: args.flags.grep, project: args.flags.project });
-      if (!list.length) { out('No sessions found under ' + path.join(home || claudeHome(), 'projects')); return 0; }
+      if (!list.length) { out(noSessionsMessage(home)); return 0; }
       for (const s of list) out(`${s.id.slice(0, 8)}  ${new Date(s.mtime).toISOString().slice(0, 16).replace('T', ' ')}  ${String(Math.round(s.size / 1024)).padStart(6)} KB  ${s.project.padEnd(28).slice(0, 28)}  ${sessionTitle(s.file)}`);
       return 0;
     }
     if (cmd === 'check') {
       const s = resolveTarget(args._[1], { home });
-      const res = checkReport(analyse(loadSessionFiles(s)), { failOn: args.flags['fail-on'] });
-      if (args.flags.json) out(JSON.stringify(res.json, null, 2)); else if (args.flags.markdown) out(res.markdown); else out(res.text);
+      const res = checkReport(analyse(loadSessionFiles(s)), { failOn: args.flags['fail-on'], redact: !!args.flags.redact });
+      const fmtOut = outputFormat(args.flags);
+      if (fmtOut === 'json') out(JSON.stringify(res.json, null, 2)); else if (fmtOut === 'md') out(res.markdown); else out(res.text);
       return res.failed ? 1 : 0;
+    }
+    if (cmd === 'compare') {
+      if (!args._[1] || !args._[2]) throw new Error('compare needs two sessions: glassbox compare A B');
+      const sa = resolveTarget(args._[1], { home }), sb = resolveTarget(args._[2], { home });
+      const fa = loadSessionFiles(sa), fb = loadSessionFiles(sb);
+      const rep = compareReport(analyse(fa), analyse(fb), { labelA: args.flags['label-a'], labelB: args.flags['label-b'] });
+      if (args.flags.out) {
+        const html = embed({ files: fa, compare: fb }, { template: io.template });
+        const outFile = path.resolve(args.flags.out); fs.writeFileSync(outFile, html);
+        out(`${outFile}  (${fa.length + fb.length} files, ${Math.round(html.length / 1024)} KB)`);
+        if (!args.flags['no-open'] && !io.noOpen) openInBrowser(outFile);
+        return 0;
+      }
+      const fmtOut = outputFormat(args.flags);
+      if (fmtOut === 'json') out(JSON.stringify(rep.json, null, 2)); else if (fmtOut === 'md') out(rep.markdown); else out(rep.text);
+      return 0;
     }
     if (cmd === 'open') {
       const s = resolveTarget(args._[1], { home });
@@ -231,6 +289,16 @@ export async function main(argv, io = {}) {
       fs.writeFileSync(outFile, html);
       out(`${outFile}  (${files.length} file${files.length > 1 ? 's' : ''}, ${Math.round(html.length / 1024)} KB)`);
       if (!args.flags['no-open'] && !io.noOpen) openInBrowser(outFile);
+      return 0;
+    }
+    if (cmd === 'watch' || (cmd === 'open' && args.flags.watch)) {
+      const { serveLive } = await import('./tail.mjs');
+      const s = resolveTarget(args._[1], { home });
+      const live = await serveLive(s, { port: args.flags.port ? +args.flags.port : 0, embed: (files) => embed(files, { template: io.template }) });
+      out(`Glassbox live · ${s.id.slice(0, 8)} · ${live.url}\n  following ${s.file}\n  Ctrl+C to stop`);
+      if (!args.flags['no-open'] && !io.noOpen) openInBrowser(live.url);
+      if (io.onLive) { io.onLive(live); return 0; }
+      await new Promise((resolve) => { const stop = () => { live.close().then(resolve); }; process.once('SIGINT', stop); process.once('SIGTERM', stop); });
       return 0;
     }
     if (cmd === 'hook') {
