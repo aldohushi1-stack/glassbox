@@ -60,6 +60,10 @@ These files are in your staged launch work on `master`, which this branch doesn'
 - `push-v0.4.1.cmd` echoes "v0.4.0" and pushes `HEAD:main` from local `master`.
 - `bin/glassbox.mjs` has a staged mode change 755 → 644. Unstage it (`git restore --staged bin/glassbox.mjs`) unless you meant to drop the executable bit.
 
+## Reported upstream
+
+The streamed-usage inconsistency in subagent transcripts (the cause of most of the $21.83 → $322.36 gap) is filed as [anthropics/claude-code#93620](https://github.com/anthropics/claude-code/issues/93620) (11 Sep 2026). Link it from Show HN and the posts: "we found it, we reported it, here's the fix in Glassbox". The repro script and draft are in `docs/anthropic-bug-report/`.
+
 ## The name
 
 `glassbox` on npm is a different Claude Code tool (AI code review, 34 stars, active), and Glassbox is also a session-replay analytics company. Using `glassbox-trace` in every command and link avoids the worst confusion. Decide before Show HN whether that's enough or whether to rename; after a launch post, a rename costs more.
