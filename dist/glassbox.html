@@ -402,7 +402,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.4.1';
+  const VERSION = '0.5.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -450,6 +450,13 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     longTurnTools: 30,
     failedToolRate: 0.5,
     failedToolMinCalls: 3,
+    failedToolWarnMinErrors: 2,
+    failedToolWarnRate: 0.2,
+    cacheMissMinShare: 0.05,
+    longGenerationMaxTokPerSec: 15,
+    duplicateReadAgents: 3,
+    duplicateReadWarnChars: 100000,
+    groupRepeatsMin: 3, // slow-tool / oversized-result: this many from one tool become one finding
   };
 
   // ---------------------------------------------------------------------------
@@ -463,6 +470,12 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   // Cowork: Artifact publishes a page (a write), Skill loads instructions (a read); Task* are bookkeeping (other).
   const COWORK_READ = new Set(['Skill', 'ListSkills', 'SearchSkills', 'TaskList', 'TaskGet']);
   const COWORK_WRITE = new Set(['Artifact']);
+  // Blocking reads of a background task's output: the duration is the task's run time, and re-issuing the
+  // same call after a "still running" timeout is polling, not a retry.
+  const WAIT_TOOLS = new Set(['TaskOutput', 'AgentOutputTool']);
+  const isWait = (c) => WAIT_TOOLS.has(c.name) && !(c.input && c.input.block === false);
+  const waitTarget = (c) => { const i = c.input || {}; return String(i.task_id || i.agentId || i.bash_id || ''); };
+  const hasRange = (c) => !!(c.input && (c.input.limit != null || c.input.offset != null || c.input.head_limit != null));
   // MCP leaf names are verb_noun or noun_verb ("memory_read", "device_list_dir", "send_message"): match the verb as a word.
   const MCP_READ = /(^|_)(get|list|search|read|find|fetch|query|describe|show|stage|screenshot|context|status|info|check)(_|$)/i;
   const MCP_WRITE = /(^|_)(write|set|put|create|update|delete|remove|commit|send|reply|forward|upload|str_replace|append|label|move|rename|save)(_|$)/i;
@@ -541,6 +554,26 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 
   function isEmptyUsage(u) {
     return !u.input && !u.cacheRead && !u.cacheWrite && !u.output;
+  }
+
+  // A tool call that never ran because the human or a permission rule stopped it. Claude Code
+  // records toolDenialKind (user-rejected, permission-rule, automode-blocked, interrupted); older
+  // transcripts only have the result text. A shell's own "Permission denied" is a real failure.
+  function denialKind(rec, text) {
+    if (rec && rec.toolDenialKind) return String(rec.toolDenialKind);
+    const t = String(text || '').trim();
+    if (/^\[Request interrupted by user/.test(t)) return 'interrupted';
+    if (/^The user doesn't want to proceed with this tool use|^User rejected tool use|^Denied by voice/.test(t)) return 'user-rejected';
+    if (/^Permission (for this action was|to use \S+ has been) denied/.test(t)) return 'permission-rule';
+    return null;
+  }
+
+  // One API response is written as several records (one per content block). Subagent transcripts
+  // rewrite output_tokens as the stream progresses, so the first record can be far below the final
+  // count; the other fields repeat. Keep the largest value seen for each field.
+  function maxUsage(a, b) {
+    for (const k of Object.keys(a)) if ((b[k] || 0) > a[k]) a[k] = b[k];
+    return a;
   }
 
   // ---------------------------------------------------------------------------
@@ -643,6 +676,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
         agents.set(id, {
           id, type: id === 'main' ? 'main' : 'subagent', description: null, parentToolUseId: null,
           start: null, end: null, usage: emptyUsage(), requestCount: 0, toolCount: 0, model: null,
+          workflowRun: (String(rec._file || '').match(/workflows[\\/](wf_[^\\/]+)[\\/]/) || [])[1] || null,
         });
       }
       const a = agents.get(id);
@@ -693,7 +727,9 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       if (!meta.gitBranch && rec.gitBranch) meta.gitBranch = rec.gitBranch;
       if (!meta.entrypoint && rec.entrypoint) meta.entrypoint = rec.entrypoint;
       const t = ts(rec);
-      if (t != null) { if (meta.start == null || t < meta.start) meta.start = t; if (meta.end == null || t > meta.end) meta.end = t; }
+      // Only conversation records bound the session: bookkeeping records (frame-link, file-history…)
+      // can be written days later and would stretch the wall clock.
+      if (t != null && (type === 'user' || type === 'assistant' || type === 'system')) { if (meta.start == null || t < meta.start) meta.start = t; if (meta.end == null || t > meta.end) meta.end = t; }
 
       if (type === 'summary') { if (rec.summary && !meta.title) meta.title = rec.summary; events.push({ kind: 'summary', at: t, detail: rec.summary }); continue; }
       if (type === 'attachment') { attachments.count++; attachments.chars += JSON.stringify(rec.attachment || '').length; continue; }
@@ -747,6 +783,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
               if (structured && typeof structured === 'object' && !text && !imgs.length) call.resultChars = JSON.stringify(structured).length;
               // stream-json puts is_error only in block; Claude Code also stores toolUseResult as an Error string
               if (!tr.is_error && typeof structured === 'string' && /^Error/i.test(structured)) { call.status = 'error'; call.isError = true; }
+              if (call.isError) call.denial = denialKind(rec, text);
             } else {
               toolCalls.push(mkOrphanResult(tr, rec, a.id, text, turns.length ? turns[turns.length - 1].index : null));
             }
@@ -759,6 +796,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
         let kind = 'human';
         if (rec.isCompactSummary) kind = 'compact';
         else if (rec.isMeta) kind = 'meta';
+        else if (/^\[Request interrupted by user/.test(text.trim())) kind = 'interrupt';
         else if (/^<(system-reminder|local-command|command-name|bash-input|bash-stdout)/.test(text.trim())) kind = 'meta';
         ensureTurn(rec, kind, text);
         continue;
@@ -781,16 +819,10 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
           turn.requestIds.push(req.id);
           a.requestCount++;
           if (msg.model) { pushModel(meta, msg.model); if (!a.model) a.model = msg.model; }
-          const u = usageFrom(msg.usage);
-          if (!isEmptyUsage(u)) { req.usage = u; req.contextTokens = u.input + u.cacheRead + u.cacheWrite; addUsage(turn.usage, u); addUsage(a.usage, u); }
         } else {
           if (t != null) { if (req.start == null || t < req.start) req.start = t; if (req.end == null || t > req.end) req.end = t; }
-          // usage: if the first record lacked it and a later one has it, take it once
-          if (isEmptyUsage(req.usage)) {
-            const u = usageFrom(msg.usage);
-            if (!isEmptyUsage(u)) { req.usage = u; req.contextTokens = u.input + u.cacheRead + u.cacheWrite; const turn = turns[req.turnIndex]; addUsage(turn.usage, u); addUsage(a.usage, u); }
-          }
         }
+        maxUsage(req.usage, usageFrom(msg.usage)); // turn and agent totals are summed once, after the loop
         req.records++;
         if (msg.stop_reason) req.stopReason = msg.stop_reason;
         if (rec.isApiErrorMessage) req.isApiError = true;
@@ -803,7 +835,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
               id: b.id || (key + ':' + blockIndex), agent: a.id, requestId: req.id, name: b.name || 'unknown', input: b.input || {},
               start: t, end: null, durationMs: null, status: 'orphan', isError: false, resultText: '', resultChars: 0,
               resultStructured: null, category: toolCategory(b.name), turnIndex: req.turnIndex, subagentId: null,
-              inputChars: JSON.stringify(b.input || {}).length, resultImages: 0, imageBytes: 0,
+              inputChars: JSON.stringify(b.input || {}).length, resultImages: 0, imageBytes: 0, denial: null,
             };
             toolCalls.push(call);
             toolCallById.set(call.id, call);
@@ -825,7 +857,12 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     }
 
     // Finalise
-    for (const req of requests) req.blocks.sort((x, y) => x.index - y.index);
+    for (const req of requests) {
+      req.blocks.sort((x, y) => x.index - y.index);
+      req.contextTokens = req.usage.input + req.usage.cacheRead + req.usage.cacheWrite;
+      addUsage(turns[req.turnIndex].usage, req.usage);
+      addUsage(agents.get(req.agent).usage, req.usage);
+    }
     for (const turn of turns) if (turn.end == null) turn.end = meta.end;
     // Response timing. Assistant record timestamps are written when a block finishes streaming,
     // so a request's "start" is really its first completed block. We measure from the moment the
@@ -857,9 +894,14 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
         const parent = toolCalls.find((c) => c.category === 'agent' && c.agent === 'main' && ((c.resultText && c.resultText.includes(ag.id)) || (c.resultStructured && JSON.stringify(c.resultStructured).includes(ag.id))));
         if (parent) ag.parentToolUseId = parent.id;
       }
+      // Workflow agents live in subagents/workflows/<runId>/; the Workflow call's result names that runId.
+      if (!ag.parentToolUseId && ag.workflowRun) {
+        const parent = toolCalls.find((c) => c.name === 'Workflow' && ((c.resultStructured && c.resultStructured.runId === ag.workflowRun) || (c.resultText && c.resultText.includes(ag.workflowRun))));
+        if (parent) ag.parentToolUseId = parent.id;
+      }
       if (ag.parentToolUseId) {
         const parent = toolCallById.get(ag.parentToolUseId);
-        if (parent) { parent.subagentId = ag.id; if (!ag.description && parent.input && parent.input.description) ag.description = parent.input.description; if (!ag.agentType && parent.input && parent.input.subagent_type) ag.agentType = parent.input.subagent_type; }
+        if (parent) { if (!parent.subagentId) parent.subagentId = ag.id; (parent.subagentIds || (parent.subagentIds = [])).push(ag.id); if (!ag.description && parent.input && parent.input.description) ag.description = parent.input.description; if (!ag.agentType && parent.input && parent.input.subagent_type) ag.agentType = parent.input.subagent_type; }
       }
     }
 
@@ -913,9 +955,20 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       if (!byTurnSig.has(sig)) byTurnSig.set(sig, []);
       byTurnSig.get(sig).push(c);
     }
+    const callIndex = new Map(calls.map((c, i) => [c, i]));
     for (const group of byTurnSig.values()) {
       if (group.length >= o.retryLoopMin) {
         const errs = group.filter((c) => c.isError).length;
+        if (isWait(group[0]) && errs < 2) continue; // polling a running task; failing polls still count
+        if (errs < 2) {
+          // Re-running a test or taking another screenshot after something changed is observing, not
+          // looping: only flag successful repeats that returned the same thing with nothing in between.
+          const inGroup = new Set(group);
+          const between = calls.slice(callIndex.get(group[0]) + 1, callIndex.get(group[group.length - 1]));
+          const changed = between.some((c) => c.agent === group[0].agent && !inGroup.has(c) && c.category !== 'read');
+          const same = group.every((c) => c.resultText === group[0].resultText && c.imageBytes === group[0].imageBytes);
+          if (changed || !same) continue;
+        }
         push({
           id: 'retry-loop', severity: errs >= 2 ? 'error' : 'warn',
           title: `${group[0].name} called ${group.length}× with identical input`,
@@ -925,19 +978,33 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       }
     }
 
-    // failed-tool: per tool error rate
+    // failed-tool: per tool error rate. Calls the human or a permission rule stopped are not the
+    // tool's failure (see permission-denied); one stray error in a long session is not a pattern.
     const byTool = new Map();
-    for (const c of calls) { if (c.unmatched) continue; if (!byTool.has(c.name)) byTool.set(c.name, []); byTool.get(c.name).push(c); }
+    for (const c of calls) { if (c.unmatched || c.denial) continue; if (!byTool.has(c.name)) byTool.set(c.name, []); byTool.get(c.name).push(c); }
     for (const [name, list] of byTool) {
       const errs = list.filter((c) => c.isError);
       if (!errs.length) continue;
       const rate = errs.length / list.length;
       const bad = list.length >= o.failedToolMinCalls && rate >= o.failedToolRate;
+      if (!bad && (errs.length < o.failedToolWarnMinErrors || rate < o.failedToolWarnRate)) continue;
       push({
         id: 'failed-tool', severity: bad ? 'error' : 'warn',
         title: `${name} failed ${errs.length} of ${list.length} calls (${Math.round(rate * 100)}%)`,
         detail: firstLine(errs[0].resultText) || 'Tool returned is_error.',
         evidence: { toolCallIds: errs.map((c) => c.id) }, metric: rate,
+      });
+    }
+
+    // permission-denied: calls that never ran because the human rejected them, a permission rule or
+    // the auto-mode classifier blocked them, or the human interrupted.
+    const denied = calls.filter((c) => c.denial);
+    if (denied.length) {
+      const kinds = {}; for (const c of denied) kinds[c.denial] = (kinds[c.denial] || 0) + 1;
+      push({
+        id: 'permission-denied', severity: 'info', title: `${denied.length} tool call${denied.length > 1 ? 's' : ''} denied or interrupted`,
+        detail: Object.entries(kinds).map(([k, n]) => `${k} ×${n}`).join(', ') + ' — ' + summariseNames(denied),
+        evidence: { toolCallIds: denied.map((c) => c.id) }, metric: denied.length,
       });
     }
 
@@ -965,18 +1032,52 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       };
       for (const c of calls) {
         if (c.agent !== ag.id || c.unmatched) continue;
-        if (c.category === 'read') run.push(c); else if (c.category === 'write' || c.category === 'exec') flush(); // agent/user/mcp calls don't break a run
+        // MCP calls that aren't reads are actions (browser navigate/click, device commands) and end a run;
+        // agent and user calls don't.
+        if (c.category === 'read') run.push(c); else if (c.category === 'write' || c.category === 'exec' || c.category === 'mcp') flush();
       }
       flush();
     }
 
-    // oversized-result
+    // duplicate-subagent-read: the same file read by several agents, each paying for it in its own context
+    const sharedReads = new Set(); // reported here, so oversized-result below skips them
+    const readsByFile = new Map();
     for (const c of calls) {
-      if (c.resultChars >= o.oversizedResultWarn) push({
+      if (c.name !== 'Read' || c.isError || !c.input || !c.input.file_path) continue;
+      const k = String(c.input.file_path).replace(/\\/g, '/').toLowerCase();
+      if (!readsByFile.has(k)) readsByFile.set(k, []);
+      readsByFile.get(k).push(c);
+    }
+    for (const list of readsByFile.values()) {
+      const agentIds = new Set(list.map((c) => c.agent));
+      if (agentIds.size < o.duplicateReadAgents) continue;
+      const chars = list.reduce((s, c) => s + c.resultChars, 0);
+      for (const c of list) sharedReads.add(c);
+      const largest = Math.max(...list.map((c) => c.resultChars));
+      push({
+        id: 'duplicate-subagent-read', severity: largest >= o.oversizedResultError ? 'error' : chars >= o.duplicateReadWarnChars ? 'warn' : 'info',
+        title: `Same file read by ${agentIds.size} agents (${fmtInt(chars)} chars)`, // path only in detail, which --redact blanks
+        detail: `${list.length} reads of ${list[0].input.file_path} across ${agentIds.size} agents; each copy is billed in that agent's context on every later request.`,
+        evidence: { toolCallIds: list.map((c) => c.id) }, metric: chars,
+      });
+    }
+
+    // oversized-result: one line per call, or one per tool when a tool does it repeatedly
+    const bigByTool = new Map();
+    for (const c of calls) if (c.resultChars >= o.oversizedResultWarn && !sharedReads.has(c)) { if (!bigByTool.has(c.name)) bigByTool.set(c.name, []); bigByTool.get(c.name).push(c); }
+    for (const [name, list] of bigByTool) {
+      const largest = Math.max(...list.map((c) => c.resultChars)), total = list.reduce((s, c) => s + c.resultChars, 0);
+      const ranged = list.every(hasRange);
+      const detail = 'Large tool results stay in context for the rest of the session. ' + (ranged ? 'The call already set a range; long lines or a wide window still cost, so narrow it or grep first.' : 'Consider head/limit, grep, or a subagent.');
+      if (list.length >= o.groupRepeatsMin) push({
+        id: 'oversized-result', severity: largest >= o.oversizedResultError ? 'error' : 'warn',
+        title: `${name} returned over ${fmtInt(o.oversizedResultWarn)} chars ${list.length} times (largest ${fmtInt(largest)}, ${fmtInt(total)} in all)`,
+        detail, evidence: { toolCallIds: list.map((c) => c.id) }, metric: largest,
+      });
+      else for (const c of list) push({
         id: 'oversized-result', severity: c.resultChars >= o.oversizedResultError ? 'error' : 'warn',
         title: `${c.name} returned ${fmtInt(c.resultChars)} chars`,
-        detail: 'Large tool results stay in context for the rest of the session. Consider head/limit, grep, or a subagent.',
-        evidence: { toolCallIds: [c.id], turnIndex: c.turnIndex }, metric: c.resultChars,
+        detail, evidence: { toolCallIds: [c.id], turnIndex: c.turnIndex }, metric: c.resultChars,
       });
     }
 
@@ -996,21 +1097,45 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       if (r.contextTokens >= o.contextBloatWarn && !crossed) crossed = r;
       if (!peak || r.contextTokens > peak.contextTokens) peak = r;
     }
-    if (crossed) push({
-      id: 'context-bloat', severity: peak.contextTokens >= o.contextBloatError ? 'error' : 'warn',
-      title: `Context reached ${fmtInt(peak.contextTokens)} tokens`,
-      detail: `First crossed ${fmtInt(o.contextBloatWarn)} at request #${reqs.indexOf(crossed) + 1} (turn ${crossed.turnIndex + 1}). Every later request pays for that prefix.`,
-      evidence: { requestIds: [crossed.id, peak.id], turnIndex: crossed.turnIndex }, metric: peak.contextTokens,
-    });
+    if (crossed) {
+      // What the large context cost: every request (any agent) sent with more than the threshold.
+      let above = 0, all = 0, n = 0;
+      for (const r of reqs) { const c = requestCost(r.usage, rateFor(r.model, o.rates)); if (c == null) continue; all += c; if (r.contextTokens >= o.contextBloatWarn) { above += c; n++; } }
+      const spend = all > 0 ? ` · ${usd(above)} (${Math.round(above / all * 100)}% of cost) spent above ${fmtInt(o.contextBloatWarn)}` : '';
+      push({
+        id: 'context-bloat', severity: peak.contextTokens >= o.contextBloatError ? 'error' : 'warn',
+        title: `Context reached ${fmtInt(peak.contextTokens)} tokens${spend}`,
+        detail: `First crossed ${fmtInt(o.contextBloatWarn)} at request #${reqs.indexOf(crossed) + 1} (turn ${crossed.turnIndex + 1}); ${n} request${n === 1 ? '' : 's'} ran above it. Every one of them re-reads that prefix.`,
+        evidence: { requestIds: [crossed.id, peak.id], turnIndex: crossed.turnIndex }, metric: peak.contextTokens, cost: all > 0 ? above : null,
+      });
+    }
 
-    // cache-churn
-    const firstReqOfAgent = new Set();
+    // cache-churn / idle-cache-expiry: a request that re-wrote prefix the previous request of the same
+    // agent had already cached. A big cache write on its own is usually just a new tool result being
+    // cached, which is expected. After a gap longer than the cache lifetime the miss is expiry, not
+    // invalidation; right after a compaction it is an expected rebuild.
+    const prevByAgent = new Map(); const ttlByAgent = new Map();
     for (const r of reqs) {
-      if (!firstReqOfAgent.has(r.agent)) { firstReqOfAgent.add(r.agent); continue; }
-      if (r.usage.cacheWrite >= o.cacheChurnMin) push({
-        id: 'cache-churn', severity: 'info', title: `${fmtInt(r.usage.cacheWrite)} tokens re-cached at request #${reqs.indexOf(r) + 1}`,
-        detail: 'A large cache write mid-session means the cached prefix was invalidated (system prompt, tool list or early messages changed).',
-        evidence: { requestIds: [r.id], turnIndex: r.turnIndex }, metric: r.usage.cacheWrite,
+      const prev = prevByAgent.get(r.agent); prevByAgent.set(r.agent, r);
+      if (r.usage.cacheWrite1h > 0) ttlByAgent.set(r.agent, 3600e3); else if (r.usage.cacheWrite5m > 0 && !ttlByAgent.has(r.agent)) ttlByAgent.set(r.agent, 300e3);
+      if (!prev) continue;
+      const cached = prev.usage.cacheRead + prev.usage.cacheWrite;
+      const missed = cached - r.usage.cacheRead;
+      if (missed < o.cacheChurnMin || missed < cached * o.cacheMissMinShare) continue;
+      const sent = r.responseFrom != null ? r.responseFrom : r.start;
+      if (prev.end != null && sent != null && trace.events.some((e) => e.kind === 'compact' && e.at != null && e.at >= prev.end && e.at <= sent)) continue;
+      const idle = prev.end != null && sent != null ? sent - prev.end : null;
+      const ttl = ttlByAgent.get(r.agent) || 300e3;
+      const n = reqs.indexOf(r) + 1;
+      if (idle != null && idle > ttl) push({
+        id: 'idle-cache-expiry', severity: 'info', title: `${fmtInt(missed)} tokens re-cached after ${fmtDur(idle)} idle`,
+        detail: `Request #${n}${r.agent !== 'main' ? ' (subagent)' : ''}: the gap was longer than the ${ttl >= 3600e3 ? '1-hour' : '5-minute'} cache lifetime, so the whole prefix was written again.`,
+        evidence: { requestIds: [prev.id, r.id], turnIndex: r.turnIndex }, metric: missed,
+      });
+      else push({
+        id: 'cache-churn', severity: 'info', title: `${fmtInt(missed)} cached tokens re-written at request #${n}`,
+        detail: `The previous request had ${fmtInt(cached)} tokens cached; this one read only ${fmtInt(r.usage.cacheRead)} back${idle != null ? ` ${fmtDur(idle)} later` : ''}. Something early in the prompt changed (system prompt, tool list, early messages).`,
+        evidence: { requestIds: [prev.id, r.id], turnIndex: r.turnIndex }, metric: missed,
       });
     }
 
@@ -1021,12 +1146,38 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       evidence: {}, metric: trace.totals.cacheHitRatio,
     });
 
-    // slow-tool
+    // slow-tool: blocking waits roll up per background task, other slow calls per tool when repeated
+    const waits = new Map(), slowByTool = new Map();
     for (const c of calls) {
-      if (c.durationMs != null && c.durationMs >= o.slowToolInfoMs) push({
+      if (isWait(c)) { const k = c.agent + '|' + c.name + '|' + waitTarget(c); if (!waits.has(k)) waits.set(k, []); waits.get(k).push(c); continue; }
+      // Time spent on a question to the human, or on a permission prompt that ended in a denial, is the human's.
+      if (c.category === 'user' || c.denial) continue;
+      if (c.durationMs != null && c.durationMs >= o.slowToolInfoMs) { if (!slowByTool.has(c.name)) slowByTool.set(c.name, []); slowByTool.get(c.name).push(c); }
+    }
+    for (const [name, list] of slowByTool) {
+      const longest = Math.max(...list.map((c) => c.durationMs)), total = list.reduce((s, c) => s + c.durationMs, 0);
+      const detail = list[0].category === 'agent' ? 'Subagent run time.' : 'Long-running tool call.';
+      if (list.length >= o.groupRepeatsMin) push({
+        id: 'slow-tool', severity: longest >= o.slowToolWarnMs ? 'warn' : 'info',
+        title: `${name} took over ${fmtDur(o.slowToolInfoMs)} ${list.length} times (longest ${fmtDur(longest)}, ${fmtDur(total)} in all)`,
+        detail, evidence: { toolCallIds: list.map((c) => c.id) }, metric: total,
+      });
+      else for (const c of list) push({
         id: 'slow-tool', severity: c.durationMs >= o.slowToolWarnMs ? 'warn' : 'info',
-        title: `${c.name} took ${fmtDur(c.durationMs)}`, detail: c.category === 'agent' ? 'Subagent run time.' : c.category === 'user' ? 'Waiting on the human.' : 'Long-running tool call.',
+        title: `${c.name} took ${fmtDur(c.durationMs)}`, detail,
         evidence: { toolCallIds: [c.id], turnIndex: c.turnIndex }, metric: c.durationMs,
+      });
+    }
+    // One finding per waited-on task, always info: the time belongs to the background job.
+    for (const group of waits.values()) {
+      const ms = group.reduce((s, c) => s + (c.durationMs || 0), 0);
+      if (ms < o.slowToolInfoMs) continue;
+      const target = waitTarget(group[0]);
+      push({
+        id: 'slow-tool', severity: 'info',
+        title: `${group[0].name} waited ${fmtDur(ms)} on ${target ? 'task ' + target : 'a background task'}${group.length > 1 ? ` (${group.length} polls)` : ''}`,
+        detail: 'Blocking wait on background work: the time is the task\'s run time, not a slow tool.',
+        evidence: { toolCallIds: group.map((c) => c.id), turnIndex: group[0].turnIndex }, metric: ms,
       });
     }
 
@@ -1041,9 +1192,10 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
           detail: `Request #${n} (${r.tokensPerSec != null ? r.tokensPerSec.toFixed(1) : '?'} tok/s): API latency, rate limiting or a stalled stream.`,
           evidence: { requestIds: [r.id], turnIndex: r.turnIndex }, metric: r.responseMs,
         });
-        else push({
-          id: 'long-generation', severity: 'info', title: `${fmtDur(r.responseMs)} writing ${fmtInt(r.usage.output)} tokens`,
-          detail: `Request #${n} at ${r.tokensPerSec != null ? r.tokensPerSec.toFixed(1) : '?'} tok/s (${r.blocksSummary}). Big single outputs are normal for file writes; a stall would show as low tok/s.`,
+        // A long response that wrote a lot at a normal rate is just a big output. Only a slow rate is worth a line.
+        else if (r.tokensPerSec != null && r.tokensPerSec < o.longGenerationMaxTokPerSec) push({
+          id: 'long-generation', severity: 'info', title: `${fmtDur(r.responseMs)} writing ${fmtInt(r.usage.output)} tokens (${r.tokensPerSec.toFixed(1)} tok/s)`,
+          detail: `Request #${n} (${r.blocksSummary}) streamed well below the usual rate: a partial stall or a slow API period.`,
           evidence: { requestIds: [r.id], turnIndex: r.turnIndex }, metric: r.responseMs,
         });
       }
@@ -1075,10 +1227,18 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       detail: 'Most of the spend happened in delegated work.', evidence: {}, metric: subTokens / allTokens,
     });
 
-    // long-turn
-    for (const tn of trace.turns) if (tn.toolCallIds.length >= o.longTurnTools) push({
-      id: 'long-turn', severity: 'info', title: `Turn ${tn.index + 1} made ${tn.toolCallIds.length} tool calls`,
-      detail: 'A very long autonomous stretch. Worth a skim for wasted work.', evidence: { turnIndex: tn.index, toolCallIds: tn.toolCallIds.slice() }, metric: tn.toolCallIds.length,
+    // long-turn: main conversation only (a subagent's whole run is one turn by design), numbered like
+    // the viewer's T1, T2… (human prompts).
+    // Meta turns (injected reminders, interrupts) between two prompts belong to the stretch before them.
+    const stretches = [];
+    for (const tn of trace.turns) {
+      if (tn.agent !== 'main') continue;
+      if (tn.promptKind === 'human' || !stretches.length) stretches.push({ first: tn, no: stretches.length + 1, ids: [] });
+      stretches[stretches.length - 1].ids.push(...tn.toolCallIds);
+    }
+    for (const st of stretches) if (st.ids.length >= o.longTurnTools) push({
+      id: 'long-turn', severity: 'info', title: `Turn ${st.no} made ${st.ids.length} tool calls`,
+      detail: 'A very long autonomous stretch. Worth a skim for wasted work.', evidence: { turnIndex: st.first.index, toolCallIds: st.ids }, metric: st.ids.length,
     });
 
     const order = { error: 0, warn: 1, info: 2 };
@@ -1164,6 +1324,9 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     'thinking-heavy': 'Most output tokens were thinking; fine for hard problems, but for routine tool loops a lower effort setting is cheaper and just as good.',
     'subagent-share': 'Most spend was in subagents; give them narrower briefs and ask for short structured returns so the parent pays for less.',
     'long-turn': 'A very long autonomous turn; check in with a short progress summary at natural checkpoints so wasted work is caught earlier.',
+    'permission-denied': 'Before a call the user may not want (installs, network, deleting, publishing), say what it will do and ask; for calls they always allow, suggest a permissions allow rule so the prompt goes away.',
+    'duplicate-subagent-read': 'When several subagents need the same file, put the relevant excerpt in their briefs or have one agent summarise it once, instead of every agent reading it into its own context.',
+    'idle-cache-expiry': 'The cache expired while the session sat idle; resume sooner, use the 1-hour cache lifetime where available, or start a fresh session with a summary instead of re-sending the whole history.',
   };
 
   // Advice for a concrete finding: the rule's line, except where the evidence says otherwise.
@@ -1173,6 +1336,11 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       const c = trace.toolCalls.find((x) => x.id === ids[0]);
       if (c && c.category === 'user') return null; // waiting on the human is not the agent's time
       if (c && c.category === 'agent') return 'Subagent run time: give it a narrower brief and ask for a short structured return so the parent is not blocked for as long.';
+      if (c && isWait(c)) return 'Waiting on a long background task: keep doing independent work while it runs, or tell the user it is still going, instead of blocking the turn on it.';
+    }
+    if (f.id === 'oversized-result') {
+      const c = trace.toolCalls.find((x) => x.id === ((f.evidence && f.evidence.toolCallIds) || [])[0]);
+      if (c && hasRange(c)) return 'The read already had a range and still returned a lot: grep for the part you need first, or read a narrower window.';
     }
     return ADVICE[f.id] || null;
   }
@@ -1207,7 +1375,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
 
   // Rules whose detail quotes tool output or model text (everything else is names and numbers).
-  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error']);
+  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error', 'duplicate-subagent-read']);
   function redactDetail(f) { return CONTENT_DETAIL.has(f.id) ? blank(f.detail) : f.detail; }
 
   function reportMarkdown(trace, findings, cost, opts) {
@@ -1864,7 +2032,9 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
   async function loadSession(s) {
     const files = [{ name: s.id + '.jsonl', text: await (await s.handle.getFile()).text() }];
-    try { const sdir = await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'); for await (const [n, h] of sdir.entries()) if (h.kind === 'file' && /\.(jsonl|json)$/.test(n)) files.push({ name: s.id + '/subagents/' + n, text: await (await h.getFile()).text() }); } catch (e) { }
+    // subagents/*.jsonl plus Workflow agents in subagents/workflows/<runId>/ (journal.jsonl is the workflow's log)
+    const walk = async (dir, rel) => { for await (const [n, h] of dir.entries()) { if (h.kind === 'directory') await walk(h, rel + '/' + n); else if (/\.(jsonl|json)$/.test(n) && n !== 'journal.jsonl') files.push({ name: rel + '/' + n, text: await (await h.getFile()).text() }); } };
+    try { await walk(await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'), s.id + '/subagents'); } catch (e) { }
     $('#sessions-dlg').close(); if (S.pickOther) { S.pickOther = false; loadOther(files); } else load(files, false);
   }
   async function showSessions(dir) {
