@@ -1,0 +1,24 @@
+{
+  "name": "glassbox-trace",
+  "owner": {
+    "name": "Aldo Hushi",
+    "url": "https://github.com/aldohushi1-stack"
+  },
+  "description": "Glassbox for Claude Code: a session-review Stop hook plus skills to check, view and compare session transcripts.",
+  "plugins": [
+    {
+      "name": "glassbox",
+      "source": "./",
+      "description": "Ends every turn with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings), optionally hands the findings back to the agent, and adds /glassbox:check plus a skill for checking, viewing and comparing sessions.",
+      "author": {
+        "name": "Aldo Hushi",
+        "url": "https://github.com/aldohushi1-stack"
+      },
+      "homepage": "https://github.com/aldohushi1-stack/glassbox#readme",
+      "repository": "https://github.com/aldohushi1-stack/glassbox",
+      "license": "MIT",
+      "category": "development",
+      "keywords": ["observability", "transcript", "session-review", "tokens", "cost", "hooks"]
+    }
+  ]
+}

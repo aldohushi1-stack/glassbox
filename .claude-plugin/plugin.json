@@ -1,0 +1,34 @@
+{
+  "name": "glassbox",
+  "displayName": "Glassbox",
+  "version": "0.5.0",
+  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), opt-in feedback of the findings to the agent, and skills to check the current session, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
+  "author": {
+    "name": "Aldo Hushi",
+    "url": "https://github.com/aldohushi1-stack"
+  },
+  "homepage": "https://github.com/aldohushi1-stack/glassbox#readme",
+  "repository": "https://github.com/aldohushi1-stack/glassbox",
+  "license": "MIT",
+  "keywords": ["observability", "transcript", "session-review", "tokens", "cost", "hooks", "diagnostics"],
+  "userConfig": {
+    "feedback": {
+      "type": "boolean",
+      "title": "Hand findings back to the agent",
+      "description": "Off by default. When on, the Stop hook also gives Claude the findings (with evidence and the \"next time\" advice) when there are any at or above the threshold; Claude answers in a sentence or two what it would do differently, then stops. Each finding is handed back once per session, and never while Claude is already continuing from a stop hook.",
+      "default": false
+    },
+    "context": {
+      "type": "boolean",
+      "title": "Carry findings into the next session",
+      "description": "Off by default. When on, the Stop hook writes the findings to <project>/.glassbox/last-session.md (with a .gitignore so it is never committed; deleted after a clean session), and the next session in that project starts with them as context.",
+      "default": false
+    },
+    "fail_on": {
+      "type": "string",
+      "title": "Threshold",
+      "description": "Lowest severity the Stop hook lists (and, with feedback on, hands back): error, warn or info. Default: warn.",
+      "default": "warn"
+    }
+  }
+}
