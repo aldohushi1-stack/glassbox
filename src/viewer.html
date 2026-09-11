@@ -881,7 +881,9 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
   async function loadSession(s) {
     const files = [{ name: s.id + '.jsonl', text: await (await s.handle.getFile()).text() }];
-    try { const sdir = await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'); for await (const [n, h] of sdir.entries()) if (h.kind === 'file' && /\.(jsonl|json)$/.test(n)) files.push({ name: s.id + '/subagents/' + n, text: await (await h.getFile()).text() }); } catch (e) { }
+    // subagents/*.jsonl plus Workflow agents in subagents/workflows/<runId>/ (journal.jsonl is the workflow's log)
+    const walk = async (dir, rel) => { for await (const [n, h] of dir.entries()) { if (h.kind === 'directory') await walk(h, rel + '/' + n); else if (/\.(jsonl|json)$/.test(n) && n !== 'journal.jsonl') files.push({ name: rel + '/' + n, text: await (await h.getFile()).text() }); } };
+    try { await walk(await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'), s.id + '/subagents'); } catch (e) { }
     $('#sessions-dlg').close(); if (S.pickOther) { S.pickOther = false; loadOther(files); } else load(files, false);
   }
   async function showSessions(dir) {

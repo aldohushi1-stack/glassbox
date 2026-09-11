@@ -60,14 +60,50 @@ export function noSessionsMessage(home) {
 }
 
 // Session file + its subagent transcripts, as the {name, text} list the core expects.
+// Subagent transcripts: <id>/subagents/*.jsonl, and Workflow agents one level deeper in
+// <id>/subagents/workflows/<runId>/. journal.jsonl there is the workflow's own log, not a transcript.
+export function subagentFiles(s) {
+  const out = [];
+  const walk = (dir, rel) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (e.isDirectory()) walk(path.join(dir, e.name), `${rel}/${e.name}`);
+      else if (/\.(jsonl|json)$/.test(e.name) && e.name !== 'journal.jsonl') out.push({ name: `${rel}/${e.name}`, path: path.join(dir, e.name) });
+    }
+  };
+  const sub = path.join(s.projectDir, s.id, 'subagents');
+  if (fs.existsSync(sub)) walk(sub, `${s.id}/subagents`);
+  return out;
+}
+
 export function loadSessionFiles(s) {
   const files = [{ name: s.id + '.jsonl', text: fs.readFileSync(s.file, 'utf8') }];
-  const sub = path.join(s.projectDir, s.id, 'subagents');
-  if (fs.existsSync(sub)) for (const f of fs.readdirSync(sub)) if (/\.(jsonl|json)$/.test(f)) files.push({ name: `${s.id}/subagents/${f}`, text: fs.readFileSync(path.join(sub, f), 'utf8') });
+  for (const f of subagentFiles(s)) files.push({ name: f.name, text: fs.readFileSync(f.path, 'utf8') });
   return files;
 }
 
-export function analyse(files, rates) { const trace = core.parseTrace(files); const findings = core.diagnose(trace); const cost = core.estimateCost(trace, rates); return { trace, findings, cost }; }
+export function analyse(files, rates) { const trace = core.parseTrace(files); const findings = core.diagnose(trace, rates ? { rates } : undefined); const cost = core.estimateCost(trace, rates); return { trace, findings, cost }; }
+
+// A team rate card: --rates FILE or GLASSBOX_RATES. JSON keyed by model-id prefix, USD per million tokens:
+//   { "claude-opus-5": { "in": 4, "out": 20, "read": 0.4, "w5m": 5, "w1h": 8 } }
+// Entries override or extend the built-in card; cache-write rates default to 1.25× / 2× input.
+export function loadRates(file) {
+  if (!file) return null;
+  let json; try { json = JSON.parse(fs.readFileSync(String(file), 'utf8')); } catch (e) { throw new Error(`--rates ${file}: ${e.code === 'ENOENT' ? 'no such file' : 'not valid JSON'}`); }
+  if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error(`--rates ${file}: expected an object keyed by model id`);
+  const out = Object.assign({}, core.RATES);
+  for (const [model, r] of Object.entries(json)) {
+    if (!r || !['in', 'out', 'read'].every((k) => typeof r[k] === 'number' && r[k] >= 0)) throw new Error(`--rates ${file}: "${model}" needs numeric in, out and read (USD per million tokens)`);
+    out[model] = { in: r.in, out: r.out, read: r.read, w5m: typeof r.w5m === 'number' ? r.w5m : r.in * 1.25, w1h: typeof r.w1h === 'number' ? r.w1h : r.in * 2 };
+  }
+  return out;
+}
+
+// "90m", "1h", "2d" → milliseconds.
+export function parseSince(s) {
+  const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*(m|min|h|d)$/i);
+  if (!m) throw new Error(`--since must look like 30m, 1h or 2d (got "${s}")`);
+  return +m[1] * ({ m: 60e3, min: 60e3, h: 3600e3, d: 86400e3 })[m[2].toLowerCase()];
+}
 
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
 export function embed(files, opts = {}) {
@@ -90,6 +126,14 @@ export function openInBrowser(file, env = process.env) {
 }
 
 const SEV = { error: 0, warn: 1, info: 2 };
+// Text output only: identical findings (same severity, rule and title) print once with a ×N count.
+export function collapseFindings(findings) {
+  const groups = new Map();
+  for (const f of findings) { const k = f.severity + '|' + f.id + '|' + f.title; if (groups.has(k)) groups.get(k).n++; else groups.set(k, { f, n: 1 }); }
+  return Array.from(groups.values());
+}
+const findingLine = ({ f, n }) => `${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}${n > 1 ? `  ×${n}` : ''}`;
+
 export function checkReport({ trace, findings, cost }, opts = {}) {
   const failOn = opts.failOn || 'error';
   const failing = findings.filter((f) => SEV[f.severity] <= SEV[failOn]);
@@ -105,7 +149,7 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   lines.push(`  context served ${fi(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} tokens (${T.cacheHitRatio != null ? Math.round(T.cacheHitRatio * 100) + '% cached' : 'no usage'}) · output ${fi(T.usage.output)} (${fi(T.usage.thinking)} thinking) · est. cost ${usd(summary.cost)}`);
   lines.push('');
   if (!findings.length) lines.push('  no findings');
-  for (const f of findings) lines.push(`  ${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}`);
+  for (const g of collapseFindings(findings)) lines.push('  ' + findingLine(g));
   if (redact) lines.push('', '  (redacted: prompt text, tool inputs and result text blanked)');
   lines.push('');
   lines.push(failing.length ? `  FAIL: ${failing.length} finding${failing.length > 1 ? 's' : ''} at or above "${failOn}"` : `  OK: nothing at or above "${failOn}"`);
@@ -126,9 +170,46 @@ export function sessionFromTranscriptPath(p) {
   return { id: path.basename(file).replace(/\.jsonl$/, ''), file, project: null, projectDir: path.dirname(file), size: fs.existsSync(file) ? fs.statSync(file).size : 0, mtime: fs.existsSync(file) ? fs.statSync(file).mtimeMs : 0 };
 }
 
+// Persisted feedback (--context): the Stop hook leaves <project>/.glassbox/last-session.md behind and
+// the SessionStart hook hands it to the next session, so feedback reaches the session that can use it.
+export const NOTES_FILE = path.join('.glassbox', 'last-session.md');
+const NOTES_MAX = 6000;
+function notesPath(cwd) { return cwd && fs.existsSync(cwd) && fs.statSync(cwd).isDirectory() ? path.join(cwd, NOTES_FILE) : null; }
+function writeNotes(cwd, text) {
+  const file = notesPath(cwd); if (!file) return null;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const ignore = path.join(path.dirname(file), '.gitignore'); if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '# written by glassbox hook --context; local notes, never committed\n*\n');
+  fs.writeFileSync(file, text.length > NOTES_MAX ? text.slice(0, NOTES_MAX) + '\n\n… (truncated; run `glassbox check --format md` for the full report)\n' : text);
+  return file;
+}
+export function sessionStartResponse(input) {
+  const file = notesPath(input && input.cwd);
+  if (!file || !fs.existsSync(file) || (input.source && !['startup', 'clear', 'compact'].includes(input.source))) return { suppressOutput: true };
+  const text = fs.readFileSync(file, 'utf8');
+  return { suppressOutput: true, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: `Notes from Glassbox on the previous session in this project (.glassbox/last-session.md). Keep them in mind; don't redo that work.\n\n${text}` } };
+}
+
+// Findings already handed back in this session, keyed by rule + title, kept in the temp dir.
+function undeliveredFindings(sessionId, top, stateDir) {
+  const dir = stateDir || process.env.GLASSBOX_STATE_DIR || path.join(os.tmpdir(), 'glassbox-hook');
+  const file = path.join(dir, String(sessionId).replace(/[^\w.-]/g, '_') + '.json');
+  let seen = []; try { seen = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { }
+  const key = (f) => f.id + '|' + f.title;
+  const fresh = top.filter((f) => !seen.includes(key(f)));
+  if (fresh.length) { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(file, JSON.stringify([...seen, ...fresh.map(key)])); } catch (e) { } }
+  return fresh;
+}
+
 export function hookResponse(input, opts = {}) {
   const failOn = opts.failOn || 'warn';
   const feedback = !!opts.feedback;
+  if (input && input.hook_event_name === 'SessionStart') return opts.context ? sessionStartResponse(input) : { suppressOutput: true };
+  // Second Stop after a feedback block: record what the agent said it would do differently, then let it stop.
+  if (opts.context && input && input.hook_event_name === 'Stop' && input.stop_hook_active) {
+    const file = notesPath(input.cwd);
+    if (file && fs.existsSync(file) && input.last_assistant_message && fs.readFileSync(file, 'utf8').includes(`session ${String(input.session_id || '').slice(0, 8)}`)) fs.appendFileSync(file, `\n## What the agent said it would do differently\n\n${String(input.last_assistant_message).trim().slice(0, 1500)}\n`);
+    return { suppressOutput: true };
+  }
   if (!input || !input.transcript_path || !fs.existsSync(input.transcript_path)) return { systemMessage: 'Glassbox: no transcript_path in hook input.', suppressOutput: true };
   const s = sessionFromTranscriptPath(input.transcript_path);
   const res = analyse(loadSessionFiles(s), opts.rates);
@@ -137,12 +218,25 @@ export function hookResponse(input, opts = {}) {
   const usd = (v) => v == null ? '' : ' · ' + (v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2));
   const top = res.findings.filter((f) => SEV[f.severity] <= SEV[failOn]);
   const head = `Glassbox · ${T.turns} turns · ${T.toolCalls} tool calls (${T.toolErrors} failed) · ctx peak ${core.fmtInt(Math.max(0, ...res.trace.requests.map((r) => r.contextTokens)))} tokens${usd(rep.json.summary.cost)}`;
-  const list = top.slice(0, 6).map((f) => `${f.severity.toUpperCase()} ${f.id}: ${f.title}`);
-  const out = { systemMessage: head + (list.length ? '\n' + list.join('\n') + (top.length > 6 ? `\n… ${top.length - 6} more (glassbox check)` : '') : '\nno findings at or above ' + failOn), suppressOutput: true };
-  // Feedback loop: only on Stop, only once (stop_hook_active guards against loops), only when something is worth saying.
-  if (feedback && input.hook_event_name === 'Stop' && !input.stop_hook_active && top.length) {
+  const topGroups = collapseFindings(top);
+  const list = topGroups.slice(0, 6).map(({ f, n }) => `${f.severity.toUpperCase()} ${f.id}: ${f.title}${n > 1 ? ` ×${n}` : ''}`);
+  const rest = topGroups.slice(6).reduce((s, g) => s + g.n, 0);
+  const out = { systemMessage: head + (list.length ? '\n' + list.join('\n') + (rest ? `\n… ${rest} more (glassbox check)` : '') : '\nno findings at or above ' + failOn), suppressOutput: true };
+  if (opts.context && input.hook_event_name === 'Stop') {
+    const file = notesPath(input.cwd);
+    if (top.length) {
+      const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+      const body = core.reportMarkdown(res.trace, top.slice(0, 8), null, { maxEvidence: 2, instruction: false, title: 'last session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '');
+      writeNotes(input.cwd, `# Glassbox: last session in this project\n\n${when} UTC · session ${String(input.session_id || s.id).slice(0, 8)} · ${head.replace(/^Glassbox · /, '')}\n\n${body.trim()}\n`);
+    } else if (file && fs.existsSync(file)) fs.unlinkSync(file); // a clean session: don't keep old advice around
+  }
+  // Feedback loop: only on Stop, never while continuing from our own block (stop_hook_active), and each
+  // finding only once per session. stop_hook_active resets every turn, so without the delivered set a
+  // session would be blocked again at the end of every later turn with the same findings.
+  const fresh = feedback && input.hook_event_name === 'Stop' && !input.stop_hook_active ? undeliveredFindings(input.session_id || s.id, top, opts.stateDir) : [];
+  if (fresh.length) {
     out.decision = 'block';
-    out.reason = `Glassbox read this session's flight recorder (${head}).\n\n` + core.reportMarkdown(res.trace, top, null, { maxEvidence: 3, instruction: false, title: 'this session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '') + `\nIn one or two sentences, tell the user what you would do differently next session (no need to redo work), then stop.`;
+    out.reason = `Glassbox read this session's flight recorder (${head}).\n\n` + core.reportMarkdown(res.trace, fresh, null, { maxEvidence: 3, instruction: false, title: 'this session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '') + `\nIn one or two sentences, tell the user what you would do differently next session (no need to redo work), then stop.`;
   }
   return out;
 }
@@ -158,8 +252,8 @@ export function installHook(opts = {}) {
   let settings = {};
   if (fs.existsSync(file)) { try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
-  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
-  for (const ev of opts.events || ['Stop']) {
+  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  for (const ev of opts.events || (opts.context ? ['Stop', 'SessionStart'] : ['Stop'])) {
     const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
     const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
     kept.push({ hooks: [{ type: 'command', command: cmd, timeout: 60 }] });
@@ -187,7 +281,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -204,17 +298,21 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  print findings; exit 1 when any finding is at/above --fail-on (default: error), 2 on a usage error
                                  --format md is written to be pasted back to the agent: evidence + advice per finding
                                  --redact blanks prompt text, tool inputs and result text so the report can be shared
+  glassbox check --all [--since 1h] [--project PATH]
+                                 one line per session (all, or written in the last 30m/1h/2d); exit 1 if any fails
   glassbox compare A B [--format text|json|md] [--out FILE.html] [--label-a NAME --label-b NAME]
                                  same task, two sessions: what changed in time, tokens, cost, tools and findings
   glassbox watch [ID|FILE] [--port N] [--no-open]
                                  live tail: serves the viewer on 127.0.0.1 and pushes the transcript as it grows
-  glassbox hook install [--feedback] [--fail-on warn]
+  glassbox hook install [--feedback] [--context] [--fail-on warn]
                                  add a Claude Code Stop hook so every session ends with a Glassbox summary;
-                                 --feedback also hands the findings back to the agent once, so it can learn from them
+                                 --feedback also hands the findings back to the agent once, so it can learn from them;
+                                 --context keeps them in <project>/.glassbox/last-session.md and gives them to the next session
   glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
   glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
+            --rates FILE a JSON rate card for check, compare and hook (or set GLASSBOX_RATES)
             --version    --help
   Browser   set GLASSBOX_BROWSER to a command to open HTML files with
 
@@ -236,7 +334,7 @@ export function compareReport(A, B, opts = {}) {
   lines.push('  ' + 'metric'.padEnd(22) + la.padStart(w) + '  ' + lb.padStart(w) + '  change');
   for (const m of c.metrics) { const ch = core.fmtChange(m); lines.push('  ' + m.label.padEnd(22) + m.aText.padStart(w) + '  ' + m.bText.padStart(w) + '  ' + ch + (m.better ? ' (' + who(m.better) + ')' : '')); }
   lines.push('');
-  const fl = (list, label) => { if (!list.length) return; lines.push(`  only in ${label}:`); for (const f of list) lines.push(`    ${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}`); };
+  const fl = (list, label) => { if (!list.length) return; lines.push(`  only in ${label}:`); for (const g of collapseFindings(list)) lines.push('    ' + findingLine(g)); };
   fl(c.findings.onlyA, la); fl(c.findings.onlyB, lb);
   if (c.findings.both.length) lines.push(`  in both: ${c.findings.both.map((f) => f.id).join(', ')}`);
   if (!c.findings.onlyA.length && !c.findings.onlyB.length && !c.findings.both.length) lines.push('  no findings in either session');
@@ -252,15 +350,32 @@ export async function main(argv, io = {}) {
   if (args.flags.help || cmd === 'help') { out(HELP); return 0; }
   if (args.flags.version) { out(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version); return 0; }
   try {
+    const rates = loadRates(args.flags.rates || (io.env || process.env).GLASSBOX_RATES);
     if (cmd === 'list') {
       const list = findSessions({ home, last: args.flags.last ? +args.flags.last : 20, grep: args.flags.grep, project: args.flags.project });
       if (!list.length) { out(noSessionsMessage(home)); return 0; }
       for (const s of list) out(`${s.id.slice(0, 8)}  ${new Date(s.mtime).toISOString().slice(0, 16).replace('T', ' ')}  ${String(Math.round(s.size / 1024)).padStart(6)} KB  ${s.project.padEnd(28).slice(0, 28)}  ${sessionTitle(s.file)}`);
       return 0;
     }
+    if (cmd === 'check' && args.flags.all) {
+      // Every session (optionally only those written in the last --since), one line each; exit 1 if any fails.
+      const since = args.flags.since ? parseSince(args.flags.since) : null;
+      const list = findSessions({ home, project: args.flags.project }).filter((s) => since == null || s.mtime >= Date.now() - since);
+      const fmtOut = outputFormat(args.flags);
+      const reps = list.map((s) => ({ s, rep: checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact }) }));
+      const failed = reps.filter((r) => r.rep.failed).length;
+      if (fmtOut === 'json') out(JSON.stringify({ glassbox: core.VERSION, schema: 1, failOn: args.flags['fail-on'] || 'error', failed: failed > 0, sessions: reps.map((r) => r.rep.json) }, null, 2));
+      else if (fmtOut === 'md') out(reps.map((r) => r.rep.markdown).join('\n---\n\n'));
+      else {
+        if (!reps.length) out(since != null ? `No sessions written in the last ${args.flags.since}.` : noSessionsMessage(home));
+        for (const { s, rep } of reps) { const f = rep.json.findings, n = (sev) => f.filter((x) => x.severity === sev).length, c = rep.json.summary.cost; out(`${rep.failed ? 'FAIL' : 'ok  '}  ${s.id.slice(0, 8)}  ${String(n('error')).padStart(2)} error ${String(n('warn')).padStart(3)} warn ${String(n('info')).padStart(3)} info  ${c == null ? '     —' : ('$' + c.toFixed(2)).padStart(8)}  ${args.flags.redact ? '' : sessionTitle(s.file)}`); }
+        if (reps.length) out(`\n${failed} of ${reps.length} session${reps.length === 1 ? '' : 's'} at or above "${args.flags['fail-on'] || 'error'}"`);
+      }
+      return failed ? 1 : 0;
+    }
     if (cmd === 'check') {
       const s = resolveTarget(args._[1], { home });
-      const res = checkReport(analyse(loadSessionFiles(s)), { failOn: args.flags['fail-on'], redact: !!args.flags.redact });
+      const res = checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact });
       const fmtOut = outputFormat(args.flags);
       if (fmtOut === 'json') out(JSON.stringify(res.json, null, 2)); else if (fmtOut === 'md') out(res.markdown); else out(res.text);
       return res.failed ? 1 : 0;
@@ -269,7 +384,7 @@ export async function main(argv, io = {}) {
       if (!args._[1] || !args._[2]) throw new Error('compare needs two sessions: glassbox compare A B');
       const sa = resolveTarget(args._[1], { home }), sb = resolveTarget(args._[2], { home });
       const fa = loadSessionFiles(sa), fb = loadSessionFiles(sb);
-      const rep = compareReport(analyse(fa), analyse(fb), { labelA: args.flags['label-a'], labelB: args.flags['label-b'] });
+      const rep = compareReport(analyse(fa, rates), analyse(fb, rates), { labelA: args.flags['label-a'], labelB: args.flags['label-b'] });
       if (args.flags.out) {
         const html = embed({ files: fa, compare: fb }, { template: io.template });
         const outFile = path.resolve(args.flags.out); fs.writeFileSync(outFile, html);
@@ -281,7 +396,7 @@ export async function main(argv, io = {}) {
       if (fmtOut === 'json') out(JSON.stringify(rep.json, null, 2)); else if (fmtOut === 'md') out(rep.markdown); else out(rep.text);
       return 0;
     }
-    if (cmd === 'open') {
+    if (cmd === 'open' && !args.flags.watch) {
       const s = resolveTarget(args._[1], { home });
       const files = loadSessionFiles(s);
       const html = embed(files, { template: io.template });
@@ -303,10 +418,13 @@ export async function main(argv, io = {}) {
     }
     if (cmd === 'hook') {
       const sub = args._[1];
-      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, failOn: args.flags['fail-on'], command: args.flags.command, events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed Stop hook in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}. Restart Claude Code to pick it up.`); return 0; }
+      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, context: !!args.flags.context, failOn: args.flags['fail-on'], command: args.flags.command, events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed ${args.flags.context ? 'Stop and SessionStart hooks' : 'Stop hook'} in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}${args.flags.context ? `; findings are kept in <project>/${NOTES_FILE.replace(/\\/g, '/')} and handed to the next session there` : ''}. Restart Claude Code to pick it up.`); return 0; }
       if (sub === 'uninstall') { const r = uninstallHook({ home }); out(`Removed ${r.removed} Glassbox hook${r.removed === 1 ? '' : 's'} from ${r.file}`); return 0; }
-      const input = io.stdin !== undefined ? io.stdin : await readStdinJson();
-      out(JSON.stringify(hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback })));
+      // A hook must never fail loudly: exit 2 from a Stop hook blocks Claude with the error as the reason.
+      let reply;
+      try { const input = io.stdin !== undefined ? io.stdin : await readStdinJson(); reply = hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback, context: !!args.flags.context, rates, stateDir: io.stateDir }); }
+      catch (e) { reply = { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
+      out(JSON.stringify(reply));
       return 0;
     }
     err('Unknown command: ' + cmd + '\n'); out(HELP); return 2;

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import { subagentFiles } from './cli.mjs';
 
 // Follow one session's files by byte offset. Emits:
 //   { type: 'snapshot', files: [{name, text}] }     once, at start()
@@ -21,12 +22,11 @@ export class Tailer {
   on(fn) { this.listeners.push(fn); return this; }
   emit(ev) { for (const fn of this.listeners) fn(ev); }
 
-  // All files that belong to the session right now: main + subagents dir.
+  // All files that belong to the session right now: main + subagents dir (Workflow agents included;
+  // fs.watch below is not recursive, so their folders are picked up by the poll).
   discover() {
-    const s = this.session; const out = [{ name: s.id + '.jsonl', path: s.file }];
-    const sub = path.join(s.projectDir, s.id, 'subagents');
-    if (fs.existsSync(sub)) for (const f of fs.readdirSync(sub).sort()) if (/\.(jsonl|json)$/.test(f)) out.push({ name: `${s.id}/subagents/${f}`, path: path.join(sub, f) });
-    return out;
+    const s = this.session;
+    return [{ name: s.id + '.jsonl', path: s.file }, ...subagentFiles(s)];
   }
 
   // Read everything new. Returns the events it emitted (also emits them).
