@@ -6,7 +6,7 @@
 
 Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call — subagents and Workflow agents included — where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context that cost you money, files every subagent re-read — each with the evidence and one line on what to do differently. Compare two sessions side by side. Watch one live while Claude Code writes it. Hand the findings back to the agent. Nothing leaves your machine, and no tokens are spent: every rule is mechanical.
 
-**Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would ([docs/CI.md](docs/CI.md)).
+**Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would. In GitHub Actions it's one step, `uses: aldohushi1-stack/glassbox@main`, with the report in the job summary ([docs/CI.md](docs/CI.md)).
 
 ![Glassbox showing the trace of the session that built it](dist/screenshot-dark.png)
 
@@ -38,7 +38,7 @@ glassbox watch                        live tail: the viewer follows the newest s
 
 The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
-**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema`; `--redact` blanks prompt text, tool inputs and quoted output. A GitHub Actions example for Agent SDK runs is in [docs/CI.md](docs/CI.md).
+**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema`; `--redact` blanks prompt text, tool inputs and quoted output. The GitHub Action (`uses: aldohushi1-stack/glassbox@main`) checks every session the job wrote, puts the report in the job summary, turns each error and warning into an annotation, and fails the step at `fail-on` — inputs and outputs in [docs/CI.md](docs/CI.md).
 
 **Feed it back to Claude.** `glassbox check --format md` prints the findings the way an agent needs them: each one with the concrete tool calls and request numbers it is about, and a fixed "next time" line per rule. Paste it into the next session ("here's what went wrong last time"), pipe it into a file, or let the Stop hook below deliver it automatically.
 
@@ -50,9 +50,12 @@ The npm package is `glassbox-trace` (plain `glassbox` was already taken); the co
 
 Feedback at the end of a session can only change that session's last reply. Add `--context` to carry it forward: the Stop hook keeps the findings (and, with `--feedback`, the agent's answer) in `<project>/.glassbox/last-session.md` — git-ignored, deleted after a clean session — and a SessionStart hook gives them to the next session in that project.
 
+**Stop a loop before it happens.** `--guard` adds a PreToolUse hook: when the agent is about to repeat a call that has already failed twice in a row, unchanged, it blocks the call and tells the agent why ("read the error, change something, or ask"). It is deliberately narrow. Anything that could change the outcome in between — an edit, another command, a success, a new prompt — resets it, so re-running the tests after a fix is never blocked; calls a person stopped don't count; it never approves anything, so your permission prompts are untouched. Replayed over 4,121 real tool calls it blocked none, so it stays out of the way until an agent is actually stuck. It runs before every tool call, so it points at your installed copy with `node` rather than going through `npx`.
+
 ```
-glassbox hook install --feedback --context --fail-on warn   # summary, feedback, and notes for the next session
-glassbox hook install                                       # summary only
+npm i -g glassbox-trace
+glassbox hook install --feedback --context --guard --fail-on warn   # summary, feedback, notes for the next session, loop guard
+glassbox hook install                                               # summary only
 glassbox hook uninstall
 ```
 
@@ -122,6 +125,8 @@ src/trace-core.js     pure engine: parseTrace · diagnose · estimateCost · red
 src/viewer.html       the UI; the build inlines trace-core and the demo
 src/cli.mjs           CLI library (session discovery, embed, check, compare, hook); bin/glassbox.mjs is the entry point
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
+src/guard.mjs         the PreToolUse loop guard (`hook --guard`)
+action.yml            the GitHub Action; scripts/action.mjs does the work
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
 scripts/corpus-audit.mjs  run every rule over your local sessions; counts only (--baseline to diff two runs)

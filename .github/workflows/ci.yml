@@ -17,6 +17,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - run: npm run audit
+      # The GitHub Action checking itself: the demo transcript, reported but not gating.
+      - name: Glassbox action (self-test)
+        id: glassbox
+        uses: ./
+        with:
+          sessions: test/fixtures/real-main.jsonl
+          fail-on: never
+          report: glassbox-self-test.md
+      - run: test "${{ steps.glassbox.outputs.sessions }}" = "1" && test -s glassbox-self-test.md
       - uses: actions/upload-artifact@v4
         with:
           name: glassbox-html

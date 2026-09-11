@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+- **Loop guard:** `glassbox hook install --guard` adds a PreToolUse hook that blocks a tool call that has already failed twice in a row, unchanged, in the current turn, and tells the agent why. Anything that could change the outcome in between (an edit, another command, any non-read call, a success, a new human prompt) resets it; calls a person stopped don't count; Bash `description` / `timeout` / `run_in_background` are ignored when comparing calls. It never approves anything (no output = Claude Code's normal permission flow), reads only the last 4 MB of the transcript, and judges subagents on their own transcript. Replayed over 4,121 tool calls from 33 real sessions: 0 blocks. It is installed with a direct `node …/bin/glassbox.mjs` command (refused from an npx cache, where it would cost seconds per tool call) and is not in the plugin's hooks (see docs/PLUGIN.md).
+- **GitHub Action:** `uses: aldohushi1-stack/glassbox@main` (`action.yml`, `scripts/action.mjs`). Checks the sessions a job wrote (or given files/folders), writes the report to the job summary, one annotation per distinct error or warning, outputs `failed` / `sessions` / `findings` / `cost` / `report`, and fails the step at `fail-on` (`never` to report only). Redacted by default. CI runs it on the demo transcript.
+- `hook uninstall` and the plugin now recognise the direct `node "…/glassbox.mjs" hook` form (it didn't match before).
+- docs/CI.md rewritten around the Action and the guard.
+
 ## 0.5.0 — 2026-09-11
 **Claude Code plugin.** `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`: the Stop hook, a SessionStart hook, `/glassbox:check`, and a `glassbox` skill, running the bundled code with `node` (no npx). Options `feedback`, `context` and `fail_on`; `GLASSBOX_FEEDBACK` / `GLASSBOX_CONTEXT` / `GLASSBOX_FAIL_ON` override them per project. The plugin's hook stays quiet if `glassbox hook install` already added one. See docs/PLUGIN.md.
 

@@ -49,6 +49,17 @@ Claude Code only reads plugin options from user or managed settings, never from 
 
 Why it works this way: Claude Code exports plugin options to hooks as `CLAUDE_PLUGIN_OPTION_<KEY>`. The hook (`hooks/glassbox-hook.mjs`) reads them and calls the same `hookResponse` as `glassbox hook`. The wrapper also makes sure the hook always exits 0: a Stop hook that exits 2 blocks Claude and shows it the error text.
 
+## The loop guard is not in the plugin
+
+The retry guard (`glassbox hook --guard`: block a call that already failed twice in a row, unchanged) is a PreToolUse hook, and a plugin's hooks always run: it would start a Node process before every tool call for every plugin user, even with the guard switched off. That costs little on most machines and about a second per call on some Windows setups, so it stays opt-in through the CLI:
+
+```
+npm i -g glassbox-trace
+glassbox hook install --guard      # add --feedback / --context to keep what the plugin options did
+```
+
+The plugin sees a Glassbox hook in `settings.json` and steps aside, so nothing runs twice. `glassbox hook uninstall` hands the job back to the plugin.
+
 ## Use
 
 - `/glassbox:check` checks this session and walks through the findings.

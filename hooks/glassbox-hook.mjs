@@ -10,7 +10,7 @@
 //    summary (and any feedback) doesn't arrive twice.
 import fs from 'node:fs';
 import path from 'node:path';
-import { hookResponse, readStdinJson, settingsPath } from '../src/cli.mjs';
+import { hookResponse, readStdinJson, settingsPath, HOOK_RE } from '../src/cli.mjs';
 
 const env = process.env;
 const pick = (...vals) => vals.find((v) => v != null && String(v).trim() !== '');
@@ -27,7 +27,7 @@ function settingsHasGlassboxHook() {
   try {
     const hooks = JSON.parse(fs.readFileSync(file, 'utf8')).hooks || {};
     return Object.values(hooks).some((list) => Array.isArray(list) && list.some((entry) => entry && Array.isArray(entry.hooks)
-      && entry.hooks.some((h) => h && typeof h.command === 'string' && /\bglassbox(?:-trace)?\s+hook\b/.test(h.command))));
+      && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
   } catch (e) { return false; }
 }
 

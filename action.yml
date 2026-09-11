@@ -1,0 +1,68 @@
+name: Glassbox check
+description: Check Claude Code agent runs like a test. Findings with evidence in the job summary; the step fails on retry loops, failing tools or runaway context.
+author: Aldo Hushi
+branding:
+  icon: search
+  color: orange
+
+inputs:
+  sessions:
+    description: Transcript files or folders of them (Claude Code .jsonl, or `claude -p --output-format stream-json` output), one per line or space-separated. Empty checks every Claude Code session under `home`.
+    required: false
+    default: ''
+  home:
+    description: The Claude Code folder to search when `sessions` is empty.
+    required: false
+    default: '~/.claude'
+  since:
+    description: With `sessions` empty, only sessions written in the last 30m, 1h, 2d…
+    required: false
+    default: ''
+  fail-on:
+    description: Fail the step when any finding is at or above this severity: error, warn, info, or never.
+    required: false
+    default: warn
+  redact:
+    description: Blank prompt text, tool inputs and quoted tool output in the summary and report (job summaries are visible to anyone who can read the run).
+    required: false
+    default: 'true'
+  rates:
+    description: Optional JSON rate card (USD per million tokens, keyed by model-id prefix) for cost figures.
+    required: false
+    default: ''
+  report:
+    description: Where to write the full Markdown report.
+    required: false
+    default: glassbox-report.md
+
+outputs:
+  failed:
+    description: '"true" when a session had findings at or above fail-on.'
+    value: ${{ steps.check.outputs.failed }}
+  sessions:
+    description: Number of sessions checked.
+    value: ${{ steps.check.outputs.sessions }}
+  findings:
+    description: Total findings across the sessions.
+    value: ${{ steps.check.outputs.findings }}
+  cost:
+    description: Total estimated cost in USD.
+    value: ${{ steps.check.outputs.cost }}
+  report:
+    description: Path of the Markdown report.
+    value: ${{ steps.check.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        INPUT_SESSIONS: ${{ inputs.sessions }}
+        INPUT_HOME: ${{ inputs.home }}
+        INPUT_SINCE: ${{ inputs.since }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_REDACT: ${{ inputs.redact }}
+        INPUT_RATES: ${{ inputs.rates }}
+        INPUT_REPORT: ${{ inputs.report }}
+      run: node "$GITHUB_ACTION_PATH/scripts/action.mjs"
