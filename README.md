@@ -62,6 +62,8 @@ glassbox hook uninstall
 
 **In the browser:** the viewer is one HTML file — open `dist/glassbox.html` (double-click, no server; the CLI, compare-from-terminal and live tail need Node 18+). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
 
+**Cowork sessions that run in the cloud** keep their transcript in the cloud workspace, not on your machine, and it goes away when the session ends. Before you finish, ask Claude to copy it to a folder you've connected ("save this session's transcript to my Glassbox folder"); it can read its own `~/.claude/projects/…/<session-id>.jsonl` and write it out. Cowork sessions that run locally, and all Claude Code sessions, are already where `glassbox list` looks.
+
 Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → context & cost → findings → tools → turns. Click anything for detail. Every selection is a permalink (`#req=17`, `#tool=…`, `#find=3`, `#turn=2`).
 
 **Keyboard:** `Tab` into the timeline, `←`/`→` previous/next call, `↑`/`↓` change lane, `Enter` opens detail, `Esc` closes it; `+` `−` `0` zoom, `Shift+←/→` pan, `/` search, `?` help. Touch: drag to pan, pinch to zoom.
