@@ -2,13 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { session, file } from './gen.mjs';
 
 const require = createRequire(import.meta.url);
 const core = require('../src/trace-core.js');
 const { parseTrace, diagnose, estimateCost, redact, parseLines, toJsonl } = core;
-const FIX = path.join(path.dirname(new URL(import.meta.url).pathname), 'fixtures');
+const FIX = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const findings = (t, o) => diagnose(t, o);
 const ids = (fs) => fs.map((f) => f.id);
 

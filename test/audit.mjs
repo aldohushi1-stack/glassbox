@@ -2,10 +2,11 @@
 // node test/audit.mjs  → writes dist/audit.json and prints a summary.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = 'file://' + path.join(root, 'dist/glassbox.html');
 const axeSrc = fs.readFileSync(path.join(root, 'test/axe.min.js'), 'utf8');
 

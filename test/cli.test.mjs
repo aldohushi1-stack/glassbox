@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { session } from './gen.mjs';
 import { findSessions, resolveTarget, loadSessionFiles, analyse, checkReport, embed, parseArgs, main, decodeProject } from '../src/cli.mjs';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // Build a fake ~/.claude with two projects and three sessions, one with a subagent.
 function fakeHome() {
@@ -171,4 +172,57 @@ test('main: hook reads stdin JSON and prints JSON', async () => {
   const j = JSON.parse(lines[0]);
   assert.equal(j.decision, 'block');
   assert.match(j.reason, /flight recorder/);
+});
+
+import { outputFormat, compareReport } from '../src/cli.mjs';
+
+test('check --format md is the agent-ready report; --json/--markdown still work as aliases; bad format is an error', async () => {
+  const home = fakeHome();
+  const lines = []; const errs = []; const io = { stdout: (s) => lines.push(s), stderr: (s) => errs.push(s), home };
+  assert.equal(await main(['check', 'aaaa', '--format', 'md'], io), 1);
+  const md = lines[lines.length - 1];
+  assert.match(md, /^# Glassbox report/);
+  assert.match(md, /Evidence:/);
+  assert.match(md, /npm test/, 'evidence carries the failing command');
+  assert.match(md, /Next time:/);
+  assert.match(md, /## What to do with this/);
+  assert.equal(await main(['check', 'aaaa', '--markdown'], io), 1);
+  assert.match(lines[lines.length - 1], /^# Glassbox report/);
+  assert.equal(await main(['check', 'aaaa', '--format=json'], io), 1);
+  assert.doesNotThrow(() => JSON.parse(lines[lines.length - 1]));
+  assert.equal(await main(['check', 'aaaa', '--format', 'xml'], io), 2);
+  assert.match(errs[errs.length - 1], /--format must be/);
+  assert.equal(outputFormat({}), 'text'); assert.equal(outputFormat({ json: true }), 'json'); assert.equal(outputFormat({ format: 'markdown' }), 'md');
+});
+
+test('hook --feedback reason carries evidence and advice from the shared report generator', () => {
+  const home = fakeHome();
+  const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
+  const r = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false }, { feedback: true, failOn: 'warn' });
+  assert.match(r.reason, /retry-loop/);
+  assert.match(r.reason, /Evidence:/);
+  assert.match(r.reason, /Next time:/);
+  assert.equal(r.reason.includes('## Tools'), false, 'hook reason is compact: no tools table');
+  assert.match(r.reason, /what you would do differently next session/);
+});
+
+test('compare: text/json/md output, labels, and --out embeds both sessions', { skip: !fs.existsSync(path.join(ROOT, 'dist/glassbox.html')) }, async () => {
+  const home = fakeHome();
+  const lines = []; const errs = []; const io = { stdout: (s) => lines.push(s), stderr: (s) => errs.push(s), home, noOpen: true };
+  assert.equal(await main(['compare', 'aaaa', 'bbbb'], io), 0);
+  assert.match(lines[lines.length - 1], /Glassbox compare · aaaa1111 vs bbbb2222/);
+  assert.match(lines[lines.length - 1], /cleaner: bbbb2222/, 'the clean session wins on findings');
+  assert.equal(await main(['compare', 'aaaa', 'bbbb', '--format', 'md', '--label-a', 'before', '--label-b', 'after'], io), 0);
+  assert.match(lines[lines.length - 1], /\| metric \| before \| after \|/);
+  assert.equal(await main(['compare', 'aaaa', 'bbbb', '--format', 'json'], io), 0);
+  const j = JSON.parse(lines[lines.length - 1]); assert.ok(Array.isArray(j.metrics)); assert.equal(j.verdict.cleaner, 'b');
+  assert.equal(await main(['compare', 'aaaa'], io), 2);
+  assert.match(errs[errs.length - 1], /needs two sessions/);
+  const outFile = path.join(home, 'cmp.html');
+  assert.equal(await main(['compare', 'aaaa', 'cccc', '--out', outFile, '--no-open'], io), 0);
+  const html = fs.readFileSync(outFile, 'utf8');
+  assert.ok(html.includes('"compare":[{"name":"cccc3333-0000.jsonl"'), 'second session embedded under compare');
+  assert.ok(html.includes('agent-sub01'), 'its subagent came along');
+  const rep = compareReport(analyse(loadSessionFiles(resolveTarget('aaaa', { home }))), analyse(loadSessionFiles(resolveTarget('bbbb', { home }))));
+  assert.equal(rep.compare.metrics.find((m) => m.key === 'toolErrors').a, 3);
 });
