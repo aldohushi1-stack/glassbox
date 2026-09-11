@@ -4,7 +4,9 @@
 
 **Other tools show you what happened in a Claude Code session. Glassbox tells you what went wrong.**
 
-Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call, where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context bloat, stalls — each with the evidence and one line on what to do differently. Compare two sessions side by side. Watch one live while Claude Code writes it. Hand the findings back to the agent. Nothing leaves your machine.
+Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call — subagents and Workflow agents included — where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context that cost you money, files every subagent re-read — each with the evidence and one line on what to do differently. Compare two sessions side by side. Watch one live while Claude Code writes it. Hand the findings back to the agent. Nothing leaves your machine, and no tokens are spent: every rule is mechanical.
+
+**Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would ([docs/CI.md](docs/CI.md)).
 
 ![Glassbox showing the trace of the session that built it](dist/screenshot-dark.png)
 
@@ -12,7 +14,7 @@ The demo built into the file is the trace of the session that built Glassbox, sa
 
 ## Why
 
-Every Claude Code and Cowork session writes its full transcript to `~/.claude/projects/<project>/<session-id>.jsonl`, with subagents in `<session-id>/subagents/agent-*.jsonl`. The Agent SDK emits the same shapes as `--output-format stream-json`. Those files are the only complete record of what an agent did, and they're unreadable: one JSON object per line, assistant messages split one record per content block, usage duplicated across those records, tool calls joined to results only by id.
+Every Claude Code and Cowork session writes its full transcript to `~/.claude/projects/<project>/<session-id>.jsonl`, with subagents in `<session-id>/subagents/agent-*.jsonl` and Workflow agents in `<session-id>/subagents/workflows/<runId>/`. The Agent SDK emits the same shapes as `--output-format stream-json`. Those files are the only complete record of what an agent did, and they're unreadable: one JSON object per line, assistant messages split one record per content block, usage duplicated across those records, tool calls joined to results only by id.
 
 Agents can't see their own traces. Humans reviewing agent work can't either. Glassbox fixes both.
 
@@ -44,13 +46,19 @@ The npm package is `glassbox-trace` (plain `glassbox` was already taken); the co
 
 **Watch a session live.** `glassbox watch` serves the viewer from `127.0.0.1` and streams the transcript to it as it grows — new tool calls land on the timeline within a second, tiles and findings update, **Follow** keeps the right edge on now (pan or zoom and it lets go). Loopback only; nothing leaves the machine.
 
-**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings — with their evidence and the "next time" advice — are handed back to the agent once; it reads them and says, in a sentence, what it would do differently. It never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
+**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings — with their evidence and the "next time" advice — are handed back to the agent; it reads them and says, in a sentence, what it would do differently. Each finding is handed back once per session, it never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
+
+Feedback at the end of a session can only change that session's last reply. Add `--context` to carry it forward: the Stop hook keeps the findings (and, with `--feedback`, the agent's answer) in `<project>/.glassbox/last-session.md` — git-ignored, deleted after a clean session — and a SessionStart hook gives them to the next session in that project.
 
 ```
-glassbox hook install --feedback --fail-on warn   # summary + one-shot feedback to the agent
-glassbox hook install                             # summary only
+glassbox hook install --feedback --context --fail-on warn   # summary, feedback, and notes for the next session
+glassbox hook install                                       # summary only
 glassbox hook uninstall
 ```
+
+**Or install it as a Claude Code plugin** — the same hooks plus `/glassbox:check` and a skill Claude uses when you ask "what went wrong in this session?", running the bundled code (no npx): `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`. Feedback and context are opt-in plugin options. See [docs/PLUGIN.md](docs/PLUGIN.md).
+
+**Many sessions at once.** `glassbox check --all --since 1h` checks every session written in the last hour (or `--all` alone for all of them), one line each, exit 1 if any fails — for CI jobs that run several `claude -p` tasks. `--rates rates.json` (or `GLASSBOX_RATES`) pins a team rate card for `check`, `compare` and the hook: `{ "claude-opus-5": { "in": 5, "out": 25, "read": 0.5, "w5m": 6.25, "w1h": 10 } }`, USD per million tokens, keyed by model-id prefix.
 
 **In the browser:** the viewer is one HTML file — open `dist/glassbox.html` (double-click, no server; the CLI, compare-from-terminal and live tail need Node 18+). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
 
@@ -68,25 +76,28 @@ Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → c
 
 | rule | fires when |
 |---|---|
-| `retry-loop` | same tool with identical input ≥ 3× in one turn (error if ≥ 2 failed) |
-| `failed-tool` | any tool error; error-level when a tool fails ≥ 50% of ≥ 3 calls |
+| `context-bloat` | prompt size ≥ 120k tokens (error at 170k), with the request that first crossed it and the dollars spent on requests above it |
+| `retry-loop` | same tool with identical input ≥ 3× in one turn, returning the same result with nothing changed in between (error if ≥ 2 failed, whatever the results) |
+| `failed-tool` | a tool fails ≥ 2 times and ≥ 20% of its calls (error at ≥ 50% of ≥ 3); denied or interrupted calls don't count |
+| `duplicate-subagent-read` | the same file read by ≥ 3 agents, each paying for it in its own context |
+| `oversized-result` | a tool result ≥ 20k chars (error at 60k); one line per tool when it happens ≥ 3 times |
 | `orphan-tool` | a tool call with no result (abort, crash, or still running) |
-| `exploration-run` | ≥ 8 read-only calls in a row with no write or exec (warn at 15) |
-| `oversized-result` | a single tool result ≥ 20k chars (error at 60k) |
+| `exploration-run` | ≥ 8 read-only calls in a row with no write, exec or MCP action (warn at 15) |
 | `image-heavy` | screenshots / image reads totalling ≥ 0.5 MB (warn at 2 MB) — they're tokens on every later request |
-| `context-bloat` | prompt size ≥ 120k tokens (error at 170k), with the request that first crossed it |
-| `cache-churn` | ≥ 20k tokens re-cached mid-session — the cached prefix was invalidated |
+| `cache-churn` | a request read back ≥ 20k fewer cached tokens than the previous one had cached — something early in the prompt changed |
+| `idle-cache-expiry` | the same kind of miss after a gap longer than the cache lifetime (5 min or 1 h) |
 | `low-cache-hit` | < 50% of input served from cache over ≥ 5 requests |
 | `slow-model` | ≥ 60 s for a response under 1,500 tokens (latency / rate limit / stall) |
-| `long-generation` | ≥ 60 s for a big response, with tok/s so you can tell a stall from a file write |
-| `slow-tool` | a tool call ≥ 60 s (warn at 5 min) |
-| `max-tokens`, `api-error`, `hook-error`, `compaction`, `thinking-heavy`, `subagent-share`, `long-turn` | what they say |
+| `long-generation` | ≥ 60 s for a big response streamed below 15 tok/s |
+| `slow-tool` | a tool call ≥ 60 s (warn at 5 min); one line per tool when repeated; blocking `TaskOutput` waits roll up per background task as info; time spent on the human (questions, permission prompts) is excluded |
+| `permission-denied` | tool calls the human rejected, a permission rule or auto mode blocked, or an interrupt stopped (info) |
+| `max-tokens`, `api-error`, `hook-error`, `compaction`, `thinking-heavy`, `subagent-share`, `long-turn` | what they say (`long-turn`: ≥ 30 tool calls after one prompt in the main conversation) |
 
-All mechanical, no AI. Thresholds are in `TraceCore.DEFAULTS` and can be overridden when calling `diagnose(trace, opts)`. Every rule has a one-line "next time" in `TraceCore.ADVICE`, which is what the Markdown report and the Stop hook hand back to the agent.
+Identical findings print once with a `×N` count in `check`. All mechanical, no AI. The thresholds were tuned on a corpus of 33 real sessions (481 findings → 142, median 2 per session); `node scripts/corpus-audit.mjs` re-runs that audit on your own sessions and prints counts only. Thresholds are in `TraceCore.DEFAULTS` and can be overridden when calling `diagnose(trace, opts)`. Every rule has a one-line "next time" in `TraceCore.ADVICE`, which is what the Markdown report and the Stop hook hand back to the agent.
 
 ## Token and cost accounting
 
-- Usage is counted once per API request (assistant records sharing a `requestId`), not once per record.
+- Usage is counted once per API request (assistant records sharing a `requestId`), not once per record. Subagent transcripts rewrite `output_tokens` while a response streams, so the largest value across the request's records is used.
 - Context size = uncached input + cache read + cache write — the prompt the model actually saw.
 - Thinking tokens are part of output tokens; shown as a share, never added twice.
 - Cost is estimated from an editable rate card (defaults from the Claude pricing page, 2026-09-05; prefix-matched so dated model ids resolve). A `stream-json` `result` record with `total_cost_usd` overrides the estimate. Unknown models show "—" rather than a wrong number.
@@ -113,12 +124,15 @@ src/cli.mjs           CLI library (session discovery, embed, check, compare, hoo
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
+scripts/corpus-audit.mjs  run every rule over your local sessions; counts only (--baseline to diff two runs)
 test/                 unit, e2e and audit harnesses, fixtures
 DESIGN.md             design doc — data model, rules, thresholds, UI, privacy
 STUDY.md              accessibility & ease-of-use study that drove v0.2
 STUDY-IMPLEMENTATION.md  adoption study (solo dev, Cowork/SDK, CI, feedback loop) that drove v0.4.1
-docs/                 CI recipe, feedback-loop study protocol, Community Extensions PR, post copy
-scripts/feedback-study.mjs  measures with/without --feedback session groups
+docs/                 CI recipe, plugin, feedback-loop study protocol, launch kit, Community Extensions PR, post copy
+scripts/feedback-study.mjs      measures with/without --feedback session groups
+scripts/feedback-study-run.mjs  runs that study with `claude -p` (plan only unless --run)
+.claude-plugin/ hooks/ skills/  the Claude Code plugin: manifest + marketplace, Stop/SessionStart hook, skills
 ```
 
 Use the engine on its own:

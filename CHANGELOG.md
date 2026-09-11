@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.0 — 2026-09-11
+**Claude Code plugin.** `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`: the Stop hook, a SessionStart hook, `/glassbox:check`, and a `glassbox` skill, running the bundled code with `node` (no npx). Options `feedback`, `context` and `fail_on`; `GLASSBOX_FEEDBACK` / `GLASSBOX_CONTEXT` / `GLASSBOX_FAIL_ON` override them per project. The plugin's hook stays quiet if `glassbox hook install` already added one. See docs/PLUGIN.md.
+
+**Feedback that reaches the next session.** `glassbox hook install --context` (plugin option `context`): the Stop hook keeps the findings in `<project>/.glassbox/last-session.md` (git-ignored; deleted after a clean session), adds the agent's "what I'd do differently" reply when `--feedback` is on, and a SessionStart hook hands the notes to the next session in that project.
+
+**Hook fixes.** `--feedback` hands each finding back once per session; before, `stop_hook_active` reset every turn, so every later turn was blocked again with the same findings. `glassbox hook` always exits 0: an analysis error used to exit 2, which blocks Claude with the error as the reason.
+
+**CLI.** `check --all [--since 30m|1h|2d] [--project]` checks many sessions, one line each, exit 1 if any fails. `--rates FILE` / `GLASSBOX_RATES` pins a rate card for `check`, `compare` and the hook.
+
+Rules tuned on a corpus of 33 real sessions (`scripts/corpus-audit.mjs`): 481 findings → 142, median 2 per session, and no warnings in the median session. Each change below removed a class of hits the audit judged noise.
+- **New `duplicate-subagent-read`:** the same file read by ≥ 3 agents (one architecture doc was read by 22 workflow agents). Those reads are no longer also listed as `oversized-result`.
+- **New `permission-denied` (info):** calls the human rejected, a permission rule or auto mode blocked, or an interrupt stopped — from `toolDenialKind` or the result text. They no longer count as `failed-tool` or `slow-tool`.
+- **New `idle-cache-expiry` (info), and `cache-churn` means churn:** a miss is now measured against what the previous request had cached, so a big write of new content is no longer flagged (57% of old hits). A miss after a gap longer than the cache lifetime is expiry, with its own advice.
+- **`context-bloat` shows the bill:** "$257.60 (80% of cost) spent above 120,000".
+- `failed-tool` needs ≥ 2 errors and ≥ 20% of calls for a warning ("Edit failed 1 of 346" is gone).
+- `retry-loop` skips repeats that observe changing state (tests re-run after edits, screenshots after clicks); failing repeats are still errors.
+- `long-generation` only fires below 15 tok/s; it was listing normal big outputs.
+- `slow-tool` and `oversized-result` roll up per tool when a tool does it ≥ 3 times; `AskUserQuestion` time is no longer a slow tool.
+- `long-turn` counts the main conversation per human prompt; a subagent's whole run is not a long turn.
+- `exploration-run` ends at MCP actions (browser navigate/click), not only writes and commands.
+- `oversized-result` advice no longer says "use limit" when the read already had one.
+
+## 0.4.2 — 2026-09-11
+Correctness fixes from an audit of 33 real sessions. Costs on subagent- and workflow-heavy sessions were badly under-reported: one 8-hour session showed $21.83 against $322.36.
+- **Workflow agents are loaded.** `subagents/workflows/<runId>/agent-*.jsonl` is now read by the CLI, the live tail and the viewer's folder picker (`journal.jsonl` is skipped), and each agent is linked to the `Workflow` call that launched it (`subagentIds`).
+- **Streamed usage.** Subagent transcripts rewrite `output_tokens` on every block record of a response; Glassbox kept the first (often 2–8 tokens). It now keeps the largest value per field, which fixes output, cost, tok/s and most `slow-model` warnings.
+- **Wall clock.** Only user, assistant and system records bound a session, so a bookkeeping record written weeks later (`frame-link`) no longer turns a 3.7 h session into 1,108 h.
+- **Interrupts.** `[Request interrupted by user]` markers are no longer counted as human prompts or idle time (promptKind `interrupt`).
+- Blocking `TaskOutput` polls roll up into one info `slow-tool` per background task and are not a `retry-loop`; identical findings print once with `×N` in `check`, the hook summary and `compare`.
+- `open --watch` now starts the live viewer (it wrote a static file before).
+
 ## 0.4.1 — 2026-09-11
 Fixes and additions from STUDY-IMPLEMENTATION.md (how Glassbox gets adopted: solo dev, Cowork/SDK, CI, feedback loop).
 - **Windows fix:** the package root resolved to `\C:\…`, so `--version`, `open`, `compare --out` and `watch` failed on every Windows install (`list`, `check`, `hook` were unaffected). Project folder names like `C--Users-…` now decode to `C:/Users/…` in `list` and the viewer.

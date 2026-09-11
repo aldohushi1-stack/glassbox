@@ -63,7 +63,7 @@ Normalisation rules
 3. A tool call's `start` is the timestamp of the `tool_use` record; its `end` is the timestamp of the matching `tool_result` record. No result → `orphan` (aborted session, crash, or still running).
 4. A **turn** starts at a human prompt (`user` record with string content, not `isMeta`) and ends just before the next one. Tool-result `user` records do not start turns.
 5. `idleBeforeMs` on a turn = gap between the previous assistant `end_turn` and this prompt. It is *human* time and is excluded from "active" duration.
-6. Subagent files are matched to the parent by `agentId` ⇄ the parent's `Agent` tool call whose result mentions that id, or by `meta.json` `toolUseId`. Unmatched subagents still get their own lane.
+6. Subagent files are matched to the parent by `agentId` ⇄ the parent's `Agent` tool call whose result mentions that id, or by `meta.json` `toolUseId`. Workflow agents (`subagents/workflows/<runId>/agent-*.jsonl`) are matched to the `Workflow` call whose result carries that `runId`; one call can own many agents (`subagentIds`). Unmatched subagents still get their own lane.
 7. Tool categories (for colour + diagnostics): `read` (Read, Glob, Grep, LS, WebFetch, WebSearch, ToolSearch, `mcp__*__get*/list*/search*`), `write` (Write, Edit, MultiEdit, NotebookEdit), `exec` (Bash, device_bash), `agent` (Agent, Task), `user` (AskUserQuestion), `mcp` (other `mcp__*`), `other`.
 
 ## 5. Diagnostics
@@ -72,23 +72,29 @@ Each finding: `{ id, severity: error|warn|info, title, detail, evidence: { toolC
 
 | id | Rule | Severity |
 |---|---|---|
-| `retry-loop` | Same tool name + identical normalised input called ≥ 3 times in one turn | warn; error if ≥ 2 of them errored |
-| `failed-tool` | Any `tool_result` with `is_error`; grouped per tool with error rate | warn; error if a tool's rate ≥ 50% with ≥ 3 calls |
+| `retry-loop` | Same tool name + identical normalised input called ≥ 3 times in one turn, with identical results and no non-read call of that agent in between (re-running a test or re-taking a screenshot after an action is observing, not looping). Blocking `TaskOutput` polls are exempt unless they fail | warn; error if ≥ 2 of them errored (results then don't matter) |
+| `failed-tool` | `tool_result` with `is_error`, grouped per tool; denied/interrupted calls excluded (`call.denial`) | warn when ≥ 2 errors and ≥ 20%; error if a tool's rate ≥ 50% with ≥ 3 calls; below that, nothing |
+| `permission-denied` | Calls with `call.denial`: `toolDenialKind` on the result record (user-rejected, permission-rule, automode-blocked, interrupted) or the equivalent result text | info |
 | `orphan-tool` | `tool_use` with no `tool_result` | warn |
-| `exploration-run` | ≥ 8 consecutive `read`-category calls with no `write`/`exec` between them | info (warn at ≥ 15) |
-| `oversized-result` | A single tool result ≥ 20 000 chars | warn (error ≥ 60 000) |
-| `context-bloat` | `contextTokens` ≥ 120k on any request; also flags the request where it first crossed | warn (error ≥ 170k) |
-| `cache-churn` | `cacheWrite` ≥ 20k on a request that is not the first of its agent — the cached prefix was invalidated | info |
+| `exploration-run` | ≥ 8 consecutive `read`-category calls with no `write`/`exec`/`mcp` action between them | info (warn at ≥ 15) |
+| `duplicate-subagent-read` | The same `Read` file_path read by ≥ 3 agents; those reads are not also reported as `oversized-result`. Path only in `detail` (redacted) | info; warn ≥ 100k chars; error if one read ≥ 60k |
+| `oversized-result` | A tool result ≥ 20 000 chars; ≥ 3 from one tool become one finding | warn (error ≥ 60 000) |
+| `context-bloat` | `contextTokens` ≥ 120k on any request; flags the request where it first crossed, and `cost` = estimated spend on all requests above the threshold | warn (error ≥ 170k) |
+| `cache-churn` | Previous request of the same agent had `cacheRead + cacheWrite` = C cached; this one read back ≥ 20k (and ≥ 5%) less than C, within the cache lifetime and not right after a compaction | info |
+| `idle-cache-expiry` | The same miss after a gap longer than the cache lifetime (1 h if the agent writes 1-hour cache, else 5 min) | info |
 | `low-cache-hit` | Session-wide `cacheRead / (cacheRead + cacheWrite + input)` < 0.5 with ≥ 5 requests | info |
-| `slow-tool` | Tool duration ≥ 60 s | info (warn ≥ 300 s) |
-| `slow-model` | Gap between a tool result and the next assistant record ≥ 60 s (model/API latency, not human) | info |
+| `slow-tool` | Tool duration ≥ 60 s; ≥ 3 from one tool become one finding; `user`-category calls and denied calls excluded (human time); blocking `TaskOutput` waits roll up per task | info (warn ≥ 300 s); waits always info |
+| `slow-model` | Response time ≥ 60 s with < 1 500 output tokens (latency, rate limit, stall) | warn |
+| `long-generation` | Response time ≥ 60 s with a big output streamed below 15 tok/s | info |
 | `max-tokens` | `stop_reason === 'max_tokens'` | warn |
 | `api-error` | assistant record with `isApiErrorMessage`, or `system` `subtype: api_error` | error |
 | `hook-error` | `stop_hook_summary` with non-empty `hookErrors` | warn |
 | `compaction` | `compact_boundary` event | info |
 | `thinking-heavy` | thinking tokens > 60% of output tokens session-wide, with ≥ 10k output | info |
 | `subagent-share` | Subagents consumed ≥ 50% of total tokens | info |
-| `long-turn` | A single turn ≥ 30 tool calls | info |
+| `long-turn` | ≥ 30 main-conversation tool calls after one human prompt (meta turns in between count toward it; a subagent's run is not a turn) | info |
+
+v0.5 thresholds were tuned against 33 real sessions with `scripts/corpus-audit.mjs` (481 → 142 findings; per-rule precision notes are in the 2026-09-11 study).
 
 "Dead end" detection (a file read then never used) is out of scope for v1 — it needs semantic judgement; `exploration-run` is the mechanical proxy.
 
