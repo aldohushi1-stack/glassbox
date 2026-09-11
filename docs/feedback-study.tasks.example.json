@@ -1,0 +1,12 @@
+{
+  "repo": "..",
+  "permissionMode": "acceptEdits",
+  "allowedTools": ["Bash(npm test *)", "Bash(node *)", "Bash(git diff *)", "Bash(git status *)"],
+  "tasks": [
+    { "name": "fsa-hint", "prompt": "In src/viewer.html, when the browser has no File System Access API, the Open folder button fails silently. Show a one-line hint under the button that says to drag the session folder onto the page instead. Keep the existing style; run npm test." },
+    { "name": "list-json", "prompt": "Add --format json to `glassbox list` in src/cli.mjs (an array of {id, mtime, size, project, title}), with a test in test/cli.test.mjs. Run npm test." },
+    { "name": "since-weeks", "prompt": "parseSince in src/cli.mjs accepts m, h and d. Add w (weeks) with a test, and update the help text. Run npm test." },
+    { "name": "docs-tail", "prompt": "Write a short section in docs/ explaining how src/tail.mjs follows a transcript (byte offsets, partial lines, subagent discovery) for contributors. Keep it under 60 lines." },
+    { "name": "orphan-detail", "prompt": "The orphan-tool finding in src/trace-core.js lists tool names. Make its detail also say how long the last orphaned call had been running when the transcript ended, with a test in test/core.test.mjs. Run npm test." }
+  ]
+}
