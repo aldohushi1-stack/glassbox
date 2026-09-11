@@ -1,5 +1,5 @@
 <title>Glassbox</title>
-<meta name="description" content="The flight recorder viewer for Claude Code and Agent SDK sessions. Drop a session .jsonl; get a timeline, token and cost burn, and auto-diagnostics. Nothing leaves your browser.">
+<meta name="description" content="Glassbox tells you what went wrong in a Claude Code or Agent SDK session. Drop a session .jsonl; get a timeline, token and cost burn, auto-diagnostics, session compare and live tail. Nothing leaves your browser.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2712%27 fill=%27%23161C24%27/%3E%3Crect x=%2712%27 y=%2728%27 width=%2740%27 height=%278%27 rx=%272%27 fill=%27%23FF8A4D%27/%3E%3Crect x=%2712%27 y=%2716%27 width=%2724%27 height=%278%27 rx=%272%27 fill=%27%237DB0F0%27/%3E%3Crect x=%2724%27 y=%2740%27 width=%2728%27 height=%278%27 rx=%272%27 fill=%27%234FD0BB%27/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -12,6 +12,7 @@
   --err:#C4342A;--warn:#8A5F00;--info:#2A63B8;--ok:#177A6B;
   --err-soft:rgba(196,52,42,.12);--warn-soft:rgba(138,95,0,.14);--info-soft:rgba(42,99,184,.12);
   --focus:#B8420A;
+  --who-a:#2A63B8;--who-b:#5B3FB8;
   --shadow:0 10px 30px rgba(22,28,36,.14);
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --cond:"IBM Plex Sans Condensed","Arial Narrow",var(--sans);
@@ -28,6 +29,7 @@
     --err:#F27C72;--warn:#E9B63A;--info:#7FB2F0;--ok:#4FD0BB;
     --err-soft:rgba(242,124,114,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(127,178,240,.16);
     --focus:#FF8A4D;
+    --who-a:#7DB0F0;--who-b:#B39CF5;
     --shadow:0 10px 30px rgba(0,0,0,.5);
   }
 }
@@ -40,6 +42,7 @@
   --err:#F27C72;--warn:#E9B63A;--info:#7FB2F0;--ok:#4FD0BB;
   --err-soft:rgba(242,124,114,.16);--warn-soft:rgba(233,182,58,.16);--info-soft:rgba(127,178,240,.16);
   --focus:#FF8A4D;
+  --who-a:#7DB0F0;--who-b:#B39CF5;
   --shadow:0 10px 30px rgba(0,0,0,.5);
 }
 :root[data-density="compact"]{--fs:12.5px;--pad:8px;--rowh:15px}
@@ -75,6 +78,33 @@ a{color:var(--accent)}
 .banner{display:flex;gap:12px;align-items:center;margin:12px 0 0;padding:10px 14px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:6px;font-size:13.5px}
 .banner p{margin:0;flex:1}
 .banner code{font-family:var(--mono);font-size:12.5px}
+
+/* live pill + compare */
+.live{display:inline-flex;align-items:center;gap:6px;font:500 11px/1 var(--cond);letter-spacing:.08em;text-transform:uppercase;color:var(--ok);border:1px solid var(--ok);border-radius:999px;padding:4px 9px;margin-left:8px}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 1.6s ease-in-out infinite}
+.live.off{color:var(--warn);border-color:var(--warn)}.live.off i{background:var(--warn);animation:none}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.live i{animation:none}}
+.cmp{padding:var(--pad)}
+.cmp .verdict{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin:0 0 10px;color:var(--muted)}
+.cmp .verdict b{color:var(--ink)}
+.cmp .who{display:inline-block;padding:1px 7px;border-radius:999px;font:500 11px var(--cond);letter-spacing:.06em;text-transform:uppercase;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2)}
+.cmp .who.a{border-color:var(--who-a);color:var(--who-a)}.cmp .who.b{border-color:var(--who-b);color:var(--who-b)}
+.cmp .grid{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px}
+@media (max-width:900px){.cmp .grid{grid-template-columns:1fr}}
+.cmp table{font-size:13px}
+.cmp td.d{min-width:140px}
+.cmp .dbar{display:flex;align-items:center;gap:8px}
+.cmp .dbar .track{position:relative;flex:1;height:8px;background:var(--panel-2);border-radius:4px;overflow:hidden;border:1px solid var(--line-2)}
+.cmp .dbar .fill{position:absolute;top:0;bottom:0;background:var(--faint)}
+.cmp .dbar .fill.good{background:var(--ok)}.cmp .dbar .fill.bad{background:var(--err)}
+.cmp .dbar .ch{font-family:var(--mono);font-size:12px;min-width:56px;text-align:right;color:var(--muted)}
+.cmp .dbar .ch.good{color:var(--ok)}.cmp .dbar .ch.bad{color:var(--err)}
+.cmp h3{font:600 11px var(--cond);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:14px 0 6px}
+.cmp .fl{margin:0;padding:0;list-style:none;font-size:13px}
+.cmp .fl li{padding:4px 0;border-top:1px solid var(--line-2)}
+.cmp .fl .id{font:11px var(--mono);color:var(--faint);margin-left:6px}
+.cmp .empty{padding:8px 0}
 
 /* session line */
 .session{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline;padding:10px 0 0;color:var(--muted);font-size:13px}
@@ -228,7 +258,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 
 <div class="app">
   <header class="mast">
-    <div class="brand"><h1>Glass<span>box</span></h1><span class="tag">flight recorder for Claude Code sessions</span></div>
+    <div class="brand"><h1>Glass<span>box</span></h1><span class="tag">what went wrong in your Claude Code session</span><span class="live" id="live" hidden role="status" aria-live="polite"><i aria-hidden="true"></i><span id="live-txt">LIVE</span></span></div>
     <label class="drop" id="drop" tabindex="0" aria-label="Drop a session .jsonl file or folder here, or press Enter to choose files">
       <input type="file" id="file" multiple accept=".jsonl,.json,.txt" class="sr-only">
       <span class="hint"><b>Drop a session .jsonl</b> (or the whole session folder) — parsed in your browser, never uploaded.</span>
@@ -238,6 +268,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       <button class="btn" id="open-folder" hidden title="Browse ~/.claude/projects and pick a session">Open folder…</button>
       <button class="btn" id="recent" hidden title="Sessions from the folder you opened before">Recent</button>
       <button class="btn" id="demo">Load demo</button>
+      <button class="btn" id="compare" title="Load a second session and compare it with this one">Compare…</button>
+      <input type="file" id="file-cmp" multiple accept=".jsonl,.json,.txt" class="sr-only" aria-label="Choose the session to compare with">
       <button class="btn" id="share" aria-pressed="false" title="Blank every prompt, input and result so the trace can be shared">Share mode</button>
       <button class="btn" id="export" disabled title="Download a structure-only copy of the transcript">Export redacted</button>
       <button class="btn" id="rates" title="Edit the per-model rate card">Rates</button>
@@ -254,9 +286,15 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     <div id="problems" class="problems" hidden role="alert"></div>
     <dl class="strip" id="strip"></dl>
 
+    <section class="sec" id="cmp-sec" hidden aria-labelledby="h-cmp">
+      <div class="sec-h"><h2 id="h-cmp">Compare</h2><div class="tools"><span class="aux" id="cmp-aux"></span><button class="btn sm" id="cmp-swap" title="Put the other session on the timeline">Swap</button><button class="btn sm" id="cmp-copy">Copy as Markdown</button><button class="btn sm" id="cmp-close" aria-label="Close compare">Close</button></div></div>
+      <div class="panel cmp" id="cmp"></div>
+    </section>
+
     <section class="sec" aria-labelledby="h-tl">
       <div class="sec-h"><h2 id="h-tl">Timeline</h2>
         <div class="tools">
+          <button class="btn" id="follow" hidden aria-pressed="true" title="Keep the right edge of the timeline on now">Follow</button>
           <div class="search"><label class="sr-only" for="q">Search prompts, tool inputs and results</label><input id="q" type="search" placeholder="Search…"><span class="n" id="q-n" aria-live="polite"></span></div>
           <label class="sr-only" for="fit">Fit to turn</label><select id="fit" class="btn"></select>
           <button class="btn" id="z-out" aria-label="Zoom out">−</button><button class="btn" id="z-in" aria-label="Zoom in">+</button><button class="btn" id="z-reset" aria-label="Reset zoom">⟲</button>
@@ -315,6 +353,15 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   <div class="db"><p class="note" style="margin:0 0 8px">The clipboard isn't available here — the text is selected below, press <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>C</kbd>.</p><label class="sr-only" for="copy-text">Text to copy</label><textarea id="copy-text" style="width:100%;height:240px;font:12px/1.45 var(--mono);background:var(--panel-2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px"></textarea></div>
 </dialog>
 
+<dialog id="cmp-dlg" aria-labelledby="cmp-h">
+  <div class="dh"><h3 id="cmp-h">Compare with another session</h3><button class="x" id="cmp-dlg-close" aria-label="Close">×</button></div>
+  <div class="db" style="font-size:13.5px;line-height:1.55">
+    <p style="margin:0 0 12px">Same task, two sessions: Glassbox lines up time, tokens, cost, tool use and findings side by side. The session already loaded stays on the timeline as <b>A</b>; the one you pick becomes <b>B</b>.</p>
+    <div class="controls"><button class="btn primary" id="cmp-pick">Choose files…</button><button class="btn" id="cmp-folder" hidden>From folder…</button><button class="btn" id="cmp-demo">Use the demo</button></div>
+    <p class="note" style="margin:12px 0 0">Or drop the second session's <code class="mono">.jsonl</code> anywhere on the page while this dialog is open. From the CLI: <code class="mono">glassbox compare A B --out compare.html</code>.</p>
+  </div>
+</dialog>
+
 <dialog id="help-dlg" aria-labelledby="help-h">
   <div class="dh"><h3 id="help-h">How to read Glassbox</h3><button class="x" id="help-close" aria-label="Close">×</button></div>
   <div class="db" style="font-size:13.5px;line-height:1.55" tabindex="0">
@@ -322,6 +369,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     <p><b>Context &amp; cost.</b> One bar per API request: the size of the prompt the model saw, split into cached reads (light), cache writes (mid) and uncached input (dark). The line is cumulative estimated cost.</p>
     <p><b>Findings.</b> Mechanical rules, no AI: identical calls repeated in a turn, tool error rates, results over 20k characters, context over 120k tokens, mid-session cache invalidation, responses that took over a minute and produced little, truncated outputs, hook and API errors, compaction events. Select one to highlight its evidence on the timeline; copy one or all as Markdown to paste into an issue or back into the agent.</p>
     <p><b>Tokens.</b> Assistant messages are stored one record per content block with the usage repeated on each; Glassbox counts usage once per API request. Thinking tokens are part of output tokens, shown as a share, never double counted. Cost is an estimate from the rate card unless the file carries a reported <code class="mono">total_cost_usd</code>.</p>
+    <p><b>Compare.</b> Load a second session (<b>Compare…</b>) and Glassbox lines the two up: every metric with a change bar, tool use side by side, and which findings appear in only one of them. <b>Swap</b> puts the other session on the timeline.</p>
+    <p><b>Live.</b> <code class="mono">glassbox watch</code> serves this page from your own machine and streams the transcript as Claude Code writes it. <b>Follow</b> keeps the right edge on now; pan or zoom and it lets go.</p>
     <p><b>Share mode.</b> Blanks every prompt, tool input, result and assistant text in the view; <b>Export redacted</b> downloads a structure-only <code class="mono">.jsonl</code> that keeps timestamps, usage and tool names — safe to post publicly.</p>
     <p><b>Keyboard.</b></p>
     <div class="keys">
@@ -346,7 +395,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.3.0';
+  const VERSION = '0.4.1';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -403,18 +452,25 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
   const EXEC_TOOLS = new Set(['Bash', 'BashOutput', 'KillShell']);
   const AGENT_TOOLS = new Set(['Agent', 'Task', 'Workflow']);
-  const USER_TOOLS = new Set(['AskUserQuestion']);
+  const USER_TOOLS = new Set(['AskUserQuestion', 'SendUserMessage', 'SendUserFile', 'ExitPlanMode', 'EnterPlanMode']);
+  // Cowork: Artifact publishes a page (a write), Skill loads instructions (a read); Task* are bookkeeping (other).
+  const COWORK_READ = new Set(['Skill', 'ListSkills', 'SearchSkills', 'TaskList', 'TaskGet']);
+  const COWORK_WRITE = new Set(['Artifact']);
+  // MCP leaf names are verb_noun or noun_verb ("memory_read", "device_list_dir", "send_message"): match the verb as a word.
+  const MCP_READ = /(^|_)(get|list|search|read|find|fetch|query|describe|show|stage|screenshot|context|status|info|check)(_|$)/i;
+  const MCP_WRITE = /(^|_)(write|set|put|create|update|delete|remove|commit|send|reply|forward|upload|str_replace|append|label|move|rename|save)(_|$)/i;
 
   function toolCategory(name) {
     if (!name) return 'other';
-    if (READ_TOOLS.has(name)) return 'read';
-    if (WRITE_TOOLS.has(name)) return 'write';
+    if (READ_TOOLS.has(name) || COWORK_READ.has(name)) return 'read';
+    if (WRITE_TOOLS.has(name) || COWORK_WRITE.has(name)) return 'write';
     if (EXEC_TOOLS.has(name) || /device_bash$/.test(name)) return 'exec';
     if (AGENT_TOOLS.has(name)) return 'agent';
     if (USER_TOOLS.has(name)) return 'user';
     if (name.startsWith('mcp__')) {
       const leaf = name.split('__').pop() || '';
-      if (/^(get|list|search|read|find|fetch|query|describe|show)/i.test(leaf)) return 'read';
+      if (MCP_READ.test(leaf)) return 'read';
+      if (MCP_WRITE.test(leaf)) return 'write';
       return 'mcp';
     }
     return 'other';
@@ -570,7 +626,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     const meta = {
       sessionId: null, version: null, cwd: null, gitBranch: null, entrypoint: null, title: null,
       models: [], start: null, end: null, hasTimestamps, files: fileMeta, format: 'claude-code',
-      reportedCost: null, reportedUsage: null, recordCounts: {},
+      reportedCost: null, reportedUsage: null, reportedTurns: null, reportedDurationMs: null, recordCounts: {},
     };
 
     const agents = new Map(); // id -> agent
@@ -637,6 +693,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
       if (type === 'result') {
         meta.format = 'stream-json';
         if (typeof rec.total_cost_usd === 'number') meta.reportedCost = rec.total_cost_usd;
+        if (typeof rec.num_turns === 'number') meta.reportedTurns = rec.num_turns;
+        if (typeof rec.duration_ms === 'number') meta.reportedDurationMs = rec.duration_ms;
         if (rec.usage) meta.reportedUsage = usageFrom(rec.usage);
         if (rec.is_error) events.push({ kind: 'api_error', at: t, detail: textOf(rec.result) || 'result is_error' });
         continue;
@@ -802,12 +860,15 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     const usage = emptyUsage();
     for (const r of requests) addUsage(usage, r.usage);
     const humanIdleMs = turns.reduce((s, tn) => s + (tn.idleBeforeMs || 0), 0);
-    const wallMs = (meta.start != null && meta.end != null) ? meta.end - meta.start : null;
+    // stream-json runs carry no per-record timestamps and no human prompt record, but the result
+    // record reports duration_ms and num_turns; use those rather than showing "—" and 0.
+    const wallMs = (meta.start != null && meta.end != null) ? meta.end - meta.start : (meta.reportedDurationMs != null ? meta.reportedDurationMs : null);
+    const humanTurns = turns.filter((tn) => tn.promptKind === 'human' && tn.agent === 'main').length;
     const totals = {
       usage, wallMs, humanIdleMs, activeMs: wallMs != null ? Math.max(0, wallMs - humanIdleMs) : null,
       requests: requests.length, toolCalls: toolCalls.length, toolErrors: toolCalls.filter((c) => c.isError).length,
       orphans: toolCalls.filter((c) => c.status === 'orphan').length,
-      turns: turns.filter((tn) => tn.promptKind === 'human' && tn.agent === 'main').length,
+      turns: humanTurns || (meta.reportedTurns != null ? meta.reportedTurns : 0),
       toolTimeMs: toolCalls.filter((c) => c.agent === 'main').reduce((s, c) => s + (c.durationMs || 0), 0),
       modelTimeMs: agents.get('main').modelTimeMs || 0,
       cacheHitRatio: (usage.cacheRead + usage.cacheWrite + usage.input) ? usage.cacheRead / (usage.cacheRead + usage.cacheWrite + usage.input) : null,
@@ -1074,6 +1135,202 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
 
   // ---------------------------------------------------------------------------
+  // Advice — one sentence per rule on what to do differently. Mechanical, like the rules.
+  // ---------------------------------------------------------------------------
+  const ADVICE = {
+    'retry-loop': 'When a call fails, change something before calling again: read the error, fix the input or the environment, or ask the user — never repeat an identical call.',
+    'failed-tool': 'Check the first error message of the failing tool before retrying; if the tool itself is broken, switch tools or tell the user instead of pushing on.',
+    'orphan-tool': 'A call with no result means the session ended mid-call; if you resume, re-run it or confirm its side effects before building on it.',
+    'exploration-run': 'Batch exploration: use one Grep or Glob with a wider pattern, or delegate a broad search to a subagent, then commit to an edit or command sooner.',
+    'oversized-result': 'Ask tools for less: head/limit/offset on reads, a tighter grep pattern, a file listing instead of a dump, or a subagent that returns a summary.',
+    'image-heavy': 'Take fewer screenshots and crop or downscale them; read text with a page-text tool where one exists, since every image is re-billed on each later request.',
+    'context-bloat': 'Keep the prompt small: summarise long results into notes, avoid re-reading files already in context, and hand large investigations to subagents.',
+    'cache-churn': 'Avoid changing anything at the top of the prompt mid-session (system prompt, tool list, early messages), because it invalidates the cached prefix and re-bills it.',
+    'low-cache-hit': 'Long stable prefixes cache well; frequent tool-list or system-prompt changes and many tiny sessions do not.',
+    'slow-tool': 'For calls that take minutes, run them in the background, tighten the command, or set a timeout, instead of blocking the whole turn.',
+    'slow-model': 'A slow, small response is usually API latency or a stall; nothing to fix in the session itself, but note it when reporting session time.',
+    'long-generation': 'Large single outputs are normal for file writes; split very large files into parts if a stall (low tok/s) shows up.',
+    'max-tokens': 'The output was truncated: write large files in sections and keep single responses under the output limit.',
+    'api-error': 'An API error interrupted the session; check what was lost and re-run the affected step rather than assuming it completed.',
+    'hook-error': 'A hook failed; read the hook error, fix the hook command or its permissions, then re-run the step it guarded.',
+    'compaction': 'Context was compacted; state that matters later (decisions, file paths, test status) should be written to a file or note before it is summarised away.',
+    'thinking-heavy': 'Most output tokens were thinking; fine for hard problems, but for routine tool loops a lower effort setting is cheaper and just as good.',
+    'subagent-share': 'Most spend was in subagents; give them narrower briefs and ask for short structured returns so the parent pays for less.',
+    'long-turn': 'A very long autonomous turn; check in with a short progress summary at natural checkpoints so wasted work is caught earlier.',
+  };
+
+  // Advice for a concrete finding: the rule's line, except where the evidence says otherwise.
+  function adviceFor(f, trace) {
+    if (f.id === 'slow-tool') {
+      const ids = (f.evidence && f.evidence.toolCallIds) || [];
+      const c = trace.toolCalls.find((x) => x.id === ids[0]);
+      if (c && c.category === 'user') return null; // waiting on the human is not the agent's time
+      if (c && c.category === 'agent') return 'Subagent run time: give it a narrower brief and ask for a short structured return so the parent is not blocked for as long.';
+    }
+    return ADVICE[f.id] || null;
+  }
+
+  function inputSummary(c) {
+    const i = (c && c.input) || {};
+    if (i.command) return String(i.command);
+    if (i.file_path) return String(i.file_path) + (i.pattern ? ' ' + i.pattern : '');
+    if (i.pattern) return String(i.pattern);
+    if (i.query) return String(i.query);
+    if (i.description) return String(i.description);
+    if (i.url) return String(i.url);
+    if (i.prompt) return String(i.prompt);
+    if (i.path) return String(i.path);
+    const s = JSON.stringify(i);
+    return s === '{}' ? '' : s;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Markdown report — written to be handed back to the agent as well as read by a human.
+  // opts: { redact, advice=true, instruction=true, maxEvidence=6, title }
+  // ---------------------------------------------------------------------------
+  function usd(v) { return v == null ? '—' : v < 0.01 ? '$' + v.toFixed(4) : v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2); }
+  function pctStr(x) { return x == null ? '—' : Math.round(x * 100) + '%'; }
+  function oneLine(s, n) { s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+  function blank(s) { return '«' + String(s == null ? '' : s).length + ' chars»'; }
+
+  function toolTable(trace) {
+    const rows = new Map();
+    for (const c of trace.toolCalls) { if (c.unmatched) continue; if (!rows.has(c.name)) rows.set(c.name, { name: c.name, calls: 0, errors: 0, time: 0 }); const r = rows.get(c.name); r.calls++; if (c.isError) r.errors++; r.time += c.durationMs || 0; }
+    return Array.from(rows.values()).sort((a, b) => b.time - a.time || b.calls - a.calls);
+  }
+
+  // Rules whose detail quotes tool output or model text (everything else is names and numbers).
+  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error']);
+  function redactDetail(f) { return CONTENT_DETAIL.has(f.id) ? blank(f.detail) : f.detail; }
+
+  function reportMarkdown(trace, findings, cost, opts) {
+    opts = opts || {};
+    const redact = !!opts.redact, maxEv = opts.maxEvidence || 6;
+    const T = trace.totals, m = trace.meta, u = T.usage;
+    const R = (s) => redact ? blank(s) : s;
+    const total = cost ? (cost.reported != null ? cost.reported : cost.total) : null;
+    const turnNo = (idx) => idx != null ? idx + 1 : null; // same numbering as the finding details and the viewer drawer
+    const advised = new Set();
+    const out = [];
+    out.push(`# Glassbox report — ${oneLine(R(m.title || opts.title || 'session'), 90)}`, '');
+    out.push(`- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'}${m.start ? ' · started: ' + new Date(m.start).toISOString() : ''}`);
+    out.push(`- wall ${fmtDur(T.wallMs)} (active ${fmtDur(T.activeMs)}) · ${T.turns} turn${T.turns === 1 ? '' : 's'} · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
+    out.push(`- tokens: ${fmtInt(u.input + u.cacheRead + u.cacheWrite)} context served (${pctStr(T.cacheHitRatio)} cached) · peak prompt ${fmtInt(Math.max(0, ...trace.requests.map((r) => r.contextTokens)))} · ${fmtInt(u.output)} output (${fmtInt(u.thinking)} thinking) · est. cost ${usd(total)}${cost && cost.source === 'reported' ? ' (reported)' : ''}`, '');
+    if (!findings.length) out.push('## Findings', '', 'Nothing flagged — a clean session, or a very short one.', '');
+    else {
+      out.push(`## Findings (${findings.length})`, '');
+      findings.forEach((f, i) => {
+        out.push(`### ${i + 1}. ${f.severity.toUpperCase()} \`${f.id}\` — ${f.title}`, '', redact ? redactDetail(f) : f.detail, '');
+        const ev = f.evidence || {};
+        const lines = [];
+        for (const id of ev.toolCallIds || []) { const c = trace.toolCalls.find((x) => x.id === id); if (!c) continue; const tn = turnNo(c.turnIndex); lines.push(`- ${c.name}${c.isError ? ' (error)' : ''}${c.durationMs != null ? ' · ' + fmtDur(c.durationMs) : ''}${tn != null ? ' · turn ' + tn : ''}${c.agent !== 'main' ? ' · subagent' : ''}: \`${oneLine(R(inputSummary(c)), 100).replace(/`/g, "'") || '(no input)'}\``); }
+        for (const id of ev.requestIds || []) { const r = trace.requests.find((x) => x.id === id); if (!r) continue; const n = trace.requests.indexOf(r) + 1; const tn = turnNo(r.turnIndex); lines.push(`- request #${n}${tn != null ? ' · turn ' + tn : ''}: context ${fmtInt(r.contextTokens)} · output ${fmtInt(r.usage.output)}${r.responseMs != null ? ' · ' + fmtDur(r.responseMs) : ''}`); }
+        if (lines.length) { out.push('Evidence:', ''); out.push(...lines.slice(0, maxEv)); if (lines.length > maxEv) out.push(`- … ${lines.length - maxEv} more`); out.push(''); }
+        const adv = opts.advice !== false && !advised.has(f.id) ? adviceFor(f, trace) : null;
+        if (adv) { advised.add(f.id); out.push(`Next time: ${adv}`, ''); }
+      });
+    }
+    const tools = toolTable(trace);
+    if (tools.length) { out.push('## Tools', '', '| tool | calls | errors | total time |', '|---|---|---|---|'); for (const r of tools) out.push(`| ${r.name} | ${r.calls} | ${r.errors} | ${fmtDur(r.time)} |`); out.push(''); }
+    if (opts.instruction !== false) out.push('## What to do with this', '', 'This is a mechanical review of the session transcript, generated by Glassbox (no AI involved). If you are the agent that ran this session: acknowledge the findings that apply, say in one or two sentences what you will do differently next session, and do not redo any work. If you are a human: the evidence lines are permalinks into the Glassbox viewer for this session.', '');
+    out.push('_Generated by Glassbox ' + VERSION + '._', '');
+    return out.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Compare two analysed sessions ({trace, findings, cost}).
+  // ---------------------------------------------------------------------------
+  const METRICS = [
+    { key: 'wallMs', label: 'Wall time', fmt: 'dur', dir: 'low', get: (s) => s.trace.totals.wallMs },
+    { key: 'activeMs', label: 'Active time', fmt: 'dur', dir: 'low', get: (s) => s.trace.totals.activeMs },
+    { key: 'turns', label: 'Turns', fmt: 'int', dir: null, get: (s) => s.trace.totals.turns },
+    { key: 'requests', label: 'API requests', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.requests },
+    { key: 'toolCalls', label: 'Tool calls', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.toolCalls },
+    { key: 'toolErrors', label: 'Tool errors', fmt: 'int', dir: 'low', get: (s) => s.trace.totals.toolErrors },
+    { key: 'toolTimeMs', label: 'Time in tools', fmt: 'dur', dir: 'low', get: (s) => s.trace.meta.hasTimestamps ? s.trace.totals.toolTimeMs : null },
+    { key: 'modelTimeMs', label: 'Time generating', fmt: 'dur', dir: 'low', get: (s) => s.trace.meta.hasTimestamps ? s.trace.totals.modelTimeMs : null },
+    { key: 'contextServed', label: 'Context served', fmt: 'tok', dir: 'low', get: (s) => { const u = s.trace.totals.usage; const v = u.input + u.cacheRead + u.cacheWrite; return v || (s.trace.requests.length ? 0 : null); } },
+    { key: 'peakContext', label: 'Peak prompt', fmt: 'tok', dir: 'low', get: (s) => s.trace.requests.length ? Math.max(0, ...s.trace.requests.map((r) => r.contextTokens)) : null },
+    { key: 'cacheHitRatio', label: 'Cache hit', fmt: 'pct', dir: 'high', get: (s) => s.trace.totals.cacheHitRatio },
+    { key: 'output', label: 'Output tokens', fmt: 'tok', dir: 'low', get: (s) => s.trace.requests.length ? s.trace.totals.usage.output : null },
+    { key: 'thinkingShare', label: 'Thinking share', fmt: 'pct', dir: null, get: (s) => { const u = s.trace.totals.usage; return u.output ? u.thinking / u.output : null; } },
+    { key: 'cost', label: 'Est. cost', fmt: 'usd', dir: 'low', get: (s) => s.cost ? (s.cost.reported != null ? s.cost.reported : s.cost.total) : null },
+    { key: 'findings', label: 'Findings', fmt: 'int', dir: 'low', get: (s) => s.findings.length },
+    { key: 'errorFindings', label: 'Error-level findings', fmt: 'int', dir: 'low', get: (s) => s.findings.filter((f) => f.severity === 'error').length },
+  ];
+  function fmtMetric(v, fmt) {
+    if (v == null) return '—';
+    if (fmt === 'dur') return fmtDur(v);
+    if (fmt === 'pct') return pctStr(v);
+    if (fmt === 'usd') return usd(v);
+    return fmtInt(v);
+  }
+  // "×2.4" when B is bigger, "÷2.4" when smaller; never "×0.00".
+  function fmtRatio(r) {
+    if (r == null || !Number.isFinite(r)) return '—';
+    if (r === 1) return '×1.00';
+    const v = r >= 1 ? r : 1 / r; const t = v >= 100 ? Math.round(v).toString() : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+    return (r >= 1 ? '×' : '÷') + t;
+  }
+  // Change of B relative to A: a signed percentage where that reads well, ×N for big increases,
+  // the absolute delta when A is 0 (no ratio) or B is 0 (no "÷∞").
+  function fmtChange(m) {
+    if (m.delta == null) return '—';
+    const r = m.ratio;
+    if (r == null || !m.a || !m.b) return (m.delta > 0 ? '+' : m.delta < 0 ? '−' : '') + fmtMetric(Math.abs(m.delta), m.fmt);
+    if (r === 1) return '0%';
+    if (r < 1) { const p = (1 - r) * 100; return '−' + (p < 10 || p > 99 ? p.toFixed(1) : Math.round(p)) + '%'; }
+    if (r < 10) { const p = (r - 1) * 100; return '+' + (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; }
+    return fmtRatio(r);
+  }
+  function compare(A, B) {
+    const metrics = METRICS.map((d) => {
+      const a = d.get(A), b = d.get(B);
+      const ok = a != null && b != null && Number.isFinite(a) && Number.isFinite(b);
+      const delta = ok ? b - a : null;
+      const ratio = ok && a ? b / a : (ok && !a && !b ? 1 : null);
+      let better = null;
+      if (ok && d.dir && a !== b) better = (d.dir === 'low') === (a < b) ? 'a' : 'b';
+      return { key: d.key, label: d.label, fmt: d.fmt, dir: d.dir, a, b, delta, ratio, better, aText: fmtMetric(a, d.fmt), bText: fmtMetric(b, d.fmt) };
+    });
+    const ta = toolTable(A.trace), tb = toolTable(B.trace);
+    const names = new Set([...ta.map((t) => t.name), ...tb.map((t) => t.name)]);
+    const zero = { calls: 0, errors: 0, time: 0 };
+    const tools = Array.from(names).map((name) => { const a = ta.find((t) => t.name === name) || zero, b = tb.find((t) => t.name === name) || zero; return { name, a: { calls: a.calls, errors: a.errors, time: a.time }, b: { calls: b.calls, errors: b.errors, time: b.time }, deltaCalls: b.calls - a.calls, deltaTime: b.time - a.time }; });
+    tools.sort((x, y) => Math.abs(y.deltaCalls) - Math.abs(x.deltaCalls) || (y.a.calls + y.b.calls) - (x.a.calls + x.b.calls) || x.name.localeCompare(y.name));
+    const byId = (fs) => { const m = new Map(); for (const f of fs) { if (!m.has(f.id)) m.set(f.id, []); m.get(f.id).push(f); } return m; };
+    const fa = byId(A.findings), fb = byId(B.findings);
+    const slim = (f) => ({ id: f.id, severity: f.severity, title: f.title });
+    const onlyA = [], onlyB = [], both = [];
+    for (const [id, list] of fa) { if (fb.has(id)) both.push({ id, a: list.map(slim), b: fb.get(id).map(slim) }); else onlyA.push(...list.map(slim)); }
+    for (const [id, list] of fb) if (!fa.has(id)) onlyB.push(...list.map(slim));
+    const pick = (key) => { const m = metrics.find((x) => x.key === key); return m ? m.better : null; };
+    const cleaner = (() => { const ea = A.findings.filter((f) => f.severity === 'error').length, eb = B.findings.filter((f) => f.severity === 'error').length; if (ea !== eb) return ea < eb ? 'a' : 'b'; const wa = A.findings.length, wb = B.findings.length; return wa === wb ? null : (wa < wb ? 'a' : 'b'); })();
+    const verdict = { cheaper: pick('cost'), faster: pick('wallMs') || pick('activeMs'), cleaner };
+    return { metrics, tools, findings: { onlyA, onlyB, both }, verdict, a: { sessionId: A.trace.meta.sessionId, title: A.trace.meta.title, models: A.trace.meta.models }, b: { sessionId: B.trace.meta.sessionId, title: B.trace.meta.title, models: B.trace.meta.models } };
+  }
+  function compareMarkdown(c, opts) {
+    opts = opts || {};
+    const la = opts.labelA || 'A', lb = opts.labelB || 'B';
+    const out = [`# Glassbox compare — ${la} vs ${lb}`, ''];
+    out.push(`- ${la}: ${c.a.sessionId || '—'}${c.a.title ? ' · ' + oneLine(c.a.title, 70) : ''}${c.a.models.length ? ' · ' + c.a.models.join(', ') : ''}`);
+    out.push(`- ${lb}: ${c.b.sessionId || '—'}${c.b.title ? ' · ' + oneLine(c.b.title, 70) : ''}${c.b.models.length ? ' · ' + c.b.models.join(', ') : ''}`, '');
+    const v = c.verdict; const who = (x) => x === 'a' ? la : x === 'b' ? lb : 'tie';
+    out.push(`**Verdict** — cheaper: ${who(v.cheaper)} · faster: ${who(v.faster)} · cleaner: ${who(v.cleaner)}`, '');
+    out.push(`| metric | ${la} | ${lb} | change |`, '|---|---|---|---|');
+    for (const m of c.metrics) { const ch = fmtChange(m); out.push(`| ${m.label} | ${m.aText} | ${m.bText} | ${ch}${m.better ? ' (' + who(m.better) + ' better)' : ''} |`); }
+    out.push('');
+    if (c.tools.length) { out.push('## Tools', '', `| tool | ${la} calls (errors) | ${lb} calls (errors) | Δ calls |`, '|---|---|---|---|'); for (const t of c.tools) out.push(`| ${t.name} | ${t.a.calls} (${t.a.errors}) | ${t.b.calls} (${t.b.errors}) | ${t.deltaCalls > 0 ? '+' : ''}${t.deltaCalls} |`); out.push(''); }
+    out.push('## Findings', '');
+    if (!c.findings.onlyA.length && !c.findings.onlyB.length && !c.findings.both.length) out.push('Neither session was flagged.', '');
+    if (c.findings.onlyA.length) { out.push(`Only in ${la}:`, ''); for (const f of c.findings.onlyA) out.push(`- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}`); out.push(''); }
+    if (c.findings.onlyB.length) { out.push(`Only in ${lb}:`, ''); for (const f of c.findings.onlyB) out.push(`- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}`); out.push(''); }
+    if (c.findings.both.length) { out.push('In both:', ''); for (const f of c.findings.both) out.push(`- \`${f.id}\` — ${la}: ${f.a.length}, ${lb}: ${f.b.length}`); out.push(''); }
+    out.push('_Generated by Glassbox ' + VERSION + '._', '');
+    return out.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
   // Redaction — keep structure, timestamps, usage, tool names; blank every string.
   // ---------------------------------------------------------------------------
   const KEEP_KEYS = new Set(['type', 'subtype', 'role', 'name', 'id', 'tool_use_id', 'uuid', 'parentUuid', 'requestId', 'sessionId', 'session_id', 'agentId', 'timestamp', 'model', 'stop_reason', 'version', 'entrypoint', 'operation', 'trigger', 'status', 'level', 'userType', 'apiBlockIndex', 'isSidechain', 'isMeta', 'isCompactSummary', 'isApiErrorMessage', 'is_error', 'effort', 'permissionMode', 'promptSource', 'sourceToolAssistantUUID', 'promptId', 'leafUuid', 'toolUseID', 'agentType', 'toolUseId', 'spawnDepth']);
@@ -1101,7 +1358,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
   function toJsonl(records) { return records.map((r) => JSON.stringify(r)).join('\n') + '\n'; }
 
-  return { VERSION, RATES, DEFAULTS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, stableStringify };
+  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable };
 });
 </script>
 <script>
@@ -1122,7 +1379,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   const say = (msg) => { const s = $('#status'); s.textContent = ''; setTimeout(() => { s.textContent = msg; }, 30); };
 
   // ------------------------------------------------------------ state
-  const S = { files: [], records: [], trace: null, findings: [], cost: null, rates: loadRates(), share: false, sel: null, hl: new Set(), toolFilter: null, view: null, query: '', matches: new Set(), focusId: null, lastFocus: null, isDemo: false };
+  const S = { files: [], records: [], trace: null, findings: [], cost: null, rates: loadRates(), share: false, sel: null, hl: new Set(), toolFilter: null, view: null, query: '', matches: new Set(), focusId: null, lastFocus: null, isDemo: false, other: null, labels: { a: 'A', b: 'B' }, cmp: null, follow: true, live: null };
+  const pickingForCompare = () => $('#cmp-dlg').open;
   function loadRates() { try { const r = JSON.parse(store.get('rates') || 'null'); if (r && typeof r === 'object') return r; } catch (e) { } return JSON.parse(JSON.stringify(C.RATES)); }
   const R = (s) => S.share ? '«' + String(s == null ? '' : s).length + ' chars»' : s;
 
@@ -1147,9 +1405,10 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     if (!usedEntries) for (const f of Array.from(dt.files || [])) out.push({ name: f.name, file: f });
     await loadFiles(out);
   }
-  async function loadFiles(list) { const files = []; for (const { name, file } of list) files.push({ name: (file.webkitRelativePath || name), text: await file.text() }); if (files.length) load(files, false); else say('No .jsonl files found in what was dropped.'); }
-  function load(files, isDemo) {
+  async function loadFiles(list, forCompare) { const files = []; for (const { name, file } of list) files.push({ name: (file.webkitRelativePath || name), text: await file.text() }); if (!files.length) { say('No .jsonl files found in what was dropped.'); return; } if (forCompare || pickingForCompare()) loadOther(files); else load(files, false); }
+  function load(files, isDemo, keepOther) {
     S.files = files; S.isDemo = !!isDemo;
+    if (!keepOther) { S.other = null; S.cmp = null; $('#cmp-sec').hidden = true; }
     S.records = files.filter((f) => !/\.meta\.json$/.test(f.name)).flatMap((f) => C.parseLines(f.text, f.name).records);
     S.trace = C.parseTrace(files);
     S.findings = C.diagnose(S.trace);
@@ -1157,6 +1416,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     S.sel = null; S.hl = new Set(); S.toolFilter = null; S.view = null; S.query = ''; S.matches = new Set(); S.focusId = null; $('#q').value = ''; $('#q-n').textContent = '';
     $('#main').hidden = false; $('#banner').hidden = !isDemo;
     renderAll();
+    if (S.other) renderCompare();
     const T = S.trace.totals;
     if (!S.trace.requests.length && !S.trace.toolCalls.length) { const p = $('#problems'); p.hidden = false; p.textContent = 'No API requests or tool calls were found — this does not look like a Claude Code / Agent SDK transcript. Expected a .jsonl with "type":"assistant" and "type":"user" records.'; }
     say(`Loaded ${isDemo ? 'the demo session' : files.length + ' file' + (files.length > 1 ? 's' : '')}: ${T.turns} turns, ${T.toolCalls} tool calls, ${S.findings.length} findings${S.trace.problems.length ? ', ' + S.trace.problems.length + ' unreadable lines skipped' : ''}.`);
@@ -1376,7 +1636,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   function hideTip() { tip.style.display = 'none'; }
   document.addEventListener('mousemove', (e) => { if (tip.style.display === 'block' && !(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.kind)) moveTip(e.clientX, e.clientY); });
   function cum(i) { let s = 0; for (let k = 0; k <= i; k++) s += S.cost.byRequest[k] || 0; return s; }
-  function inputSummary(c) { const i = c.input || {}; if (i.command) return i.command; if (i.file_path) return i.file_path + (i.pattern ? ' ' + i.pattern : ''); if (i.pattern) return i.pattern; if (i.query) return i.query; if (i.description) return i.description; if (i.url) return i.url; if (i.prompt) return i.prompt; if (i.path) return i.path; const s = JSON.stringify(i); return s === '{}' ? '' : s; }
+  const inputSummary = C.inputSummary;
 
   // ------------------------------------------------------------ burn chart
   function renderBurn() {
@@ -1416,13 +1676,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 
   // ------------------------------------------------------------ findings
   function findingMd(f) { return `- **${f.severity.toUpperCase()}** \`${f.id}\` — ${f.title}\n  ${f.detail}`; }
-  function reportMd() {
-    const t = S.trace, T = t.totals, m = t.meta;
-    const head = `# Glassbox report — ${R(m.title || 'session')}\n\n` + `- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'} · started: ${m.start ? new Date(m.start).toISOString() : '—'}\n` + `- wall ${fmtDur(T.wallMs)} (active ${fmtDur(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed)\n` + `- tokens: ${fmtInt(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} context served (${pct(T.cacheHitRatio)} cached), ${fmtInt(T.usage.output)} output (${fmtInt(T.usage.thinking)} thinking) · est. cost ${S.cost.total != null ? fmtUSD(S.cost.total) : '—'}\n\n`;
-    const fs = S.findings.length ? `## Findings (${S.findings.length})\n\n` + S.findings.map(findingMd).join('\n') + '\n' : '## Findings\n\nNothing flagged.\n';
-    const tools = '\n## Tools\n\n| tool | calls | errors | total time |\n|---|---|---|---|\n' + toolRows().map((r) => `| ${r.name} | ${r.calls} | ${r.errors} | ${fmtDur(r.time)} |`).join('\n') + '\n';
-    return head + fs + tools + '\n_Generated by Glassbox._\n';
-  }
+  function reportMd() { return C.reportMarkdown(S.trace, S.findings, S.cost, { redact: S.share }); }
   async function copyText(text, what) { try { await navigator.clipboard.writeText(text); say(what + ' copied to clipboard.'); return true; } catch (e) { const dlg = $('#copy-dlg'); $('#copy-text').value = text; dlg.showModal(); $('#copy-text').select(); say('Clipboard blocked — text shown for manual copy.'); return false; } }
   $('#copy-close').onclick = () => $('#copy-dlg').close();
   function renderFindings() {
@@ -1550,6 +1804,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   function setHash(h) { hashLock = true; try { history.replaceState(null, '', '#' + h); } catch (e) { } setTimeout(() => { hashLock = false; }, 0); }
   function applyHash() {
     const h = location.hash.slice(1); if (!h || !S.trace) return;
+    if (h === 'compare') { if (S.other) $('#cmp-sec').scrollIntoView(); return; }
     const eq = h.indexOf('='); if (eq < 0) return; const k = h.slice(0, eq), v = decodeURIComponent(h.slice(eq + 1)); if (!v) return;
     if (k === 'req') { const r = S.trace.requests[+v - 1]; if (r) select({ kind: 'req', ref: r }); }
     else if (k === 'tool') { const c = S.trace.toolCalls.find((x) => x.id === v); if (c) select({ kind: 'tool', ref: c }); }
@@ -1581,7 +1836,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   const idb = { open() { return new Promise((res, rej) => { const r = indexedDB.open('glassbox', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
     async get(k) { try { const db = await this.open(); return await new Promise((res) => { const t = db.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => res(null); }); } catch (e) { return null; } },
     async set(k, v) { try { const db = await this.open(); await new Promise((res) => { const t = db.transaction('kv', 'readwrite').objectStore('kv').put(v, k); t.onsuccess = res; t.onerror = res; }); } catch (e) { } } };
-  const decodeProject = (n) => n.replace(/^-/, '/').replace(/-/g, '/');
+  const decodeProject = (n) => { const m = n.match(/^([A-Za-z])--(.*)$/); if (m) return m[1] + ':/' + m[2].replace(/-/g, '/'); return n.replace(/^-/, '/').replace(/-/g, '/'); };
   async function scanProjects(dir) {
     const sessions = [];
     for await (const [pname, ph] of dir.entries()) {
@@ -1603,7 +1858,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   async function loadSession(s) {
     const files = [{ name: s.id + '.jsonl', text: await (await s.handle.getFile()).text() }];
     try { const sdir = await (await s.pdir.getDirectoryHandle(s.id)).getDirectoryHandle('subagents'); for await (const [n, h] of sdir.entries()) if (h.kind === 'file' && /\.(jsonl|json)$/.test(n)) files.push({ name: s.id + '/subagents/' + n, text: await (await h.getFile()).text() }); } catch (e) { }
-    $('#sessions-dlg').close(); load(files, false);
+    $('#sessions-dlg').close(); if (S.pickOther) { S.pickOther = false; loadOther(files); } else load(files, false);
   }
   async function showSessions(dir) {
     const dlg = $('#sessions-dlg'); $('#sessions-note').textContent = 'Scanning ' + dir.name + '…'; $('#sessions-tbl').innerHTML = ''; dlg.showModal();
@@ -1621,6 +1876,99 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
   $('#sessions-close').onclick = () => $('#sessions-dlg').close();
 
+  // ------------------------------------------------------------ compare
+  function analyseFiles(files) { const trace = C.parseTrace(files); return { files, trace, findings: C.diagnose(trace), cost: C.estimateCost(trace, S.rates) }; }
+  function loadOther(files) {
+    if (!S.trace) { say('Load a session first, then compare it with another.'); return; }
+    S.other = analyseFiles(files);
+    try { $('#cmp-dlg').close(); } catch (e) { }
+    renderCompare();
+    const m = S.cmp.metrics.find((x) => x.key === 'cost');
+    say(`Comparing: ${S.labels.a} vs ${S.labels.b}. ${S.other.trace.totals.toolCalls} tool calls in ${S.labels.b}${m && m.better ? ', ' + (m.better === 'a' ? S.labels.a : S.labels.b) + ' is cheaper' : ''}.`);
+    $('#cmp-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setHash('compare');
+  }
+  function sessionLabel(res, fallback) { const m = res.trace.meta; return m.title ? m.title.slice(0, 40) : m.sessionId ? m.sessionId.slice(0, 8) : fallback; }
+  function renderCompare() {
+    if (!S.other) return;
+    const A = { trace: S.trace, findings: S.findings, cost: S.cost }, B = S.other;
+    const c = S.cmp = C.compare(A, B);
+    const la = S.labels.a, lb = S.labels.b;
+    const who = (x) => x === 'a' ? `<span class="who a">${esc(la)}</span>` : x === 'b' ? `<span class="who b">${esc(lb)}</span>` : '<span class="who">tie</span>';
+    $('#cmp-aux').innerHTML = `<span class="who a">${esc(la)}</span> ${esc(R(sessionLabel(A, 'this session')))} · <span class="who b">${esc(lb)}</span> ${esc(R(sessionLabel(B, 'other session')))} — ${esc(la)} is on the timeline`;
+    const rows = c.metrics.map((m) => {
+      let bar = '<span class="ch">—</span>';
+      if (m.delta != null) {
+        const good = m.better === 'a' ? 'bad' : m.better === 'b' ? 'good' : '';
+        const ch = C.fmtChange(m);
+        const r = m.ratio != null && m.a ? m.ratio : (m.delta === 0 ? 1 : 2);
+        const f = Math.min(1, Math.abs(Math.log2(Math.max(r, 1e-6))) / 3);
+        const left = r < 1, w = (f * 50).toFixed(1);
+        bar = `<div class="dbar" aria-hidden="true"><div class="track"><div class="fill ${good}" style="left:${left ? 50 - w : 50}%;width:${w}%"></div></div><span class="ch ${good}">${ch}</span></div>`;
+      }
+      const sr = m.delta == null ? 'not comparable' : m.better ? `${m.better === 'a' ? la : lb} better` : 'same';
+      return `<tr><td>${esc(m.label)}</td><td class="n">${m.aText}</td><td class="n">${m.bText}</td><td class="d">${bar}<span class="sr-only">${esc(sr)}</span></td></tr>`;
+    }).join('');
+    const tools = c.tools.slice(0, 14).map((t) => `<tr><td>${esc(t.name)}</td><td class="n">${t.a.calls}${t.a.errors ? ` <span class="errpill">${t.a.errors}</span>` : ''}</td><td class="n">${t.b.calls}${t.b.errors ? ` <span class="errpill">${t.b.errors}</span>` : ''}</td><td class="n">${t.deltaCalls > 0 ? '+' : ''}${t.deltaCalls}</td></tr>`).join('');
+    const fl = (list) => list.length ? `<ul class="fl">${list.map((f) => `<li><span class="sev ${f.severity}"></span> ${esc(f.title)}<span class="id">${f.id}</span></li>`).join('')}</ul>` : '<div class="empty">none</div>';
+    $('#cmp').innerHTML = `<div class="verdict"><span>cheaper ${who(c.verdict.cheaper)}</span><span>faster ${who(c.verdict.faster)}</span><span>cleaner ${who(c.verdict.cleaner)}</span></div>
+      <div class="grid"><div><table><caption class="sr-only">Metrics side by side</caption><thead><tr><th scope="col">Metric</th><th class="n" scope="col">${esc(la)}</th><th class="n" scope="col">${esc(lb)}</th><th scope="col">Change (${esc(lb)} vs ${esc(la)})</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div><h3 style="margin-top:0">Tools</h3><table><caption class="sr-only">Tool calls per session</caption><thead><tr><th scope="col">Tool</th><th class="n" scope="col">${esc(la)}</th><th class="n" scope="col">${esc(lb)}</th><th class="n" scope="col">Δ</th></tr></thead><tbody>${tools || '<tr><td colspan="4" class="empty">no tool calls</td></tr>'}</tbody></table>${c.tools.length > 14 ? `<p class="note">… ${c.tools.length - 14} more tools</p>` : ''}
+      <h3>Only in ${esc(la)}</h3>${fl(c.findings.onlyA)}<h3>Only in ${esc(lb)}</h3>${fl(c.findings.onlyB)}${c.findings.both.length ? `<h3>In both</h3><ul class="fl">${c.findings.both.map((f) => `<li><span class="id" style="margin:0">${f.id}</span> — ${esc(la)}: ${f.a.length}, ${esc(lb)}: ${f.b.length}</li>`).join('')}</ul>` : ''}</div></div>`;
+    $('#cmp-sec').hidden = false;
+  }
+  $('#compare').onclick = () => { if (!S.trace) { say('Load a session first.'); return; } $('#cmp-folder').hidden = !FSA; $('#cmp-dlg').showModal(); };
+  $('#cmp-dlg-close').onclick = () => $('#cmp-dlg').close();
+  $('#cmp-folder').onclick = async () => { $('#cmp-dlg').close(); S.pickOther = true; let h = await idb.get('projects'); try { if (h) { let p = await h.queryPermission({ mode: 'read' }); if (p !== 'granted') p = await h.requestPermission({ mode: 'read' }); if (p !== 'granted') h = null; } if (!h) { h = await window.showDirectoryPicker({ id: 'claude-projects', mode: 'read' }); await idb.set('projects', h); $('#recent').hidden = false; } await showSessions(h); } catch (e) { S.pickOther = false; if (e && e.name !== 'AbortError') say('Could not open the folder: ' + e.message); } };
+  $('#sessions-dlg').addEventListener('close', () => { setTimeout(() => { S.pickOther = false; }, 0); });
+  $('#cmp-pick').onclick = () => $('#file-cmp').click();
+  $('#file-cmp').addEventListener('change', (e) => { loadFiles(Array.from(e.target.files).map((f) => ({ name: f.name, file: f })), true); e.target.value = ''; });
+  $('#cmp-demo').onclick = () => { if (!DEMO) { say('No demo embedded in this build.'); return; } loadOther(DEMO.map((f) => ({ name: f.name, text: f.text }))); };
+  $('#cmp-close').onclick = () => { S.other = null; S.cmp = null; $('#cmp-sec').hidden = true; setHash(''); say('Compare closed.'); $('#compare').focus(); };
+  $('#cmp-swap').onclick = () => { if (!S.other) return; const cur = { files: S.files, isDemo: S.isDemo }; const nxt = S.other; S.labels = { a: S.labels.b, b: S.labels.a }; S.other = analyseFiles(cur.files); load(nxt.files, false, true); say(`${S.labels.a} is now on the timeline.`); };
+  $('#cmp-copy').onclick = () => { if (!S.cmp) return; copyText(C.compareMarkdown(S.cmp, { labelA: S.labels.a, labelB: S.labels.b }), 'Comparison (Markdown)'); };
+
+  // ------------------------------------------------------------ live tail
+  let liveTimer = null;
+  function applyLiveFiles(ev) {
+    const f = S.files.find((x) => x.name === ev.name);
+    if (ev.type === 'append') { if (f) f.text += ev.text; else S.files.push({ name: ev.name, text: ev.text }); }
+    else if (ev.type === 'replace') { if (f) f.text = ev.text; else S.files.push({ name: ev.name, text: ev.text }); }
+    else if (ev.type === 'hello') { S.files = ev.files.map((x) => ({ name: x.name, text: x.text })); }
+    if (liveTimer) return; liveTimer = setTimeout(() => { liveTimer = null; refresh(); }, 150);
+  }
+  // Re-parse the current files in place: selection, filter, search and zoom survive; Follow keeps the right edge on now.
+  function refresh() {
+    const wasWhole = !S.view || (TL.total && S.view.t1 >= TL.total - 1 && S.view.t0 <= 1);
+    const oldSpan = S.view ? S.view.t1 - S.view.t0 : null;
+    const selId = S.sel ? S.sel.ref.id : null, selKind = S.sel ? S.sel.kind : null;
+    S.records = S.files.filter((f) => !/\.meta\.json$/.test(f.name)).flatMap((f) => C.parseLines(f.text, f.name).records);
+    S.trace = C.parseTrace(S.files); S.findings = C.diagnose(S.trace); S.cost = C.estimateCost(S.trace, S.rates);
+    if (selId) { const ref = selKind === 'tool' ? S.trace.toolCalls.find((c) => c.id === selId) : S.trace.requests.find((r) => r.id === selId); S.sel = ref ? { kind: selKind, ref } : null; }
+    if (S.toolFilter && !S.trace.toolCalls.some((c) => c.name === S.toolFilter)) S.toolFilter = null;
+    buildLayout();
+    if (S.follow) { if (wasWhole || oldSpan == null || oldSpan >= TL.total) S.view = null; else S.view = { t0: Math.max(0, TL.total - oldSpan), t1: TL.total }; }
+    renderSession(); renderStrip(); renderFit(); renderTimeline(); renderBurn(); renderFindings(); renderTools(); renderTurns();
+    if (S.query) runSearch();
+    if (S.sel && !$('#drawer').hidden) select(S.sel, true);
+    if (S.other) renderCompare();
+    const t = new Date(); $('#live-txt').textContent = 'LIVE · ' + t.toTimeString().slice(0, 8);
+  }
+  function startLive(cfg) {
+    const pill = $('#live'); pill.hidden = false; $('#follow').hidden = false;
+    $('#follow').onclick = () => { S.follow = !S.follow; $('#follow').setAttribute('aria-pressed', String(S.follow)); say(S.follow ? 'Following: the timeline keeps up with the session.' : 'Follow off: the view stays where it is.'); if (S.follow) refresh(); };
+    const es = new EventSource(cfg.url); S.live = es;
+    es.addEventListener('hello', (e) => { pill.classList.remove('off'); $('#live-txt').textContent = 'LIVE'; applyLiveFiles(Object.assign({ type: 'hello' }, JSON.parse(e.data))); });
+    es.addEventListener('append', (e) => applyLiveFiles(JSON.parse(e.data)));
+    es.addEventListener('replace', (e) => applyLiveFiles(JSON.parse(e.data)));
+    es.onerror = () => { pill.classList.add('off'); $('#live-txt').textContent = 'reconnecting'; };
+    // any manual zoom or pan lets go of Follow
+    const letGo = () => { if (S.follow) { S.follow = false; $('#follow').setAttribute('aria-pressed', 'false'); } };
+    $('#tl').addEventListener('wheel', letGo, { passive: true }); $('#tl').addEventListener('pointerdown', letGo);
+    $('#z-in').addEventListener('click', letGo); $('#z-out').addEventListener('click', letGo); $('#fit').addEventListener('change', letGo);
+    $('#banner').hidden = true;
+  }
+
   // ------------------------------------------------------------ help + inputs
   $('#help').onclick = () => $('#help-dlg').showModal(); $('#help-close').onclick = () => $('#help-dlg').close();
   $('#banner-x').onclick = () => { $('#banner').hidden = true; };
@@ -1630,6 +1978,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); handleDataTransfer(e.dataTransfer); });
   document.addEventListener('dragover', (e) => { e.preventDefault(); });
   document.addEventListener('drop', (e) => { if (!drop.contains(e.target)) { e.preventDefault(); handleDataTransfer(e.dataTransfer); } });
+  $('#cmp-dlg').addEventListener('dragover', (e) => e.preventDefault()); $('#cmp-dlg').addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); handleDataTransfer(e.dataTransfer); });
   $('#file').addEventListener('change', (e) => loadFiles(Array.from(e.target.files).map((f) => ({ name: f.name, file: f }))));
   drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); } });
 
@@ -1637,7 +1986,13 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   const EMBED = /*__EMBED__*/null;
   function loadDemo(e) { if (e) e.preventDefault(); if (!DEMO) { say('No demo embedded in this build.'); return; } load(DEMO.map((f) => ({ name: f.name, text: f.text })), true); }
   $('#demo').onclick = loadDemo;
-  if (EMBED && EMBED.length) load(EMBED.map((f) => ({ name: f.name, text: f.text })), false);
+  const LIVE = /*__LIVE__*/null;
+  const embedFiles = EMBED && !Array.isArray(EMBED) ? EMBED.files : EMBED;
+  if (embedFiles && embedFiles.length) {
+    load(embedFiles.map((f) => ({ name: f.name, text: f.text })), false);
+    if (EMBED && !Array.isArray(EMBED) && EMBED.compare && EMBED.compare.length) { if (EMBED.labels) S.labels = EMBED.labels; loadOther(EMBED.compare.map((f) => ({ name: f.name, text: f.text }))); }
+  }
   else if (DEMO) loadDemo();
+  if (LIVE && LIVE.url && 'EventSource' in window) startLive(LIVE);
 })();
 </script>
