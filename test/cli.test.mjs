@@ -76,6 +76,53 @@ test('checkReport: fail-on levels and JSON/markdown shapes', () => {
   assert.match(checkReport(clean).text, /no findings/);
 });
 
+test('loadSessionFiles finds Workflow agents under subagents/workflows/<runId>/, skips journal.jsonl, links them to the Workflow call', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-wf-'));
+  const dir = path.join(home, 'projects', '-home-aldo-wf'); fs.mkdirSync(dir, { recursive: true });
+  const m = session({ sessionId: 'wwww0000-0000' }); m.user('run the audit');
+  const [wf] = m.assistant([{ tool: 'Workflow', input: { script: 's', description: 'audit' } }]);
+  m.advance(500).result(wf, 'Workflow launched in background. Task ID: t1', { structured: { status: 'async_launched', taskId: 't1', runId: 'wf_abc-123' } });
+  m.assistant([{ text: 'launched' }]);
+  fs.writeFileSync(path.join(dir, 'wwww0000-0000.jsonl'), m.text());
+  const run = path.join(dir, 'wwww0000-0000', 'subagents', 'workflows', 'wf_abc-123'); fs.mkdirSync(run, { recursive: true });
+  for (const id of ['w1', 'w2']) {
+    const a = session({ sessionId: 'wwww0000-0000', agentId: id }); a.user('part'); a.assistant([{ thinking: 't' }, { text: 'r' }], { outputs: [3, 900], output: 900 });
+    fs.writeFileSync(path.join(run, `agent-${id}.jsonl`), a.text());
+    fs.writeFileSync(path.join(run, `agent-${id}.meta.json`), JSON.stringify({ agentType: 'workflow-subagent', spawnDepth: 1 }));
+  }
+  fs.writeFileSync(path.join(run, 'journal.jsonl'), JSON.stringify({ type: 'started', key: 'k', agentId: 'w1' }) + '\n');
+  const files = loadSessionFiles(resolveTarget('wwww', { home }));
+  assert.equal(files.some((f) => f.name.endsWith('journal.jsonl')), false);
+  assert.equal(files.filter((f) => /workflows\/wf_abc-123\/agent-w\d\.jsonl$/.test(f.name)).length, 2);
+  const { trace } = analyse(files);
+  const subs = trace.agents.filter((a) => a.id !== 'main');
+  assert.deepEqual(subs.map((a) => a.parentToolUseId), [wf, wf]);
+  assert.deepEqual(trace.toolCalls.find((c) => c.id === wf).subagentIds, ['w1', 'w2']);
+  assert.equal(subs.reduce((s, a) => s + a.usage.output, 0), 1800);
+});
+
+test('open --watch reaches the live server instead of writing a static file', async () => {
+  const home = fakeHome(); const outs = []; let live = null;
+  const code = await main(['open', 'bbbb', '--watch', '--no-open', '--home', home], { stdout: (s) => outs.push(s), stderr: () => { }, noOpen: true, onLive: (l) => { live = l; } });
+  try {
+    assert.equal(code, 0);
+    assert.ok(live, 'live server started');
+    assert.match(outs.join('\n'), /Glassbox live · bbbb2222 · http:\/\/127\.0\.0\.1:\d+/);
+  } finally { if (live) await live.close(); }
+});
+
+test('checkReport text collapses identical findings into ×N; JSON keeps every finding', () => {
+  const f = (severity, id, title) => ({ severity, id, title, detail: '', evidence: {} });
+  const res = analyse(loadSessionFiles(resolveTarget('bbbb', { home: fakeHome() })));
+  res.findings = [f('warn', 'oversized-result', 'TaskOutput returned 32,162 chars'), f('warn', 'oversized-result', 'TaskOutput returned 32,162 chars'), f('warn', 'oversized-result', 'Read returned 35,956 chars'), f('warn', 'oversized-result', 'TaskOutput returned 32,162 chars')];
+  const r = checkReport(res, { failOn: 'warn' });
+  assert.match(r.text, /TaskOutput returned 32,162 chars {2}×3\n/);
+  assert.match(r.text, /Read returned 35,956 chars\n/);
+  assert.equal(r.text.match(/oversized-result/g).length, 2);
+  assert.match(r.text, /FAIL: 4 findings/);
+  assert.equal(r.json.findings.length, 4);
+});
+
 test('embed injects the files into the built viewer and survives </script> in content', { skip: !fs.existsSync(path.join(ROOT, 'dist/glassbox.html')) }, () => {
   const files = [{ name: 'x.jsonl', text: '{"type":"user","message":{"role":"user","content":"</script><b>hi</b>"}}\n' }];
   const html = embed(files);
@@ -118,16 +165,20 @@ test('hookResponse: summary as systemMessage; feedback only on Stop, only once, 
   const home = fakeHome();
   const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
   const clean = path.join(home, 'projects/-home-aldo-proj-one/bbbb2222-0000.jsonl');
-  const r1 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false, session_id: 'aaaa1111-0000' }, { feedback: true, failOn: 'warn' });
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-'));
+  const r1 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false, session_id: 'aaaa1111-0000' }, { feedback: true, failOn: 'warn', stateDir });
   assert.equal(r1.decision, 'block');
   assert.match(r1.reason, /retry-loop/);
   assert.match(r1.systemMessage, /^Glassbox · 1 turns · 3 tool calls \(3 failed\)/);
   assert.equal(r1.suppressOutput, true);
   const r2 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: true }, { feedback: true });
   assert.equal(r2.decision, undefined, 'never blocks twice (stop_hook_active)');
+  const r2b = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false, session_id: 'aaaa1111-0000' }, { feedback: true, failOn: 'warn', stateDir });
+  assert.equal(r2b.decision, undefined, 'a later turn does not hand back the same findings again');
+  assert.match(r2b.systemMessage, /retry-loop/, 'the summary still lists them');
   const r3 = hookResponse({ hook_event_name: 'SessionEnd', transcript_path: bad, stop_hook_active: false }, { feedback: true });
   assert.equal(r3.decision, undefined, 'SessionEnd cannot block');
-  const r4 = hookResponse({ hook_event_name: 'Stop', transcript_path: clean, stop_hook_active: false }, { feedback: true });
+  const r4 = hookResponse({ hook_event_name: 'Stop', transcript_path: clean, stop_hook_active: false }, { feedback: true, stateDir });
   assert.equal(r4.decision, undefined, 'nothing to say → no block');
   assert.match(r4.systemMessage, /no findings/);
   const r5 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false }, { feedback: false });
@@ -167,7 +218,7 @@ test('hook install merges into settings.json, is idempotent, keeps other hooks, 
 
 test('main: hook reads stdin JSON and prints JSON', async () => {
   const home = fakeHome();
-  const lines = []; const io = { stdout: (s) => lines.push(s), stderr: () => {}, home, stdin: { hook_event_name: 'Stop', transcript_path: path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl'), stop_hook_active: false } };
+  const lines = []; const io = { stdout: (s) => lines.push(s), stderr: () => {}, home, stdin: { hook_event_name: 'Stop', transcript_path: path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl'), stop_hook_active: false }, stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-')) };
   assert.equal(await main(['hook', '--feedback', '--fail-on', 'warn'], io), 0);
   const j = JSON.parse(lines[0]);
   assert.equal(j.decision, 'block');
@@ -195,10 +246,81 @@ test('check --format md is the agent-ready report; --json/--markdown still work 
   assert.equal(outputFormat({}), 'text'); assert.equal(outputFormat({ json: true }), 'json'); assert.equal(outputFormat({ format: 'markdown' }), 'md');
 });
 
+test('hook --context: Stop keeps notes in <project>/.glassbox, SessionStart hands them over, a clean session clears them', () => {
+  const home = fakeHome();
+  const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
+  const clean = path.join(home, 'projects/-home-aldo-proj-one/bbbb2222-0000.jsonl');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-proj-'));
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-'));
+  const notes = path.join(project, '.glassbox', 'last-session.md');
+  const opts = { feedback: true, context: true, failOn: 'warn', stateDir };
+  const r1 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, cwd: project, session_id: 'aaaa1111-0000', stop_hook_active: false }, opts);
+  assert.equal(r1.decision, 'block');
+  const text = fs.readFileSync(notes, 'utf8');
+  assert.match(text, /^# Glassbox: last session in this project/);
+  assert.match(text, /session aaaa1111/);
+  assert.match(text, /retry-loop/);
+  assert.equal(fs.readFileSync(path.join(project, '.glassbox', '.gitignore'), 'utf8').trim().split('\n').pop(), '*');
+  // the agent answers; the second Stop records the answer and lets it stop
+  const r2 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, cwd: project, session_id: 'aaaa1111-0000', stop_hook_active: true, last_assistant_message: 'Next time I will read the test error before re-running it.' }, opts);
+  assert.equal(r2.decision, undefined);
+  assert.match(fs.readFileSync(notes, 'utf8'), /## What the agent said it would do differently\n\nNext time I will read the test error/);
+  // next session in the project starts with the notes; resumes and the plain hook don't inject
+  const s1 = hookResponse({ hook_event_name: 'SessionStart', source: 'startup', cwd: project, session_id: 'next' }, opts);
+  assert.equal(s1.hookSpecificOutput.hookEventName, 'SessionStart');
+  assert.match(s1.hookSpecificOutput.additionalContext, /previous session in this project[\s\S]*retry-loop[\s\S]*read the test error/);
+  assert.equal(hookResponse({ hook_event_name: 'SessionStart', source: 'resume', cwd: project }, opts).hookSpecificOutput, undefined);
+  assert.equal(hookResponse({ hook_event_name: 'SessionStart', source: 'startup', cwd: project }, { failOn: 'warn' }).hookSpecificOutput, undefined, 'without --context nothing is injected');
+  // a clean session removes stale advice
+  hookResponse({ hook_event_name: 'Stop', transcript_path: clean, cwd: project, session_id: 'bbbb2222-0000', stop_hook_active: false }, opts);
+  assert.equal(fs.existsSync(notes), false);
+  // install registers both events with --context in the command
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-settings-'));
+  const inst = installHook({ home: h, context: true });
+  assert.equal(inst.command, 'npx -y glassbox-trace hook --context');
+  const st = JSON.parse(fs.readFileSync(settingsPath(h), 'utf8'));
+  assert.deepEqual(Object.keys(st.hooks).sort(), ['SessionStart', 'Stop']);
+  assert.equal(uninstallHook({ home: h }).removed, 2);
+});
+
+test('glassbox hook never exits non-zero: an analysis error becomes a systemMessage', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-bad-'));
+  const lines = [];
+  const code = await main(['hook'], { stdout: (s) => lines.push(s), stderr: () => { }, stdin: { hook_event_name: 'Stop', transcript_path: dir }, stateDir: dir });
+  assert.equal(code, 0);
+  const j = JSON.parse(lines[0]);
+  assert.match(j.systemMessage, /^Glassbox: /);
+  assert.equal(j.decision, undefined);
+});
+
+test('check --all [--since]: one line per session, exit 1 if any fails; --rates changes the cost', async () => {
+  const home = fakeHome(); const lines = []; const io = { stdout: (s) => lines.push(s), stderr: (s) => lines.push('ERR ' + s), home };
+  assert.equal(await main(['check', '--all', '--fail-on', 'error'], io), 1);
+  const rows = lines.filter((l) => /^(FAIL|ok  )  /.test(l));
+  assert.equal(rows.length, 3);
+  assert.match(rows.find((l) => l.includes('aaaa1111')), /^FAIL  aaaa1111   \d+ error/);
+  assert.match(lines[lines.length - 1], /1 of 3 sessions at or above "error"/);
+  lines.length = 0;
+  assert.equal(await main(['check', '--all', '--since', '2h'], io), 0, 'aaaa1111 was written 3 h ago');
+  assert.equal(lines.filter((l) => /^(FAIL|ok  )  /.test(l)).length, 2);
+  lines.length = 0;
+  assert.equal(await main(['check', '--all', '--since', 'soon'], io), 2);
+  assert.match(lines.join('\n'), /--since must look like/);
+  // --rates: a card that makes the fixture's model free
+  const card = path.join(home, 'rates.json');
+  fs.writeFileSync(card, JSON.stringify({ 'claude-sonnet-4': { in: 0, out: 0, read: 0, w5m: 0, w1h: 0 } }));
+  lines.length = 0;
+  await main(['check', 'bbbb', '--format', 'json', '--rates', card], io);
+  assert.equal(JSON.parse(lines[lines.length - 1]).summary.cost, 0);
+  fs.writeFileSync(card, JSON.stringify({ 'claude-sonnet-4': { in: 'x' } }));
+  assert.equal(await main(['check', 'bbbb', '--rates', card], io), 2);
+  assert.match(lines[lines.length - 1], /needs numeric in, out and read/);
+});
+
 test('hook --feedback reason carries evidence and advice from the shared report generator', () => {
   const home = fakeHome();
   const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
-  const r = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false }, { feedback: true, failOn: 'warn' });
+  const r = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, stop_hook_active: false }, { feedback: true, failOn: 'warn', stateDir: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-')) });
   assert.match(r.reason, /retry-loop/);
   assert.match(r.reason, /Evidence:/);
   assert.match(r.reason, /Next time:/);

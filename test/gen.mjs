@@ -31,6 +31,7 @@ export function session(opts = {}) {
     compactBoundary(preTokens) { base({ type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto', preTokens }, content: 'Conversation compacted', level: 'info' }); context = 15000; return api; },
     hookErrors(errs) { base({ type: 'system', subtype: 'stop_hook_summary', hookErrors: errs, hookCount: 1, level: 'suggestion' }); return api; },
     summary(s) { records.push({ type: 'summary', summary: s, leafUuid: parent }); return api; },
+    raw(extra) { records.push(Object.assign({ timestamp: new Date(t).toISOString(), sessionId }, extra)); return api; },
     junk() { records.push({ type: 'queue-operation', operation: 'enqueue', timestamp: new Date(t).toISOString(), sessionId, content: 'x' }); records.push({ type: 'attachment', attachment: { type: 'total_tokens_reminder', text: '<total_tokens>1</total_tokens>' }, timestamp: new Date(t).toISOString(), uuid: uid('u'), parentUuid: parent }); return api; },
     // blocks: [{thinking}|{text}|{tool:'Bash', input:{...}, id?}], returns tool ids
     assistant(blocks, u = {}) {
@@ -53,7 +54,9 @@ export function session(opts = {}) {
         if (b.thinking !== undefined) block = { type: 'thinking', thinking: b.thinking, signature: 'sig' };
         else if (b.text !== undefined) block = { type: 'text', text: b.text };
         else { const id = b.id || uid('toolu'); ids.push(id); block = { type: 'tool_use', id, name: b.tool, input: b.input || {} }; }
-        base({ type: 'assistant', requestId, apiBlockIndex: i, isApiErrorMessage: !!u.apiError, message: { id: msgId, model: u.model || model, role: 'assistant', type: 'message', stop_reason: stop, usage, content: [block] } });
+        // u.outputs: per-block output_tokens, as subagent transcripts write them while the response streams
+        const blockUsage = u.outputs ? Object.assign({}, usage, { output_tokens: u.outputs[i] }) : usage;
+        base({ type: 'assistant', requestId, apiBlockIndex: i, isApiErrorMessage: !!u.apiError, message: { id: msgId, model: u.model || model, role: 'assistant', type: 'message', stop_reason: stop, usage: blockUsage, content: [block] } });
         t += b.ms != null ? b.ms : 400;
       });
       return ids;

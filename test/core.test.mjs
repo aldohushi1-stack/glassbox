@@ -45,6 +45,35 @@ test('tool calls pair with results and get durations; orphans detected', () => {
   assert.equal(tr.totals.toolErrors, 1);
 });
 
+test('streamed usage: the largest output_tokens across a response\'s records wins, and totals follow it', () => {
+  const s = session({ agentId: 'sub1' }); s.user('p');
+  s.assistant([{ thinking: 'hmm' }, { text: 'a' }, { tool: 'Read', input: { file_path: 'x' } }], { outputs: [4, 4, 1800], output: 1800 });
+  const tr = parseTrace(file('agent-sub1.jsonl', s));
+  assert.equal(tr.requests.length, 1);
+  assert.equal(tr.requests[0].usage.output, 1800);
+  assert.equal(tr.totals.usage.output, 1800);
+  assert.equal(tr.agents.find((a) => a.id === 'sub1').usage.output, 1800);
+  assert.equal(tr.turns[0].usage.output, 1800);
+  assert.equal(tr.requests[0].contextTokens, tr.requests[0].usage.input + tr.requests[0].usage.cacheRead + tr.requests[0].usage.cacheWrite);
+});
+
+test('session bounds come from conversation records; a late bookkeeping record does not stretch the wall clock', () => {
+  const s = session(); s.user('go'); s.assistant([{ text: 'done' }]);
+  s.advance(46 * 24 * 3600e3).raw({ type: 'frame-link', uuid: 'fl1' });
+  const tr = parseTrace(file('a', s));
+  assert.ok(tr.totals.wallMs < 60000, `wall ${tr.totals.wallMs}`);
+});
+
+test('an interrupt marker is not a human prompt and adds no idle time', () => {
+  const s = session(); s.user('go'); s.assistant([{ text: 'working' }]);
+  s.advance(600000).user('[Request interrupted by user]');
+  s.advance(1000).user('[Request interrupted by user for tool use]');
+  const tr = parseTrace(file('a', s));
+  assert.equal(tr.totals.turns, 1);
+  assert.deepEqual(tr.turns.map((t) => t.promptKind), ['human', 'interrupt', 'interrupt']);
+  assert.equal(tr.totals.humanIdleMs, 0);
+});
+
 test('turns start only on human prompts; tool results and meta do not start turns; idle is computed', () => {
   const s = session();
   s.user('first');
@@ -161,18 +190,126 @@ test('retry-loop fires at 3 identical calls, escalates on errors, not at 2', () 
   assert.equal(ids(findings(parseTrace(file('c', s3)))).includes('retry-loop'), false);
 });
 
+test('blocking TaskOutput polls: one info slow-tool per task, no retry-loop unless the polls fail', () => {
+  const running = '<retrieval_status>timeout</retrieval_status>\n<status>running</status>';
+  const s = session(); s.user('x');
+  for (let i = 0; i < 20; i++) s.call('TaskOutput', { task_id: 'abc', block: true, timeout: 600000 }, running, { ms: 600000 });
+  s.call('TaskOutput', { task_id: 'def', block: true, timeout: 600000 }, 'done', { ms: 90000 });
+  s.call('TaskOutput', { task_id: 'ghi', block: true, timeout: 600000 }, 'done', { ms: 5000 }); // under the threshold
+  const tr = parseTrace(file('a', s));
+  let fs = findings(tr);
+  assert.equal(ids(fs).includes('retry-loop'), false);
+  const slow = fs.filter((x) => x.id === 'slow-tool');
+  assert.deepEqual(slow.map((x) => x.severity), ['info', 'info']);
+  assert.match(slow[0].title, /^TaskOutput waited 3h 2\dm on task abc \(20 polls\)$/);
+  assert.equal(slow[0].evidence.toolCallIds.length, 20);
+  assert.match(slow[1].title, /^TaskOutput waited 1m 3\ds on task def$/);
+  assert.match(core.adviceFor(slow[0], tr), /background task/);
+  // failing polls are still a retry loop
+  const s2 = session(); s2.user('x');
+  for (let i = 0; i < 3; i++) s2.call('TaskOutput', { task_id: 'abc', block: true }, 'No task found', { error: true });
+  assert.equal(findings(parseTrace(file('b', s2))).find((x) => x.id === 'retry-loop').severity, 'error');
+  // an ordinary slow tool is unchanged
+  const s3 = session(); s3.user('x');
+  s3.call('Bash', { command: 'deploy' }, 'ok', { ms: 600000 });
+  fs = findings(parseTrace(file('c', s3)));
+  assert.equal(fs.find((x) => x.id === 'slow-tool').severity, 'warn');
+});
+
 test('failed-tool error rate thresholds', () => {
   const s = session(); s.user('x');
   s.call('Bash', { command: 'a' }, 'boom', { error: true });
   s.call('Bash', { command: 'b' }, 'ok');
   s.call('Bash', { command: 'c' }, 'ok');
   let f = findings(parseTrace(file('a', s))).find((x) => x.id === 'failed-tool');
-  assert.equal(f.severity, 'warn');
+  assert.equal(f, undefined, 'one stray error is not a pattern');
   s.call('Bash', { command: 'd' }, 'boom', { error: true });
   s.call('Bash', { command: 'e' }, 'boom', { error: true });
   f = findings(parseTrace(file('a', s))).find((x) => x.id === 'failed-tool');
   assert.equal(f.severity, 'error');
   assert.match(f.title, /3 of 5/);
+  // 2 errors in 10 calls (20%) → warn; 2 in 11 (18%) → nothing
+  const s2 = session(); s2.user('x');
+  for (let i = 0; i < 8; i++) s2.call('Edit', { i }, 'ok');
+  s2.call('Edit', { i: 'x' }, 'old_string not found', { error: true }); s2.call('Edit', { i: 'y' }, 'old_string not found', { error: true });
+  assert.equal(findings(parseTrace(file('b', s2))).find((x) => x.id === 'failed-tool').severity, 'warn');
+  s2.call('Edit', { i: 'z' }, 'ok');
+  assert.equal(ids(findings(parseTrace(file('b', s2)))).includes('failed-tool'), false);
+});
+
+test('retry-loop: repeats that observe changing state are not a loop; identical results with nothing in between are', () => {
+  // re-running tests after edits returns different output each time → observing
+  const s = session(); s.user('x');
+  for (let i = 0; i < 3; i++) { s.call('Bash', { command: 'pytest' }, `${3 - i} failed`); s.call('Edit', { file_path: 'a.py', i }, 'ok'); }
+  assert.equal(ids(findings(parseTrace(file('a', s)))).includes('retry-loop'), false);
+  // screenshots with clicks in between, same (empty) text result → still observing
+  const s2 = session(); s2.user('x');
+  for (let i = 0; i < 3; i++) { s2.call('mcp__browser__screenshot', { tab: 1 }, ''); s2.call('mcp__browser__click', { ref: i }, 'ok'); }
+  assert.equal(ids(findings(parseTrace(file('b', s2)))).includes('retry-loop'), false);
+  // same Read, same content, only reads in between → redundant
+  const s3 = session(); s3.user('x');
+  for (let i = 0; i < 3; i++) { s3.call('Read', { file_path: '/a.js' }, 'same'); s3.call('Grep', { pattern: 'p' + i }, 'hit'); }
+  assert.equal(findings(parseTrace(file('c', s3))).find((x) => x.id === 'retry-loop').severity, 'warn');
+});
+
+test('duplicate-subagent-read, and slow-tool / oversized-result grouping per tool', () => {
+  const main = session({ sessionId: 'S' }); main.user('go');
+  const files = [];
+  for (const id of ['a1', 'a2', 'a3']) {
+    const sub = session({ sessionId: 'S', agentId: id }); sub.user('p');
+    sub.call('Read', { file_path: 'C:\\repo\\docs\\ARCHITECTURE.md' }, 'z'.repeat(40000));
+    files.push(file(`agent-${id}.jsonl`, sub));
+  }
+  for (let i = 0; i < 4; i++) main.call('Bash', { command: 'backtest ' + i }, 'r'.repeat(21000 + i), { ms: 70000 + i * 1000 });
+  main.call('WebFetch', { url: 'u' }, 'ok', { ms: 65000 });
+  const tr = parseTrace([file('S.jsonl', main), ...files]);
+  const fs = findings(tr);
+  const dup = fs.find((x) => x.id === 'duplicate-subagent-read');
+  assert.equal(dup.title, 'Same file read by 3 agents (120,000 chars)');
+  assert.equal(dup.severity, 'warn');
+  assert.equal(dup.evidence.toolCallIds.length, 3);
+  assert.equal(fs.filter((x) => x.id === 'oversized-result' && /Read/.test(x.title)).length, 0, 'shared reads are reported once, as the duplicate');
+  const big = fs.filter((x) => x.id === 'oversized-result');
+  assert.deepEqual(big.map((x) => x.title), ['Bash returned over 20,000 chars 4 times (largest 21,003, 84,006 in all)']);
+  const slow = fs.filter((x) => x.id === 'slow-tool').map((x) => x.title).sort();
+  assert.equal(slow.length, 2);
+  assert.match(slow[0], /^Bash took over 1m 00s 4 times \(longest 1m 1\ds, 4m \d\ds in all\)$/); // generator adds block gaps
+  assert.match(slow[1], /^WebFetch took 1m 05s$/);
+  // --redact blanks the path, which only appears in the detail
+  assert.equal(core.redactDetail(dup), '«' + dup.detail.length + ' chars»');
+});
+
+test('long-turn counts the main conversation per human prompt, not a subagent\'s run', () => {
+  const main = session({ sessionId: 'S' }); main.user('first');
+  for (let i = 0; i < 20; i++) main.call('Bash', { command: 'a' + i }, 'ok');
+  main.meta('<system-reminder>x</system-reminder>');
+  for (let i = 0; i < 15; i++) main.call('Bash', { command: 'b' + i }, 'ok');
+  main.user('second'); main.call('Read', { file_path: 'x' }, 'ok');
+  const sub = session({ sessionId: 'S', agentId: 'big' }); sub.user('p');
+  for (let i = 0; i < 40; i++) sub.call('Read', { file_path: 'f' + i }, 'ok');
+  const fs = findings(parseTrace([file('S.jsonl', main), file('agent-big.jsonl', sub)]));
+  assert.deepEqual(fs.filter((x) => x.id === 'long-turn').map((x) => x.title), ['Turn 1 made 35 tool calls']);
+});
+
+test('denied and interrupted calls are permission-denied, not failed-tool, retry-loop or slow-tool', () => {
+  const s = session(); s.user('x');
+  s.call('Bash', { command: 'rm -rf build' }, "The user doesn't want to proceed with this tool use. The tool use was rejected.", { error: true, ms: 400000 });
+  s.call('WebFetch', { url: 'u' }, 'Permission to use WebFetch has been denied.', { error: true });
+  s.call('Bash', { command: 'npm i' }, '[Request interrupted by user for tool use]', { error: true });
+  s.call('Bash', { command: 'ls' }, 'Exit code 126\n/usr/bin/bash: ./x.sh: Permission denied', { error: true }); // the shell's own failure
+  const tr = parseTrace(file('a', s));
+  assert.deepEqual(tr.toolCalls.map((c) => c.denial), ['user-rejected', 'permission-rule', 'interrupted', null]);
+  const fs = findings(tr);
+  const p = fs.find((x) => x.id === 'permission-denied');
+  assert.equal(p.metric, 3); assert.equal(p.severity, 'info');
+  assert.match(p.detail, /user-rejected ×1/);
+  assert.equal(ids(fs).includes('failed-tool'), false, 'the one real Bash failure is a single stray error');
+  assert.equal(ids(fs).includes('slow-tool'), false, 'a 400 s permission prompt is the human\'s time');
+  // toolDenialKind on the record wins over text
+  const s2 = session(); s2.user('x');
+  const [id] = s2.assistant([{ tool: 'Bash', input: { command: 'deploy' } }]);
+  s2.advance(300).result(id, 'Error: blocked', { error: true }); s2.records[s2.records.length - 1].toolDenialKind = 'automode-blocked';
+  assert.equal(parseTrace(file('b', s2)).toolCalls[0].denial, 'automode-blocked');
 });
 
 test('exploration-run boundaries: 7 no, 8 info, 15 warn, write breaks the run, Agent call does not', () => {
@@ -200,7 +337,25 @@ test('oversized-result, context-bloat, cache-churn, low-cache-hit', () => {
   fs = findings(parseTrace(file('b', s2)));
   const bloat = fs.find((x) => x.id === 'context-bloat');
   assert.ok(bloat); assert.equal(bloat.severity, 'error'); assert.equal(bloat.metric, 175010);
-  assert.equal(fs.filter((x) => x.id === 'cache-churn').length, 1); // first request exempt
+  assert.match(bloat.title, /\$[\d.]+ \(\d+% of cost\) spent above 120,000/);
+  assert.ok(bloat.cost > 0);
+  // the second request read back everything the first had cached, so its big write is new content, not churn
+  assert.equal(ids(fs).includes('cache-churn'), false);
+
+  // real invalidation: the next request reads back almost none of the cached prefix
+  const s5 = session({ context: 100000 }); s5.user('x');
+  s5.assistant([{ text: 'a' }], { cacheRead: 100000, cacheWrite: 5000, input: 10 });
+  s5.advance(2000).assistant([{ text: 'b' }], { cacheRead: 3000, cacheWrite: 104000, input: 10 });
+  fs = findings(parseTrace(file('e', s5)));
+  assert.equal(fs.filter((x) => x.id === 'cache-churn').length, 1);
+  assert.match(fs.find((x) => x.id === 'cache-churn').title, /^102,000 cached tokens re-written at request #2$/);
+  // the same miss after sitting idle past the (1-hour) cache lifetime is expiry
+  const s6 = session({ context: 100000 }); s6.user('x');
+  s6.assistant([{ text: 'a' }], { cacheRead: 100000, cacheWrite: 5000, input: 10 });
+  s6.advance(2 * 3600e3).user('back again'); s6.assistant([{ text: 'b' }], { cacheRead: 3000, cacheWrite: 104000, input: 10 });
+  fs = findings(parseTrace(file('f', s6)));
+  assert.equal(ids(fs).includes('cache-churn'), false);
+  assert.match(fs.find((x) => x.id === 'idle-cache-expiry').title, /^102,000 tokens re-cached after 2h 0m idle$/);
 
   const s3 = session(); s3.user('x');
   for (let i = 0; i < 6; i++) s3.assistant([{ text: 'a' }], { cacheRead: 100, cacheWrite: 1000, input: 1000 });
@@ -316,15 +471,18 @@ test('real Claude Code transcript + subagent parse cleanly', { skip: !fs.existsS
   assert.ok(Array.isArray(fs2));
 });
 
-test('slow-model vs long-generation: a 65 s gap with a small output is slow-model, with a big output is long-generation', () => {
+test('slow-model vs long-generation: a 65 s gap with a small output is slow-model; a big output is only long-generation when the rate is low', () => {
   const s = session(); s.user('x');
   s.call('Bash', { command: 'a' }, 'ok');
   s.advance(65000); s.assistant([{ text: 'tiny' }], { output: 200 });
   s.call('Bash', { command: 'b' }, 'ok');
-  s.advance(65000); s.assistant([{ text: 'huge' }], { output: 9000 });
+  s.advance(65000); s.assistant([{ text: 'huge' }], { output: 9000 }); // ~138 tok/s: a big output, not a problem
+  s.call('Bash', { command: 'c' }, 'ok');
+  s.advance(900000); s.assistant([{ text: 'stalled' }], { output: 9000 }); // 10 tok/s
   const fs = findings(parseTrace(file('a', s)));
   assert.equal(fs.filter((x) => x.id === 'slow-model').length, 1);
   assert.equal(fs.filter((x) => x.id === 'long-generation').length, 1);
+  assert.match(fs.find((x) => x.id === 'long-generation').title, /9,000 tokens \(10\.0 tok\/s\)/);
   const tr = parseTrace(file('a', s));
   assert.ok(tr.requests[3].tokensPerSec > 100);
   assert.equal(tr.totals.modelTimeMs > 130000, true);
