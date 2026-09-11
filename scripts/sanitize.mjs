@@ -6,9 +6,10 @@
 //       tool results, injected context and human prompts not on the --keep allowlist.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const core = require(path.resolve(path.dirname(new URL(import.meta.url).pathname), '../src/trace-core.js'));
+const core = require(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../src/trace-core.js'));
 
 const args = process.argv.slice(2);
 const [inFile, outFile] = args.filter((a) => !a.startsWith('--'));
