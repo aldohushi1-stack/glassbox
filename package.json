@@ -44,7 +44,7 @@
     "accessibility"
   ],
   "devDependencies": {
-    "playwright": "^1.49.0"
+    "playwright": "1.63.0"
   },
   "homepage": "https://github.com/aldohushi1-stack/glassbox#readme",
   "repository": {
