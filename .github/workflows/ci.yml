@@ -3,6 +3,14 @@ on:
   push:
     branches: [main]
   pull_request:
+
+# One run per branch. A new push cancels the run still in flight, so a
+# multi-commit web upload finishes with a single run on the final commit
+# instead of one red run per partial tree.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,9 +22,24 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run build
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package.json') }}
+          restore-keys: pw-${{ runner.os }}-
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
       - run: npm run audit
+      # The GitHub Action checking itself: the demo transcript, reported but not gating.
+      - name: Glassbox action (self-test)
+        id: glassbox
+        uses: ./
+        with:
+          sessions: test/fixtures/real-main.jsonl
+          fail-on: never
+          report: glassbox-self-test.md
+      - run: test "${{ steps.glassbox.outputs.sessions }}" = "1" && test -s glassbox-self-test.md
       - uses: actions/upload-artifact@v4
         with:
           name: glassbox-html
