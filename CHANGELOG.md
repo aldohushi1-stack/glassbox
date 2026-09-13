@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-09-12
+**Keyed files: the shape, not the names.** `glassbox check --redact --legend FILE` replaces every file path in the output with a stable key (`file:1a2b3c4d`, the first 8 hex of HMAC-SHA256 with a random salt) and writes the key → path map to FILE, which stays on your machine. A redacted report can now say "this file was read 48 times by 2 agents and 6 of those reads failed" without naming it; `glassbox reveal report.md --legend FILE` turns the keys back into paths for whoever holds the legend. Re-using the legend file keeps keys stable across runs.
+- **Schema 2** (additive): `summary.files[]` — `{ key, reads, writes, errors, agents, chars }` for files with 3+ calls, any failed call, or reads by 2+ agents (paths in the clear without `--redact`, keys with a legend, omitted for `--redact` without one); `evidence.files[]` on findings whose evidence calls carry a path; `duplicate-subagent-read` keeps its sentence with the key instead of being blanked; top-level `redacted` and `legend` flags on `check --all` output.
+- `--legend` without `--redact` is refused (the paths would be in the output anyway).
+- New core export `fileStats(trace)`; new CLI exports `Legend`, `FILE_KEY_RE`.
+- Tests: `test/legend.test.mjs` (fileStats; stable keys across spellings, salts and save/load; the redacted JSON is searched for every raw path it could contain; reveal round-trip; CLI end to end). 81 tests, e2e and audit gates green.
+
 ## 0.5.0 — 2026-09-11
 **Claude Code plugin.** `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`: the Stop hook, a SessionStart hook, `/glassbox:check`, and a `glassbox` skill, running the bundled code with `node` (no npx). Options `feedback`, `context` and `fail_on`; `GLASSBOX_FEEDBACK` / `GLASSBOX_CONTEXT` / `GLASSBOX_FAIL_ON` override them per project. The plugin's hook stays quiet if `glassbox hook install` already added one. See docs/PLUGIN.md.
 

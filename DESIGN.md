@@ -201,3 +201,23 @@ The Markdown report exists to be pasted back into an agent, so it has to carry w
 ### 11.4 What is deliberately not in 0.4.0
 
 Other-agent importers (Codex, Antigravity). Their transcript formats are moving; the parser's loose-record path already accepts `{role, content}` arrays, and a real importer should be written against a fixture, not a guess. Tracked as the next open item.
+
+## 12. v0.6.0 — keyed files: the shape, not the text
+
+**Problem.** `--redact` blanks every path, so a redacted report can say "a file was read by 22 agents" but not which file, cannot say that the *same* file was read across four sessions, and cannot say that its reads kept failing. The person who owns the transcripts needs exactly that; the person reading the redacted output must never get it. Both are right.
+
+**Mechanism: a legend.** `glassbox check --redact --legend FILE` replaces each file path with a stable key, `file:1a2b3c4d`, the first 8 hex characters of HMAC-SHA256(salt, normalised path). The salt is 32 random bytes, generated once and stored in the legend file together with the key→path map. The legend never leaves the machine; the redacted output carries only keys. Re-running with the same legend file reuses the salt and extends the map, so a key means the same file in the 30-day re-run as it did in the first audit. Two machines with two legends produce different keys for the same file — linking them requires both legends, which is the point. A team that wants shared keys shares one legend file.
+
+**Why HMAC and not a plain hash.** `sha256("package.json")` is a dictionary lookup; a keyed hash with a private salt is not. Eight hex characters (32 bits) are enough for a few thousand files with negligible collision odds; the legend detects a collision at write time and lengthens the key.
+
+**What is keyed** (schema 2, additive — a schema-1 consumer sees nothing new it must understand):
+- `summary.files[]`: `{ key, reads, writes, errors, agents, chars }` per file, from the `file_path` / `notebook_path` inputs of Read, Edit, Write, MultiEdit and NotebookEdit calls; only files with 3+ calls, or any failed call, or reads by 2+ agents — the interesting subset, not an inventory. Sorted by reads.
+- `duplicate-subagent-read` detail keeps its sentence with the path replaced by the key instead of being blanked.
+- `evidence.files[]` on any finding whose evidence calls carry a file path (oversized-result, retry-loop, failed-tool, duplicate-subagent-read).
+- Everything else `--redact` blanked is still blanked. Without `--legend`, `--redact` behaves exactly as in 0.5.
+
+**`glassbox reveal FILE [--legend FILE]`** reads any text (a report `.md`, the JSON, a pasted paragraph) and prints it with every `file:xxxxxxxx` replaced by its path from the legend. Unknown keys stay as they are and are counted on stderr. This is the customer's side of the audit: the auditor writes "file:1a2b3c4d was read 47 times across 4 sessions and failed 9 of them"; the customer runs `reveal` and reads `src/api/orders.py`.
+
+**Threat model, stated.** The redacted file reveals: which tools exist (including MCP server names), how much was spent, and the *shape* of file use (how many files, how often, how many agents). It does not reveal any name, path, prompt, command, URL or result. A reader with the legend can reverse the keys — so the legend is treated like a password file: local, not committed (`.gitignore` it), not attached to the same email as the audit.
+
+**Tests.** `fileStats` counts reads/writes/errors/agents/chars across main and subagent files; the legend produces stable keys across two runs and different keys under a different salt; the redacted JSON is stringified and searched for every raw path it could contain (must be zero hits); `reveal` round-trips a report; without `--legend` the output is byte-identical to 0.5 behaviour except `schema: 2`.

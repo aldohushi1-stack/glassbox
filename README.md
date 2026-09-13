@@ -31,6 +31,9 @@ glassbox open 81c4 --out trace.html   write a self-contained HTML you can send t
 glassbox check                        print findings; exit 1 on any error-level finding
 glassbox check --format md            the findings as Markdown written for the agent: evidence + what to do next time
 glassbox check --fail-on warn --format json   stricter, machine-readable (CI, hooks, agents); add --redact before sharing
+glassbox check --all --since 30d --redact --legend audit.legend.json --format json
+                                      every session, counts only, files as keys; the legend (key → path) stays with you
+glassbox reveal report.md --legend audit.legend.json   turn the keys in a report back into paths, on your machine
 glassbox compare 81c4 9f0a            same task, two sessions: time, tokens, cost, tools and findings side by side
 glassbox compare 81c4 9f0a --out cmp.html     …as one HTML with both sessions in it
 glassbox watch                        live tail: the viewer follows the newest session as Claude Code writes it
@@ -38,7 +41,7 @@ glassbox watch                        live tail: the viewer follows the newest s
 
 The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
-**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema`; `--redact` blanks prompt text, tool inputs and quoted output. A GitHub Actions example for Agent SDK runs is in [docs/CI.md](docs/CI.md).
+**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema` (2 since 0.6.0: adds `summary.files` and `evidence.files` when a legend is used; schema-1 readers can ignore them); `--redact` blanks prompt text, tool inputs and quoted output. A GitHub Actions example for Agent SDK runs is in [docs/CI.md](docs/CI.md).
 
 **Feed it back to Claude.** `glassbox check --format md` prints the findings the way an agent needs them: each one with the concrete tool calls and request numbers it is about, and a fixed "next time" line per rule. Paste it into the next session ("here's what went wrong last time"), pipe it into a file, or let the Stop hook below deliver it automatically.
 
@@ -150,6 +153,10 @@ console.log(compare({ trace, findings, cost }, other));      // other = the same
 
 ## Privacy
 
-The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). `glassbox watch` binds to `127.0.0.1` only and stops with the command. Transcripts contain everything the agent saw; that's why share mode exists.
+Your context is private — by construction, not by promise.
+
+- **Nothing leaves.** The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). The CLI sends nothing anywhere. `glassbox watch` binds to `127.0.0.1` only and stops with the command.
+- **Counts, not text.** Transcripts contain everything the agent saw; that's why share mode and `--redact` exist. Redacted output keeps tool names, numbers, timings and cost and drops every string — prompts, commands, results, titles. Where a finding would quote something it says `«240 chars»`.
+- **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
