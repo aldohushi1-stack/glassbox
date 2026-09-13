@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.5.0';
+  const VERSION = '0.6.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -985,6 +985,41 @@
   const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error', 'duplicate-subagent-read']);
   function redactDetail(f) { return CONTENT_DETAIL.has(f.id) ? blank(f.detail) : f.detail; }
 
+  // ---------------------------------------------------------------------------
+  // Per-file use: how often each file was read or written, by how many agents, and how often
+  // those calls failed. Paths are normalised (backslashes, case) but otherwise kept; the CLI's
+  // legend replaces them with keys when sharing.
+  // ---------------------------------------------------------------------------
+  const FILE_READ = new Set(['Read']);
+  const FILE_WRITE = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+  function filePathOf(c) { const i = c && c.input; if (!i) return null; const p = i.file_path || i.notebook_path; return typeof p === 'string' && p ? p : null; }
+  function normalisePath(p) { return String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase(); }
+  function fileStats(trace, opts) {
+    const minCalls = (opts && opts.minCalls) || 3, minAgents = (opts && opts.minAgents) || 2;
+    const rows = new Map();
+    for (const c of trace.toolCalls) {
+      if (c.unmatched) continue;
+      const isRead = FILE_READ.has(c.name), isWrite = FILE_WRITE.has(c.name);
+      if (!isRead && !isWrite) continue;
+      const p = filePathOf(c); if (!p) continue;
+      const k = normalisePath(p);
+      if (!rows.has(k)) rows.set(k, { path: p, reads: 0, writes: 0, errors: 0, chars: 0, agentSet: new Set(), tools: {} });
+      const r = rows.get(k);
+      if (isRead) { r.reads++; r.chars += c.resultChars || 0; } else r.writes++;
+      if (c.isError) r.errors++;
+      r.agentSet.add(c.agent);
+      r.tools[c.name] = (r.tools[c.name] || 0) + 1;
+    }
+    const out = [];
+    for (const r of rows.values()) {
+      const calls = r.reads + r.writes;
+      if (calls < minCalls && !r.errors && r.agentSet.size < minAgents) continue;
+      out.push({ path: r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agentSet.size, chars: r.chars, tools: r.tools });
+    }
+    out.sort((a, b) => (b.reads + b.writes) - (a.reads + a.writes) || b.errors - a.errors || a.path.localeCompare(b.path));
+    return out;
+  }
+
   function reportMarkdown(trace, findings, cost, opts) {
     opts = opts || {};
     const redact = !!opts.redact, maxEv = opts.maxEvidence || 6;
@@ -1140,5 +1175,5 @@
   }
   function toJsonl(records) { return records.map((r) => JSON.stringify(r)).join('\n') + '\n'; }
 
-  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable };
+  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable, fileStats, filePathOf, normalisePath };
 });

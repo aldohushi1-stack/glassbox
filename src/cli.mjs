@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
@@ -125,6 +126,34 @@ export function openInBrowser(file, env = process.env) {
   child.on('error', () => { }); child.unref();
 }
 
+// ---------------------------------------------------------------------------
+// Legend: file paths → stable keys ("file:1a2b3c4d") for redacted output. The key is the first
+// 8 hex chars of HMAC-SHA256(salt, normalised path); the salt is random, made once, and lives
+// only in the legend file with the key→path map. Re-using the file keeps keys stable across runs.
+// ---------------------------------------------------------------------------
+export const FILE_KEY_RE = /\bfile:[0-9a-f]{8,16}\b/g;
+export class Legend {
+  constructor(data) { this.salt = data && data.salt || crypto.randomBytes(32).toString('hex'); this.files = data && data.files || {}; this.created = data && data.created || new Date().toISOString(); this.byPath = new Map(Object.entries(this.files).map(([k, v]) => [core.normalisePath(v), k])); this.dirty = !data; }
+  static load(file) {
+    if (!file || !fs.existsSync(file)) return new Legend(null);
+    let json; try { json = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`--legend ${file}: not valid JSON (delete it to start a new legend)`); }
+    if (!json || typeof json.salt !== 'string' || typeof json.files !== 'object') throw new Error(`--legend ${file}: not a Glassbox legend`);
+    return new Legend(json);
+  }
+  keyFor(p) {
+    const norm = core.normalisePath(p);
+    const have = this.byPath.get(norm); if (have) return have;
+    const hex = crypto.createHmac('sha256', Buffer.from(this.salt, 'hex')).update(norm).digest('hex');
+    let len = 8; let key = 'file:' + hex.slice(0, len);
+    while (this.files[key] && core.normalisePath(this.files[key]) !== norm && len < 16) { len += 2; key = 'file:' + hex.slice(0, len); } // collision: lengthen
+    this.files[key] = String(p); this.byPath.set(norm, key); this.dirty = true;
+    return key;
+  }
+  pathFor(key) { return this.files[key] || null; }
+  save(file) { if (!file) return null; fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true }); fs.writeFileSync(file, JSON.stringify({ glassbox: core.VERSION, note: 'Glassbox legend: maps file keys in a redacted report back to paths on this machine. Keep it here; never send it with the report.', created: this.created, updated: new Date().toISOString(), salt: this.salt, files: this.files }, null, 2) + '\n'); this.dirty = false; return path.resolve(file); }
+  reveal(text) { let unknown = 0; const out = String(text).replace(FILE_KEY_RE, (k) => { const p = this.pathFor(k); if (p == null) unknown++; return p == null ? k : p; }); return { text: out, unknown }; }
+}
+
 const SEV = { error: 0, warn: 1, info: 2 };
 // Text output only: identical findings (same severity, rule and title) print once with a ×N count.
 export function collapseFindings(findings) {
@@ -141,8 +170,22 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   const fmt = core.fmtDur, fi = core.fmtInt;
   const usd = (v) => v == null ? '—' : '$' + (v < 1 ? v.toFixed(3) : v.toFixed(2));
   const redact = !!opts.redact;
+  const legend = opts.legend || null;
+  const keyed = (p) => legend ? legend.keyFor(p) : p;
   const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source };
-  const json = { glassbox: core.VERSION, schema: 1, redacted: redact, summary, findings: findings.map((f) => ({ id: f.id, severity: f.severity, title: f.title, detail: redact ? core.redactDetail(f) : f.detail, metric: f.metric, evidence: f.evidence })), failOn, failed: failing.length > 0 };
+  // Per-file use, keyed when a legend is given; with --redact and no legend the paths would leak, so it is omitted.
+  if (legend || !redact) summary.files = core.fileStats(trace).map((r) => ({ key: legend ? legend.keyFor(r.path) : r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agents, chars: r.chars }));
+  const findingJson = (f) => {
+    const ev = f.evidence || {};
+    const paths = Array.from(new Set((ev.toolCallIds || []).map((id) => { const c = trace.toolCalls.find((x) => x.id === id); return c ? core.filePathOf(c) : null; }).filter(Boolean)));
+    let detail = redact ? core.redactDetail(f) : f.detail;
+    // duplicate-subagent-read quotes the path and nothing else: with a legend, keep the sentence and key the path.
+    if (redact && legend && f.id === 'duplicate-subagent-read') { detail = f.detail; for (const p of paths) detail = detail.split(p).join(legend.keyFor(p)); }
+    const evidence = Object.assign({}, ev);
+    if (paths.length && (legend || !redact)) evidence.files = Array.from(new Set(paths.map(keyed)));
+    return { id: f.id, severity: f.severity, title: f.title, detail, metric: f.metric, evidence };
+  };
+  const json = { glassbox: core.VERSION, schema: 2, redacted: redact, legend: !!legend, summary, findings: findings.map(findingJson), failOn, failed: failing.length > 0 };
   const lines = [];
   lines.push(`Glassbox · ${m.sessionId ? m.sessionId.slice(0, 8) : 'session'} · ${m.models.join(', ') || 'unknown model'}`);
   lines.push(`  wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
@@ -281,7 +324,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -300,6 +343,11 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  --redact blanks prompt text, tool inputs and result text so the report can be shared
   glassbox check --all [--since 1h] [--project PATH]
                                  one line per session (all, or written in the last 30m/1h/2d); exit 1 if any fails
+  glassbox check --redact --legend FILE
+                                 keep the shape of file use in redacted output: every path becomes a key (file:1a2b3c4d)
+                                 and FILE gets the key→path map — it stays with you and never goes with the report
+  glassbox reveal FILE --legend LEGEND
+                                 print FILE (a report, JSON, any text) with the keys turned back into paths
   glassbox compare A B [--format text|json|md] [--out FILE.html] [--label-a NAME --label-b NAME]
                                  same task, two sessions: what changed in time, tokens, cost, tools and findings
   glassbox watch [ID|FILE] [--port N] [--no-open]
@@ -357,14 +405,27 @@ export async function main(argv, io = {}) {
       for (const s of list) out(`${s.id.slice(0, 8)}  ${new Date(s.mtime).toISOString().slice(0, 16).replace('T', ' ')}  ${String(Math.round(s.size / 1024)).padStart(6)} KB  ${s.project.padEnd(28).slice(0, 28)}  ${sessionTitle(s.file)}`);
       return 0;
     }
+    const legendFile = args.flags.legend ? String(args.flags.legend) : null;
+    if (legendFile && !args.flags.redact && cmd === 'check') throw new Error('--legend only makes sense with --redact (without --redact the paths are in the output anyway)');
+    const legend = legendFile ? Legend.load(legendFile) : null;
+    const saveLegend = () => { if (legend && legend.dirty) err(`legend: ${legend.save(legendFile)} (${Object.keys(legend.files).length} files) — keep it; do not send it with the report`); };
+    if (cmd === 'reveal') {
+      if (!args._[1]) throw new Error('reveal needs a file: glassbox reveal report.md --legend audit.legend.json');
+      if (!legendFile || !fs.existsSync(legendFile)) throw new Error('reveal needs --legend FILE (the legend written by check --redact --legend)');
+      const r = legend.reveal(fs.readFileSync(args._[1], 'utf8'));
+      out(r.text.replace(/\n$/, ''));
+      if (r.unknown) err(`reveal: ${r.unknown} key${r.unknown === 1 ? '' : 's'} not in this legend (left as they are)`);
+      return 0;
+    }
     if (cmd === 'check' && args.flags.all) {
       // Every session (optionally only those written in the last --since), one line each; exit 1 if any fails.
       const since = args.flags.since ? parseSince(args.flags.since) : null;
       const list = findSessions({ home, project: args.flags.project }).filter((s) => since == null || s.mtime >= Date.now() - since);
       const fmtOut = outputFormat(args.flags);
-      const reps = list.map((s) => ({ s, rep: checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact }) }));
+      const reps = list.map((s) => ({ s, rep: checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend }) }));
+      saveLegend();
       const failed = reps.filter((r) => r.rep.failed).length;
-      if (fmtOut === 'json') out(JSON.stringify({ glassbox: core.VERSION, schema: 1, failOn: args.flags['fail-on'] || 'error', failed: failed > 0, sessions: reps.map((r) => r.rep.json) }, null, 2));
+      if (fmtOut === 'json') out(JSON.stringify({ glassbox: core.VERSION, schema: 2, redacted: !!args.flags.redact, legend: !!legend, failOn: args.flags['fail-on'] || 'error', failed: failed > 0, sessions: reps.map((r) => r.rep.json) }, null, 2));
       else if (fmtOut === 'md') out(reps.map((r) => r.rep.markdown).join('\n---\n\n'));
       else {
         if (!reps.length) out(since != null ? `No sessions written in the last ${args.flags.since}.` : noSessionsMessage(home));
@@ -375,7 +436,8 @@ export async function main(argv, io = {}) {
     }
     if (cmd === 'check') {
       const s = resolveTarget(args._[1], { home });
-      const res = checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact });
+      const res = checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend });
+      saveLegend();
       const fmtOut = outputFormat(args.flags);
       if (fmtOut === 'json') out(JSON.stringify(res.json, null, 2)); else if (fmtOut === 'md') out(res.markdown); else out(res.text);
       return res.failed ? 1 : 0;
