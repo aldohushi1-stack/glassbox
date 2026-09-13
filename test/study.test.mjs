@@ -83,7 +83,7 @@ test('3.2 json report carries glassbox version and schema; 3.3 --redact blanks d
   const lines = []; const io = { stdout: (x) => lines.push(x), stderr: () => {}, home: dir };
   await main(['check', f, '--format', 'json'], io);
   const j = JSON.parse(lines[lines.length - 1]);
-  assert.equal(j.glassbox, C.VERSION); assert.equal(j.schema, 1);
+  assert.equal(j.glassbox, C.VERSION); assert.equal(j.schema, 2);
   assert.ok(JSON.stringify(j).includes('/Users/aldo/secret'), 'unredacted json carries the path');
   await main(['check', f, '--format', 'json', '--redact'], io);
   const r = JSON.parse(lines[lines.length - 1]);
