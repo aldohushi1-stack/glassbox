@@ -20,7 +20,7 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" check ${CLAUDE_SESSION_ID} --forma
 ```
 
 - Exit code: `0` nothing at or above `--fail-on` (default `error`), `1` findings at or above it, `2` usage error (bad flag, no such session). Exit 1 is a result, not a failure. `--fail-on warn|info` only changes the exit code; the report always lists every finding.
-- `--format json` for machine-readable output, `--format text` for a short summary. Add `--redact` before sharing a report: it blanks prompt text, tool inputs and result text.
+- `--format json` for machine-readable output, `--format text` for a short summary. Add `--redact` before sharing a report: it blanks prompt text, tool inputs and result text. Add `--legend audit.legend.json` too when the reader needs to know that the *same* file was read too often or kept failing: paths become keys (`file:1a2b3c4d`), the key → path map stays in the legend file on this machine, and `glassbox reveal FILE --legend audit.legend.json` turns keys back into paths.
 - The last turn may not be fully written to the transcript yet, so the newest few tool calls can be missing.
 
 ## Acting on findings
