@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.6.0';
+  const VERSION = '0.6.1';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -1151,19 +1151,20 @@
   // Redaction — keep structure, timestamps, usage, tool names; blank every string.
   // ---------------------------------------------------------------------------
   const KEEP_KEYS = new Set(['type', 'subtype', 'role', 'name', 'id', 'tool_use_id', 'uuid', 'parentUuid', 'requestId', 'sessionId', 'session_id', 'agentId', 'timestamp', 'model', 'stop_reason', 'version', 'entrypoint', 'operation', 'trigger', 'status', 'level', 'userType', 'apiBlockIndex', 'isSidechain', 'isMeta', 'isCompactSummary', 'isApiErrorMessage', 'is_error', 'effort', 'permissionMode', 'promptSource', 'sourceToolAssistantUUID', 'promptId', 'leafUuid', 'toolUseID', 'agentType', 'toolUseId', 'spawnDepth']);
-  function redactValue(v, key, depth) {
+  // Inside tool inputs and structured tool results every field is free-form, whatever it is called:
+  // {"name": "Project Falcon"} is content, not structure. Only generated ids that link records survive there.
+  const FREE_FORM_KEYS = new Set(['input', 'tool_input', 'toolUseResult']);
+  const FREE_FORM_KEEP = new Set(['agentId', 'task_id', 'bash_id', 'tool_use_id', 'runId']);
+  function redactValue(v, key, depth, freeForm) {
     if (v == null) return v;
     if (typeof v === 'string') {
-      if (KEEP_KEYS.has(key)) return v;
+      if ((freeForm ? FREE_FORM_KEEP : KEEP_KEYS).has(key)) return v;
       return '«' + v.length + ' chars»';
     }
     if (typeof v !== 'object') return v; // numbers, booleans (usage stays)
-    if (Array.isArray(v)) return v.map((x) => redactValue(x, key, depth + 1));
+    if (Array.isArray(v)) return v.map((x) => redactValue(x, key, depth + 1, freeForm));
     const out = {};
-    for (const k of Object.keys(v)) {
-      if (k === 'input' && key === undefined) { out[k] = redactValue(v[k], k, depth + 1); continue; }
-      out[k] = redactValue(v[k], k, depth + 1);
-    }
+    for (const k of Object.keys(v)) out[k] = redactValue(v[k], k, depth + 1, freeForm || FREE_FORM_KEYS.has(k));
     return out;
   }
   function redact(records) {
