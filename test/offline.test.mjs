@@ -13,7 +13,8 @@ const FONTS = [
   ['IBM Plex Mono', 400], ['IBM Plex Mono', 500],
 ];
 
-for (const file of ['dist/glassbox.html', 'dist/glassbox.artifact.html']) {
+// dist/glassbox.artifact.html is a build product that is not committed (see .gitignore), so it is checked only when present.
+for (const file of ['dist/glassbox.html', 'dist/glassbox.artifact.html'].filter((f) => fs.existsSync(path.join(root, f)))) {
   test(`${file} references nothing on the network`, () => {
     const html = fs.readFileSync(path.join(root, file), 'utf8');
     // Markup that would make the browser fetch something: <link href>, <script src>, <img src>, <iframe src>, CSS url(), @import.
