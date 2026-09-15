@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { readTextFile } from './textfile.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 // fileURLToPath, not URL.pathname: on Windows the latter gives "/C:/…" which path.resolve turns into "\C:\…".
@@ -89,7 +90,7 @@ export function analyse(files, rates) { const trace = core.parseTrace(files); co
 // Entries override or extend the built-in card; cache-write rates default to 1.25× / 2× input.
 export function loadRates(file) {
   if (!file) return null;
-  let json; try { json = JSON.parse(fs.readFileSync(String(file), 'utf8')); } catch (e) { throw new Error(`--rates ${file}: ${e.code === 'ENOENT' ? 'no such file' : 'not valid JSON'}`); }
+  let json; try { json = JSON.parse(readTextFile(String(file))); } catch (e) { throw new Error(`--rates ${file}: ${e.code === 'ENOENT' ? 'no such file' : 'not valid JSON'}`); }
   if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error(`--rates ${file}: expected an object keyed by model id`);
   const out = Object.assign({}, core.RATES);
   for (const [model, r] of Object.entries(json)) {
@@ -136,7 +137,7 @@ export class Legend {
   constructor(data) { this.salt = data && data.salt || crypto.randomBytes(32).toString('hex'); this.files = data && data.files || {}; this.created = data && data.created || new Date().toISOString(); this.byPath = new Map(Object.entries(this.files).map(([k, v]) => [core.normalisePath(v), k])); this.dirty = !data; }
   static load(file) {
     if (!file || !fs.existsSync(file)) return new Legend(null);
-    let json; try { json = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`--legend ${file}: not valid JSON (delete it to start a new legend)`); }
+    let json; try { json = JSON.parse(readTextFile(file)); } catch (e) { throw new Error(`--legend ${file}: not valid JSON (delete it to start a new legend)`); }
     if (!json || typeof json.salt !== 'string' || typeof json.files !== 'object') throw new Error(`--legend ${file}: not a Glassbox legend`);
     return new Legend(json);
   }
@@ -293,7 +294,7 @@ export function settingsPath(home) { return path.join(home || claudeHome(), 'set
 export function installHook(opts = {}) {
   const file = settingsPath(opts.home);
   let settings = {};
-  if (fs.existsSync(file)) { try { settings = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
+  if (fs.existsSync(file)) { try { settings = JSON.parse(readTextFile(file)); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
   const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
   for (const ev of opts.events || (opts.context ? ['Stop', 'SessionStart'] : ['Stop'])) {
@@ -309,7 +310,7 @@ export function installHook(opts = {}) {
 export function uninstallHook(opts = {}) {
   const file = settingsPath(opts.home);
   if (!fs.existsSync(file)) return { file, removed: 0 };
-  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const settings = JSON.parse(readTextFile(file));
   let removed = 0;
   for (const ev of Object.keys(settings.hooks || {})) {
     const list = settings.hooks[ev]; if (!Array.isArray(list)) continue;
@@ -417,7 +418,7 @@ export async function main(argv, io = {}) {
     if (cmd === 'reveal') {
       if (!args._[1]) throw new Error('reveal needs a file: glassbox reveal report.md --legend audit.legend.json');
       if (!legendFile || !fs.existsSync(legendFile)) throw new Error('reveal needs --legend FILE (the legend written by check --redact --legend)');
-      const r = legend.reveal(fs.readFileSync(args._[1], 'utf8'));
+      const r = legend.reveal(readTextFile(args._[1]));
       out(r.text.replace(/\n$/, ''));
       if (r.unknown) err(`reveal: ${r.unknown} key${r.unknown === 1 ? '' : 's'} not in this legend (left as they are)`);
       return 0;

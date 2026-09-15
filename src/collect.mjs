@@ -9,6 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { readTextFile } from './textfile.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 
@@ -28,7 +29,7 @@ export function readSources(dir, opts = {}) {
   const entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isFile() && /\.json$/i.test(e.name)).sort((a, b) => a.name.localeCompare(b.name));
   for (const e of entries) {
     const file = path.join(dir, e.name);
-    let doc; try { doc = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (err) { skipped.push({ file: e.name, reason: 'not JSON' }); continue; }
+    let doc; try { doc = JSON.parse(readTextFile(file)); } catch (err) { skipped.push({ file: e.name, reason: 'not JSON' }); continue; }
     const src = sourceFromJson(e.name.replace(/\.json$/i, ''), doc);
     if (!src) { skipped.push({ file: e.name, reason: 'not a glassbox check report' }); continue; }
     if (!src.redacted && !opts.allowUnredacted) { skipped.push({ file: e.name, reason: 'not redacted (run check with --redact, or pass --allow-unredacted)' }); continue; }
