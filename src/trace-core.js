@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.6.1';
+  const VERSION = '0.6.2';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
