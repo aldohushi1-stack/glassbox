@@ -172,7 +172,7 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   const redact = !!opts.redact;
   const legend = opts.legend || null;
   const keyed = (p) => legend ? legend.keyFor(p) : p;
-  const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source };
+  const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source, start: m.start != null ? new Date(m.start).toISOString() : null, end: m.end != null ? new Date(m.end).toISOString() : null };
   // Per-file use, keyed when a legend is given; with --redact and no legend the paths would leak, so it is omitted.
   if (legend || !redact) summary.files = core.fileStats(trace).map((r) => ({ key: legend ? legend.keyFor(r.path) : r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agents, chars: r.chars }));
   const findingJson = (f) => {
@@ -357,6 +357,11 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  --feedback also hands the findings back to the agent once, so it can learn from them;
                                  --context keeps them in <project>/.glassbox/last-session.md and gives them to the next session
   glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
+  glassbox collect DIR [--since 30d] [--format text|md|json] [--out FILE] [--top N]
+                                 fleet view from a folder of check reports: each machine writes one with
+                                 check --all --redact --legend audit.legend.json --format json > <share>/<name>.json
+                                 (unredacted reports are skipped unless --allow-unredacted)
+  glassbox clean                 delete what open and the hook left in the temp folder (viewer files, hook state)
   glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
@@ -476,6 +481,31 @@ export async function main(argv, io = {}) {
       if (!args.flags['no-open'] && !io.noOpen) openInBrowser(live.url);
       if (io.onLive) { io.onLive(live); return 0; }
       await new Promise((resolve) => { const stop = () => { live.close().then(resolve); }; process.once('SIGINT', stop); process.once('SIGTERM', stop); });
+      return 0;
+    }
+    if (cmd === 'collect') {
+      // Fleet view: every *.json in DIR is one machine's `check --all --redact --format json`.
+      const dir = args._[1]; if (!dir) throw new Error('collect needs a folder: glassbox collect <dir-of-check-json> [--since 30d] [--format text|md|json] [--out FILE]');
+      if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`collect: ${dir} is not a folder`);
+      const { readSources, collect, collectMarkdown, collectText } = await import('./collect.mjs');
+      const { sources, skipped } = readSources(dir, { allowUnredacted: !!args.flags['allow-unredacted'] });
+      for (const k of skipped) err(`collect: skipped ${k.file} — ${k.reason}`);
+      if (!sources.length) throw new Error(`collect: no glassbox check reports in ${dir} (each machine writes one with: glassbox check --all --redact --legend audit.legend.json --format json > <share>/<name>.json)`);
+      const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
+      const rep = collect(sources, { since, top: args.flags.top ? +args.flags.top : 5 });
+      const fmtOut = outputFormat(args.flags);
+      const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? collectMarkdown(rep) : collectText(rep);
+      if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.totals.sources} sources, ${rep.totals.sessions} sessions)`); }
+      else out(text.replace(/\n$/, ''));
+      return 0;
+    }
+    if (cmd === 'clean') {
+      // Remove what Glassbox left in the temp folder: viewer files from `open` (transcript inside) and hook state.
+      const tmp = os.tmpdir(); const removed = [];
+      for (const e of fs.readdirSync(tmp)) if (/^glassbox-[0-9a-f]{8}\.html$/.test(e)) { try { fs.unlinkSync(path.join(tmp, e)); removed.push(e); } catch (e2) { } }
+      const stateDir = (io.env || process.env).GLASSBOX_STATE_DIR || path.join(tmp, 'glassbox-hook');
+      if (fs.existsSync(stateDir)) { try { fs.rmSync(stateDir, { recursive: true, force: true }); removed.push(path.basename(stateDir) + '/'); } catch (e2) { } }
+      out(removed.length ? `Removed from ${tmp}:\n  ${removed.join('\n  ')}` : `Nothing to remove in ${tmp}`);
       return 0;
     }
     if (cmd === 'hook') {
