@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.2 — 2026-09-15
+**Zero network requests, now provably.** The viewer loaded its fonts from Google Fonts — one stylesheet request from every copy of `dist/glassbox.html`, on every open, which on a locked-down network either failed quietly or logged a call to Google. The seven IBM Plex faces the viewer uses (latin subsets, SIL OFL, in `assets/fonts/`) are now inlined by the build, so the page references nothing outside itself. `dist/glassbox.html` grows from 420 KB to 595 KB.
+- Tests: `test/offline.test.mjs` fails the build if `dist/` references anything that is not `data:`; the e2e run logs every request the browser makes and fails on any that is not `file:`/`data:`/`blob:`, and checks the three families resolve offline via `document.fonts.check`.
+- `docs/IT.md` — the sheet for an IT department: every file Glassbox reads and writes, every process it starts, every network call (none), what each hook does, how to pin a version, and how to remove it.
+- README Privacy: the "except the Google Fonts stylesheet" caveat is gone; the `glassbox open` temp file and the `npx` hook resolution are stated plainly.
+
 ## 0.6.1 — 2026-09-15
 **Fix: the viewer's Export redacted kept some text from tool inputs.** `redact()` kept every string stored under a structural key name (`name`, `id`, `status`, `type`, `model` …) wherever it appeared — including inside a tool's `input` and in `toolUseResult`, where those names are ordinary content. An MCP call like `create_label {"name": "Project Falcon"}` exported with "Project Falcon" intact. Inside `input`, `tool_input` and `toolUseResult` every string is now blanked except generated linking ids (`agentId`, `task_id`, `bash_id`, `tool_use_id`, `runId`). Found by a planted-secret test against 0.6.0; `check --redact` (the audit intake) was not affected.
 - Test: `redact blanks free-form fields inside tool inputs and structured results` plants ten strings under structural-looking keys and asserts none survive, while tool names, record types, model ids and subagent links do. 82 tests.

@@ -155,7 +155,7 @@ test/*.test.mjs       node:test; fixtures under test/fixtures
 
 ## 10. Privacy
 
-The file is parsed in the browser and never sent anywhere; there are no network calls in the page at all. Share mode exists precisely because transcripts contain everything the agent saw.
+The file is parsed in the browser and never sent anywhere; there are no network calls in the page at all. Until 0.6.1 that sentence had one exception — the fonts came from Google Fonts; since 0.6.2 the seven IBM Plex faces are inlined by the build (`assets/fonts/`, OFL) and `test/offline.test.mjs` plus the e2e request log keep it at zero. Share mode exists precisely because transcripts contain everything the agent saw. The operational inventory (files read and written, processes, hooks, network, uninstall) is `docs/IT.md`.
 
 ## 11. v0.4.0 — compare, live tail, agent-ready findings
 
