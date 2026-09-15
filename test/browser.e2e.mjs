@@ -28,14 +28,18 @@ const otherSession = (() => { const s = session({ sessionId: 'other001-0000' });
 const browser = await chromium.launch();
 const browser2 = await chromium.launch();
 const errors = [];
+const network = []; // every URL the page asks the browser for; must stay empty apart from the file itself
 for (const scheme of ['light', 'dark']) {
   const ctx = await browser.newContext({ viewport: { width: 1380, height: 900 }, colorScheme: scheme, permissions: ['clipboard-read', 'clipboard-write'] });
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); }); // font CDN may be offline in CI
+  page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  page.on('request', (r) => { if (!/^(file:|data:|blob:)/.test(r.url())) network.push(r.url()); });
   await page.goto('file://' + dist);
   await page.click('#demo');
   await page.waitForSelector('#main:not([hidden])');
+  await page.evaluate(() => document.fonts.ready);
+  for (const f of ['12px "IBM Plex Sans"', '600 12px "IBM Plex Sans Condensed"', '12px "IBM Plex Mono"']) assert.ok(await page.evaluate((s) => document.fonts.check(s), f), `font available offline: ${f}`);
   const tiles = await page.$$eval('#strip .stat', (els) => els.map((e) => ({ l: e.querySelector('dt').textContent, v: e.querySelector('.v').textContent.trim() })));
   const byLabel = Object.fromEntries(tiles.map((t) => [t.l, t.v]));
   assert.equal(byLabel['Turns'], core.fmtInt(expected.totals.turns), 'turns tile');
@@ -164,5 +168,6 @@ await browser.close();
   await live.close();
 }
 await browser2.close();
+if (network.length) errors.push('network requests (the viewer must make none): ' + [...new Set(network)].join(', '));
 if (errors.length) { console.error('browser errors:\n' + errors.join('\n')); process.exit(1); }
-console.log('browser test passed: light + dark, tiles match core, findings', expectedFindings.length, 'lanes', expected.agents.length);
+console.log('browser test passed: light + dark, no network requests, fonts inline, tiles match core, findings', expectedFindings.length, 'lanes', expected.agents.length);
