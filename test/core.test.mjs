@@ -447,6 +447,31 @@ test('redact keeps structure and numbers, blanks every free string, re-parses to
   assert.equal(t2.requests.length, t1.requests.length);
 });
 
+test('redact blanks free-form fields inside tool inputs and structured results, whatever they are called (0.6.1)', () => {
+  const sid = 's-0000', ts = (n) => new Date(Date.UTC(2026, 8, 15, 1, 0, n)).toISOString();
+  const recs = [
+    { type: 'user', uuid: 'u1', timestamp: ts(0), sessionId: sid, message: { role: 'user', content: 'label the Falcon account' } },
+    { type: 'assistant', uuid: 'u2', timestamp: ts(1), sessionId: sid, requestId: 'req_1', message: { id: 'm1', model: 'claude-opus-5', role: 'assistant', content: [
+      { type: 'tool_use', id: 'toolu_1', name: 'mcp__crm__create_label', input: { name: 'Project Falcon', id: 'cust-4471', status: 'confidential', type: 'invoice', model: 'secret-model', nested: { name: 'Acme Pty', items: [{ id: 'row-9' }] } } },
+      { type: 'tool_use', id: 'toolu_2', name: 'Agent', input: { description: 'Audit Falcon', subagent_type: 'falcon-auditor', prompt: 'look at Acme' } },
+    ], usage: { input_tokens: 10, output_tokens: 5 } } },
+    { type: 'user', uuid: 'u3', timestamp: ts(3), sessionId: sid, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'ok' }] }, toolUseResult: { name: 'Project Falcon', status: 'created', id: 'lbl-1' } },
+    { type: 'user', uuid: 'u4', timestamp: ts(9), sessionId: sid, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_2', content: [{ type: 'text', text: 'done for Acme' }] }] }, toolUseResult: { status: 'completed', agentId: 'a1b2c3d4', agentType: 'falcon-auditor', content: [{ type: 'text', text: 'done for Acme' }] } },
+  ];
+  const out = toJsonl(redact(recs));
+  for (const leak of ['Falcon', 'Acme', 'cust-4471', 'confidential', 'invoice', 'secret-model', 'row-9', 'lbl-1', 'created', 'completed']) assert.equal(out.includes(leak), false, leak + ' leaked');
+  // structure and linking ids survive
+  assert.equal(out.includes('"name":"mcp__crm__create_label"'), true);
+  assert.equal(out.includes('"type":"tool_use"'), true);
+  assert.equal(out.includes('"model":"claude-opus-5"'), true);
+  assert.equal(out.includes('"agentId":"a1b2c3d4"'), true);
+  assert.equal(out.includes('"tool_use_id":"toolu_2"'), true);
+  const t1 = parseTrace({ name: 'a', text: toJsonl(recs) }), t2 = parseTrace({ name: 'r', text: out });
+  assert.deepEqual(t2.totals.usage, t1.totals.usage);
+  assert.equal(t2.toolCalls.length, t1.toolCalls.length);
+  assert.deepEqual(t2.toolCalls.map((c) => c.name), t1.toolCalls.map((c) => c.name));
+});
+
 // ---------------------------------------------------------------- real fixtures
 test('real Claude Code transcript + subagent parse cleanly', { skip: !fs.existsSync(path.join(FIX, 'real-main.jsonl')) }, () => {
   const files = ['real-main.jsonl', 'real-subagent.jsonl', 'real-subagent.meta.json'].map((n) => ({ name: n.replace('real-subagent', 'subagents/agent-a898d892224cdc5a8'), text: fs.readFileSync(path.join(FIX, n), 'utf8') }));
