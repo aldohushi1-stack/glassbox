@@ -221,3 +221,11 @@ Other-agent importers (Codex, Antigravity). Their transcript formats are moving;
 **Threat model, stated.** The redacted file reveals: which tools exist (including MCP server names), how much was spent, and the *shape* of file use (how many files, how often, how many agents). It does not reveal any name, path, prompt, command, URL or result. A reader with the legend can reverse the keys — so the legend is treated like a password file: local, not committed (`.gitignore` it), not attached to the same email as the audit.
 
 **Tests.** `fileStats` counts reads/writes/errors/agents/chars across main and subagent files; the legend produces stable keys across two runs and different keys under a different salt; the redacted JSON is stringified and searched for every raw path it could contain (must be zero hits); `reveal` round-trips a report; without `--legend` the output is byte-identical to 0.5 behaviour except `schema: 2`.
+
+## 13. v0.7.0 — collect (fleet view), clean, dated summaries
+
+`src/collect.mjs` is the third pure module (after trace-core and compare): it reads what `check --all --redact --format json` wrote on many machines and never sees a transcript. Each JSON file is one *source*; the fleet report is totals, concentration (how few sessions carried half the spend; the top N with share), rules (sessions hit, occurrences, worst severity, spend in those sessions, the fixed ADVICE line), one row per source, and keyed files ranked by failures then reads. Keys are per legend, so a key is only comparable within its source and the report says so.
+
+Refusals are the design: a JSON without `redacted: true` is skipped with a reason unless `--allow-unredacted` is passed, so one developer forgetting the flag cannot leak text into the team report. `summary.start`/`end` were added to the check JSON (additive, schema stays 2) so `collect --since` can window sessions; reports from older versions are kept and counted as `undated`.
+
+`glassbox clean` exists because `open` writes a viewer with the transcript embedded to the temp folder and cannot know when the browser is done with it; the honest answer is a command that deletes those files and the hook's state directory, and a line in docs/IT.md saying so.

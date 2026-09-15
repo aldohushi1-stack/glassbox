@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 — 2026-09-15
+**`glassbox collect` — the fleet view.** Each machine writes one redacted report (`check --all --since 30d --redact --legend audit.legend.json --format json > <share>/<name>.json`); `glassbox collect <share>` turns the folder into one report: totals, which sessions carried the spend ("2 sessions carried half the spend"), every rule with sessions hit, occurrences and its "next time" line, one row per source, and the keyed files read too many times. `--format text|md|json`, `--out FILE`, `--since 14d`, `--top N`. Reports not made with `--redact` are skipped (`--allow-unredacted` to override), so one forgotten flag cannot leak session text into a team report. Engine in `src/collect.mjs` (pure; `readSources`, `collect`, `collectMarkdown`, `collectText`).
+- **`glassbox clean`** deletes what `open` and the hook leave in the temp folder: `glassbox-<id>.html` viewer files (transcript inside) and the `glassbox-hook/` state directory.
+- `check --format json`: `summary.start` and `summary.end` (ISO) — additive, schema stays 2 — so `collect --since` can window sessions.
+- `docs/PILOT.md`: a two-week, five-developer, no-hooks pilot built on `collect`, with the exact commands and the readout.
+- Site: blueprintau.com/glassbox/ now serves its own fonts (`fonts/`, OFL) — no request to Google from the explainer page either.
+- Tests: `test/collect.test.mjs` (sources, skipping, totals, concentration, rules, files, `--since`, md/text renderings carry no session text, CLI end to end, `clean`). 
+
 ## 0.6.2 — 2026-09-15
 **Zero network requests, now provably.** The viewer loaded its fonts from Google Fonts — one stylesheet request from every copy of `dist/glassbox.html`, on every open, which on a locked-down network either failed quietly or logged a call to Google. The seven IBM Plex faces the viewer uses (latin subsets, SIL OFL, in `assets/fonts/`) are now inlined by the build, so the page references nothing outside itself. `dist/glassbox.html` grows from 420 KB to 595 KB.
 - Tests: `test/offline.test.mjs` fails the build if `dist/` references anything that is not `data:`; the e2e run logs every request the browser makes and fails on any that is not `file:`/`data:`/`blob:`, and checks the three families resolve offline via `document.fonts.check`.

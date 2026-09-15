@@ -37,6 +37,9 @@ glassbox reveal report.md --legend audit.legend.json   turn the keys in a report
 glassbox compare 81c4 9f0a            same task, two sessions: time, tokens, cost, tools and findings side by side
 glassbox compare 81c4 9f0a --out cmp.html     …as one HTML with both sessions in it
 glassbox watch                        live tail: the viewer follows the newest session as Claude Code writes it
+glassbox collect ./reports --format md --out fleet.md
+                                      one report from a folder of redacted check reports, one per machine
+glassbox clean                        remove the temp files `open` and the hook leave behind
 ```
 
 The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
@@ -62,6 +65,10 @@ glassbox hook uninstall
 **Or install it as a Claude Code plugin** — the same hooks plus `/glassbox:check` and a skill Claude uses when you ask "what went wrong in this session?", running the bundled code (no npx): `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`. Feedback and context are opt-in plugin options. See [docs/PLUGIN.md](docs/PLUGIN.md).
 
 **Many sessions at once.** `glassbox check --all --since 1h` checks every session written in the last hour (or `--all` alone for all of them), one line each, exit 1 if any fails — for CI jobs that run several `claude -p` tasks. `--rates rates.json` (or `GLASSBOX_RATES`) pins a team rate card for `check`, `compare` and the hook: `{ "claude-opus-5": { "in": 5, "out": 25, "read": 0.5, "w5m": 6.25, "w1h": 10 } }`, USD per million tokens, keyed by model-id prefix.
+
+**A whole team.** Each machine writes one redacted report — `glassbox check --all --since 30d --redact --legend audit.legend.json --format json > <share>/<name>.json` — and `glassbox collect <share>` turns the folder into one fleet report: totals, which sessions carried the spend, every rule with how many sessions it hit and its "next time" line, one row per source, and the keyed files that were read too many times. Counts, keys and findings only; reports that were not made with `--redact` are skipped. `--format md --out fleet.md` for the readout, `--since 14d` to window it. A two-week, no-hooks pilot built on this is written up in [docs/PILOT.md](docs/PILOT.md).
+
+`glassbox clean` deletes what `open` and the hook leave in the temp folder (viewer files with the transcript inside, hook state).
 
 **In the browser:** the viewer is one HTML file — open `dist/glassbox.html` (double-click, no server; the CLI, compare-from-terminal and live tail need Node 18+). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
 
