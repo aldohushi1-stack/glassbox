@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox for IT — glassbox-trace 0.7.0</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox for IT — glassbox-trace 0.7.1</title><style>
 @page{size:A4;margin:16mm 16mm 18mm}
 body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto}
 h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt}
@@ -8,7 +8,7 @@ table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{bo
 ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:none}
 .foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt}
 </style></head><body><h1>Glassbox for IT</h1>
-<p><em>What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.0. If anything here stops being true, that is a bug — open an issue.</em></p>
+<p><em>What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.1. If anything here stops being true, that is a bug — open an issue.</em></p>
 <p>Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.</p>
 <h2>1. The three ways it can be on a machine</h2>
 <table>
@@ -29,8 +29,8 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 </tr>
 <tr>
 <td><strong>The CLI</strong></td>
-<td>npm package <code>glassbox-trace</code>: 9 files, ~150 KB packed, <strong>zero dependencies</strong> (<code>package.json</code> has no <code>dependencies</code> field); published with npm provenance from the GitHub Actions workflow in this repo</td>
-<td><code>npx glassbox-trace</code> (fetches on each run unless cached) or <code>npm i -g glassbox-trace@0.7.0</code> (fetches once, pinned)</td>
+<td>npm package <code>glassbox-trace</code>: 11 files, ~300 KB packed, <strong>zero dependencies</strong> (<code>package.json</code> has no <code>dependencies</code> field); published with npm provenance from the GitHub Actions workflow in this repo</td>
+<td><code>npx glassbox-trace</code> (fetches on each run unless cached) or <code>npm i -g glassbox-trace@0.7.1</code> (fetches once, pinned)</td>
 <td><code>node</code> ≥ 18</td>
 </tr>
 <tr>
@@ -127,7 +127,7 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <li>It puts a file in the project directory whose contents are fed to the next session's model. The file is written by the hook from the transcript, and it is git-ignored, but anyone who can write to that directory can change what the next session is told. Treat <code>.glassbox/</code> like any other file that shapes agent behaviour (<code>CLAUDE.md</code>, <code>.claude/settings.json</code>).</li>
 <li>The notes quote from the session (tool inputs and outputs, up to 6,000 chars). On a shared project directory that is data at rest.</li>
 </ol>
-<p><strong>How the CLI hook is invoked.</strong> <code>glassbox hook install</code> writes the command <code>npx -y glassbox-trace hook …</code> into <code>settings.json</code>, so each run resolves the package through npm (cached after the first). To pin: <code>npm i -g glassbox-trace@0.7.0</code>, then <code>glassbox hook install --command glassbox …</code>, or use the plugin, whose hooks run <code>node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs</code> — the bundled copy, no npx.</p>
+<p><strong>How the CLI hook is invoked.</strong> <code>glassbox hook install</code> writes the command <code>npx -y glassbox-trace hook …</code> into <code>settings.json</code>, so each run resolves the package through npm (cached after the first). To pin: <code>npm i -g glassbox-trace@0.7.1</code>, then <code>glassbox hook install --command glassbox …</code>, or use the plugin, whose hooks run <code>node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs</code> — the bundled copy, no npx.</p>
 <p>There is no PreToolUse hook: Glassbox never approves, denies or alters a tool call.</p>
 <h2>7. What leaves the machine when you share a report</h2>
 <p>Nothing leaves unless a person sends it. The formats built for sending are:</p>
@@ -154,9 +154,9 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>Nothing else was changed on the machine.</p>
 <h2>10. Provenance and verification</h2>
 <ul>
-<li>Source: <a href="https://github.com/aldohushi1-stack/glassbox">github.com/aldohushi1-stack/glassbox</a>, MIT. The engine is one file, <code>src/trace-core.js</code>, with no DOM and no imports; the CLI is <code>src/cli.mjs</code> and <code>src/tail.mjs</code>. It is small enough to read.</li>
+<li>Source: <a href="https://github.com/aldohushi1-stack/glassbox">github.com/aldohushi1-stack/glassbox</a>, MIT. The engine is one file, <code>src/trace-core.js</code>, with no DOM and no imports; the CLI is <code>src/cli.mjs</code>, with <code>src/collect.mjs</code>, <code>src/tail.mjs</code> and <code>src/textfile.mjs</code>. It is small enough to read.</li>
 <li>npm releases are published by the repository's GitHub Actions workflow with <code>npm publish --provenance</code>, so npm shows which commit and workflow built each version.</li>
 <li><code>npm test</code> runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks, collect, offline check); <code>npm run e2e</code> runs the browser suite with the request log; <code>npm run audit</code> runs the accessibility gate. All three run in CI on every push.</li>
 <li>To check a build yourself: open <code>dist/glassbox.html</code> with the browser's network panel open. It should show one entry, the file.</li>
 </ul>
-<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.7.0 · MIT · github.com/aldohushi1-stack/glassbox/blob/main/docs/IT.md · this PDF is a snapshot; the Markdown on GitHub is the maintained copy.</p></body></html>
+<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.7.1 · MIT · github.com/aldohushi1-stack/glassbox/blob/main/docs/IT.md · this PDF is a snapshot; the Markdown on GitHub is the maintained copy.</p></body></html>

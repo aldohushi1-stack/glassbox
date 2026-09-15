@@ -23,7 +23,7 @@ Five developers who use Claude Code most days, ideally a mix (one who lives in i
 **Day 0 — set up (15 minutes each).** Each developer runs, once, on their own machine:
 
 ```
-npx glassbox-trace@0.7.0 list --last 5
+npx glassbox-trace@0.7.1 list --last 5
 ```
 
 That proves Node and the package work and shows the sessions Glassbox can see (Claude Code writes them to `~/.claude/projects` by itself). Nothing else changes.
@@ -33,7 +33,13 @@ That proves Node and the package work and shows the sessions Glassbox can see (C
 **Day 14 — each developer runs one command** and copies one file to the share:
 
 ```
-npx glassbox-trace@0.7.0 check --all --since 14d --redact --legend audit.legend.json --format json > <share>/<name>.json
+npx glassbox-trace@0.7.1 check --all --since 14d --redact --legend audit.legend.json --format json > <share>/<name>.json
+```
+
+On Windows PowerShell, run it through `cmd` so the file is saved as UTF-8 (0.7.1 also reads the UTF-16 file PowerShell's own `>` writes, but older versions skip it):
+
+```
+cmd /c "npx glassbox-trace@0.7.1 check --all --since 14d --redact --legend audit.legend.json --format json > <share>\<name>.json"
 ```
 
 `--redact` drops every string from the transcript (prompts, commands, results, titles); `--legend` turns file paths into `file:1a2b3c4d` keys and keeps the key→path map in `audit.legend.json` on that machine. The developer can open the JSON before copying it — it is meant to be read. Search it for a word only their code knows; it won't be there.
@@ -41,7 +47,7 @@ npx glassbox-trace@0.7.0 check --all --since 14d --redact --legend audit.legend.
 **Day 15 — the owner runs collect** on the folder:
 
 ```
-npx glassbox-trace@0.7.0 collect <share> --format md --out fleet.md
+npx glassbox-trace@0.7.1 collect <share> --format md --out fleet.md
 ```
 
 and sends `fleet.md` to whoever is doing the readout. Unredacted files are skipped with a message, so a mistake on one machine cannot leak through the report.

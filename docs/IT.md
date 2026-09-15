@@ -1,6 +1,6 @@
 # Glassbox for IT
 
-_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.0. If anything here stops being true, that is a bug — open an issue._
+_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.1. If anything here stops being true, that is a bug — open an issue._
 
 Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.
 
@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 9 files, ~150 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.7.0` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 11 files, ~300 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.7.1` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -67,7 +67,7 @@ Two things to know about **context** before turning it on for a team:
 1. It puts a file in the project directory whose contents are fed to the next session's model. The file is written by the hook from the transcript, and it is git-ignored, but anyone who can write to that directory can change what the next session is told. Treat `.glassbox/` like any other file that shapes agent behaviour (`CLAUDE.md`, `.claude/settings.json`).
 2. The notes quote from the session (tool inputs and outputs, up to 6,000 chars). On a shared project directory that is data at rest.
 
-**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.7.0`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx.
+**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.7.1`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx.
 
 There is no PreToolUse hook: Glassbox never approves, denies or alters a tool call.
 
@@ -98,7 +98,7 @@ Nothing else was changed on the machine.
 
 ## 10. Provenance and verification
 
-- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs` and `src/tail.mjs`. It is small enough to read.
+- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs`, with `src/collect.mjs`, `src/tail.mjs` and `src/textfile.mjs`. It is small enough to read.
 - npm releases are published by the repository's GitHub Actions workflow with `npm publish --provenance`, so npm shows which commit and workflow built each version.
 - `npm test` runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks, collect, offline check); `npm run e2e` runs the browser suite with the request log; `npm run audit` runs the accessibility gate. All three run in CI on every push.
 - To check a build yourself: open `dist/glassbox.html` with the browser's network panel open. It should show one entry, the file.
