@@ -1,6 +1,6 @@
 {
   "name": "glassbox-trace",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. Timeline, token and cost burn, auto-diagnostics with evidence and advice, session compare, live tail, a CLI and a Claude Code Stop hook that feeds the findings back to the agent.",
   "main": "src/trace-core.js",
   "scripts": {

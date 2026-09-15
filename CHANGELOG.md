@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 — 2026-09-15
+**Files saved on Windows are read as they are.** Windows PowerShell 5.1 saves `>` output as UTF-16 with a byte-order mark, and `Set-Content -Encoding UTF8` (and older Notepad) adds a UTF-8 BOM. `glassbox collect` skipped such reports as "not JSON", so on a Windows fleet the pilot's day-14 command produced files the day-15 command ignored. Every file a person hands to the CLI now goes through one reader (`src/textfile.mjs`) that accepts UTF-8, UTF-8 with a BOM and UTF-16 LE/BE with a BOM: `collect` inputs, `--rates`, `--legend`, the file given to `reveal`, and `settings.json` for `hook install` / `uninstall`.
+- Test: `test/textfile.test.mjs` (7 tests) writes each encoding and checks every one of those paths. 102 tests.
+- docs/PILOT.md and docs/IT.md pin 0.7.1; the pilot shows the `cmd /c "…"` form for PowerShell. IT.md's package line corrected to 11 files, ~300 KB packed.
+
 ## 0.7.0 — 2026-09-15
 **`glassbox collect` — the fleet view.** Each machine writes one redacted report (`check --all --since 30d --redact --legend audit.legend.json --format json > <share>/<name>.json`); `glassbox collect <share>` turns the folder into one report: totals, which sessions carried the spend ("2 sessions carried half the spend"), every rule with sessions hit, occurrences and its "next time" line, one row per source, and the keyed files read too many times. `--format text|md|json`, `--out FILE`, `--since 14d`, `--top N`. Reports not made with `--redact` are skipped (`--allow-unredacted` to override), so one forgotten flag cannot leak session text into a team report. Engine in `src/collect.mjs` (pure; `readSources`, `collect`, `collectMarkdown`, `collectText`).
 - **`glassbox clean`** deletes what `open` and the hook leave in the temp folder: `glassbox-<id>.html` viewer files (transcript inside) and the `glassbox-hook/` state directory.
