@@ -14,6 +14,25 @@ const demoFiles = [
   ['test/fixtures/real-subagent.meta.json', 'session/subagents/agent-a898d892224cdc5a8.meta.json'],
 ].filter(([p]) => fs.existsSync(path.join(root, p))).map(([p, name]) => ({ name, text: read(p) }));
 
+// Fonts travel inside the file (assets/fonts, IBM Plex latin subsets, OFL) so the viewer makes no
+// network request at all — test/offline.test.mjs and the e2e request log hold it to that.
+const FONTS = [
+  ['IBM Plex Sans', 400, 'ibm-plex-sans-latin-400-normal.woff2'],
+  ['IBM Plex Sans', 500, 'ibm-plex-sans-latin-500-normal.woff2'],
+  ['IBM Plex Sans', 600, 'ibm-plex-sans-latin-600-normal.woff2'],
+  ['IBM Plex Sans Condensed', 500, 'ibm-plex-sans-condensed-latin-500-normal.woff2'],
+  ['IBM Plex Sans Condensed', 600, 'ibm-plex-sans-condensed-latin-600-normal.woff2'],
+  ['IBM Plex Mono', 400, 'ibm-plex-mono-latin-400-normal.woff2'],
+  ['IBM Plex Mono', 500, 'ibm-plex-mono-latin-500-normal.woff2'],
+];
+const LATIN = 'U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD';
+const fontCss = FONTS.map(([family, weight, file]) => {
+  const b64 = fs.readFileSync(path.join(root, 'assets/fonts', file)).toString('base64');
+  return `@font-face{font-family:"${family}";font-style:normal;font-weight:${weight};font-display:swap;src:url(data:font/woff2;base64,${b64}) format("woff2");unicode-range:${LATIN}}`;
+}).join('\n');
+if (!page.includes('/*__FONTS__*/')) throw new Error('src/viewer.html has no /*__FONTS__*/ marker');
+page = page.replace('/*__FONTS__*/', () => fontCss);
+
 // Inline safely inside <script>: no "</script" sequences may survive.
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
 page = page.replace('/*__TRACE_CORE__*/', () => safe(core));
