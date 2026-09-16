@@ -84,6 +84,52 @@ Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → c
 
 **Accessibility:** WCAG 2.2 AA contrast in both themes, full keyboard operation with roving focus on the timeline and chart, screen-reader names on every span and row, live announcements on load and search, focus-managed detail panel, reduced-motion respected. `npm run audit` re-checks all of it with axe-core and fails the build on regressions.
 
+### Secrets in transcripts — `glassbox fence`
+
+Every session transcript is plain text, and everything the agent read is in it: the `.env` it opened to find a port, the token `git remote -v` printed, the key you pasted. `fence` scans them and tells you what is there — never the value itself:
+
+```
+glassbox fence                         every session under ~/.claude — exit 1 if a credential was found
+glassbox fence 81c4cbfd                one session (and its subagents)
+glassbox fence ./archive               every .jsonl under a folder
+glassbox fence --format md --out fence.md
+glassbox fence --shred                 overwrite each value in place with [FENCED:<rule>:<fingerprint>]
+```
+
+```
+Glassbox fence · 34 sessions under /home/aldo/.claude/projects · 212 MB
+  3 error · 1 warn · 2 info · 3 distinct secrets in 2 of 41 files
+
+  /home/aldo/.claude/projects/-home-aldo-api/7c1e…jsonl
+    ERROR anthropic-key   line   212  sk-a…oP (62 chars)  ×2  — tool result · Read /home/aldo/api/.env
+    ERROR github-token    line   340  ghp_…r8 (40 chars)      — tool input · Bash
+    INFO  credential-file-read line 211  /home/aldo/api/.env  — tool input · Read
+```
+
+Each row is a masked preview and a fingerprint (first 8 hex of SHA-256) — enough to know which key it is and to see the same key across sessions, never enough to use it. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
+
+### Is my CLAUDE.md doing anything? — `glassbox adhere`
+
+Every rule in the project's instruction files, judged against every session of that project, per occasion, with evidence:
+
+```
+glassbox adhere                        the project in the current folder
+glassbox adhere --project ~/code/api --since 30d --format md --out adhere.md
+glassbox adhere --fail-under 80        exit 1 below that rate
+```
+
+```
+Glassbox adhere · /home/aldo/api
+  11 rules · 9 checkable · 2 not checkable yet · 34 sessions · obeyed 212 of 301 occasions (70%)
+
+  IGNORED        prefer-tool       0/38   0%  Use rg rather than grep.  (CLAUDE.md:11)
+                   ↳ 535876c9 t3  "Continue from where you left off."  →  grep -n "^export" src/cli.mjs | sed -n 1,80p
+  IGNORED        ask-before        0/1    0%  Ask before committing.  (CLAUDE.md:7)
+  OBEYED         never-touch       8/8  100%  Never edit files in dist/ by hand.  (CLAUDE.md:5)
+```
+
+Nine rule shapes are checkable from tool calls — run X before commit/push, run X after changes, use A not B, never run, never touch, ask before, read before edit, commit message format, no new docs — and everything else is listed as *not checkable yet* with its line number, so the report never claims more than it measured. Commands are judged on their shell surface (a `git push --force` inside a document being written is not a force push). The first real run, on the session that built it, scored 22%. Details and the honest caveats in [docs/ADHERE.md](docs/ADHERE.md).
+
 ## What it flags
 
 | rule | fires when |
@@ -165,6 +211,7 @@ Your context is private — by construction, not by promise.
 - **Nothing leaves.** The viewer makes no network requests at all — fonts, scripts and the demo are inside the one file, and the test suite fails if a build references anything outside it. The CLI sends nothing anywhere. `glassbox watch` binds to `127.0.0.1` only and stops with the command. The one network activity is installation: `npx` fetching the package, or the plugin marketplace fetching this repo.
 - **What it touches.** It reads `~/.claude/projects/**` and writes only what you ask for: `open` writes a self-contained HTML to your temp folder (transcript included — delete it when done, or use `--out`), `hook install` edits `~/.claude/settings.json` with a backup beside it, `--context` writes `<project>/.glassbox/last-session.md`, `--legend` writes the legend. The full inventory — files, processes, hooks, network, uninstall — is in [docs/IT.md](docs/IT.md), written for whoever has to approve it.
 - **Counts, not text.** Transcripts contain everything the agent saw; that's why share mode and `--redact` exist. Redacted output keeps tool names, numbers, timings and cost and drops every string — prompts, commands, results, titles. Where a finding would quote something it says `«240 chars»`.
+- **What is already on disk.** `glassbox fence` finds credentials that reached a transcript (known key formats, secrets named by context, credential-file reads), reports them masked and fingerprinted, and `--shred` overwrites them in place. See above.
 - **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
