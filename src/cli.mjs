@@ -325,7 +325,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -363,6 +363,15 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  check --all --redact --legend audit.legend.json --format json > <share>/<name>.json
                                  (unredacted reports are skipped unless --allow-unredacted)
   glassbox clean                 delete what open and the hook left in the temp folder (viewer files, hook state)
+  glassbox adhere [--project DIR] [--claude-md FILE] [--since 30d] [--format text|md|json] [--out FILE] [--redact] [--fail-under N]
+                                 is my CLAUDE.md doing anything? every rule in the project's instruction files judged
+                                 against every session of that project: obeyed / broken per occasion, with evidence;
+                                 shapes it cannot check are listed as such. --fail-under 80 exits 1 below that rate
+  glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred]
+                                 secrets that reached a transcript: known key formats, secrets named by context,
+                                 credential-file reads — with a masked preview and a fingerprint, never the value.
+                                 no target = every session under the home; exit 1 when anything at/above --fail-on was found
+                                 --shred overwrites each value in place with [FENCED:<rule>:<fingerprint>] (no backup)
   glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
@@ -519,6 +528,31 @@ export async function main(argv, io = {}) {
       catch (e) { reply = { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
       out(JSON.stringify(reply));
       return 0;
+    }
+    if (cmd === 'fence') {
+      // Secrets that reached a transcript. No target = every session under the home; an id, a file, or a folder of .jsonl.
+      const { fence, fenceText, fenceMarkdown, failedAt } = await import('./fence.mjs');
+      const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
+      const failOn = args.flags['fail-on'] || 'error';
+      const fmtOut = outputFormat(args.flags);
+      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred });
+      const failed = failedAt(rep, failOn);
+      const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? fenceMarkdown(rep) : fenceText(rep);
+      if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.scanned.files} files, ${rep.findings.length} findings${rep.shredded ? `, ${rep.shredded.values} values shredded` : ''})`); }
+      else out(text.replace(/\n$/, ''));
+      return failed ? 1 : 0;
+    }
+    if (cmd === 'adhere') {
+      // Is my CLAUDE.md doing anything? Rules from the instruction files, occasions from the project's transcripts.
+      const { adhere, adhereText, adhereMarkdown } = await import('./adhere.mjs');
+      const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
+      const fmtOut = outputFormat(args.flags);
+      let failUnder = null; if (args.flags['fail-under'] !== undefined) { failUnder = Number(args.flags['fail-under']); if (!Number.isFinite(failUnder) || failUnder < 0 || failUnder > 100) throw new Error(`--fail-under must be a percentage 0–100 (got "${args.flags['fail-under']}")`); }
+      const rep = adhere({ home, project: args.flags.project, claudeMd: args.flags['claude-md'], since, redact: !!args.flags.redact });
+      const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? adhereMarkdown(rep) : adhereText(rep);
+      if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.summary.rules} rules, ${rep.summary.sessions} sessions, ${rep.summary.rate == null ? 'no occasions' : Math.round(rep.summary.rate * 100) + '% obeyed'})`); }
+      else out(text.replace(/\n$/, ''));
+      return failUnder != null && rep.summary.rate != null && rep.summary.rate * 100 < failUnder ? 1 : 0;
     }
     err('Unknown command: ' + cmd + '\n'); out(HELP); return 2;
   } catch (e) { err('glassbox: ' + e.message); return 2; }
