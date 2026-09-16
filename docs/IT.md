@@ -1,6 +1,6 @@
 # Glassbox for IT
 
-_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.1. If anything here stops being true, that is a bug — open an issue._
+_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.9.0. If anything here stops being true, that is a bug — open an issue._
 
 Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.
 
@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 11 files, ~300 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.7.1` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 11 files, ~300 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.9.0` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -18,7 +18,7 @@ For a managed fleet the simplest shape is: the HTML file on an internal share (n
 
 **The viewer makes no network requests.** Fonts, scripts and the demo session are inside the file. This is enforced by the test suite: `test/offline.test.mjs` fails the build if the file references anything that is not a `data:` URL, and the browser test logs every request the page makes and fails if any is not `file:`, `data:` or `blob:`. (Versions up to 0.6.1 loaded one stylesheet from `fonts.googleapis.com`; that is gone.)
 
-**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `hook` and `watch` open no sockets to anything outside the machine.
+**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `fence`, `adhere`, `hook` and `watch` open no sockets to anything outside the machine.
 
 `glassbox watch` starts an HTTP server bound to `127.0.0.1` on a random free port (or `--port N`) for the lifetime of the command, to stream the transcript to the browser tab it opens. It is not reachable from other machines and stops with Ctrl+C.
 
@@ -67,9 +67,25 @@ Two things to know about **context** before turning it on for a team:
 1. It puts a file in the project directory whose contents are fed to the next session's model. The file is written by the hook from the transcript, and it is git-ignored, but anyone who can write to that directory can change what the next session is told. Treat `.glassbox/` like any other file that shapes agent behaviour (`CLAUDE.md`, `.claude/settings.json`).
 2. The notes quote from the session (tool inputs and outputs, up to 6,000 chars). On a shared project directory that is data at rest.
 
-**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.7.1`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx.
+**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.9.0`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx.
 
 There is no PreToolUse hook: Glassbox never approves, denies or alters a tool call.
+
+## 6b. Secrets in transcripts — `glassbox fence`
+
+The transcripts Claude Code writes are plain text, never expire, and contain everything the agent read. If a developer's session opened a `.env`, ran `git remote -v` against a URL with a token in it, or pasted a key into the prompt, that value is now in a file under `~/.claude/projects` — on the laptop, in its backups, and in any copy attached to a bug report. Nothing in the Claude Code toolchain looks back at those files.
+
+`glassbox fence` does. It scans a session, a file, a folder, or every session under the home for: credentials whose format identifies them (AWS access key ids, GitHub / Anthropic / OpenAI / Slack / Stripe / Google / npm / SendGrid tokens, private key blocks, database URLs with a password) — **error**; secrets named by their context (`password=`, `api_key:`, `Bearer …`, basic-auth URLs, JWTs) when the value has the entropy of a real one and is not a placeholder — **warn**; and reads of credential files (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem`, `secrets.json` …) — **info**, because the file's contents are in the transcript whether or not a pattern matched them.
+
+- **What the report holds.** A masked preview (`ghp_…r8 (40 chars)`), the first 8 hex of the value's SHA-256 as a fingerprint, the rule, the line, and where in the record it sits (user prompt, assistant text, tool input, tool result, with the tool and — for a Read — the path). Never the value. The fingerprint lets the same key be recognised across sessions and machines without the report carrying it.
+- **`--shred`** overwrites each value *in the transcript file* with `[FENCED:<rule>:<fingerprint>]`. No backup is kept — a backup of a secret is the thing being removed. Every rewritten line is parsed again before anything is written; if one would not parse, the file is left untouched and the refusal is reported. Files are written to a temporary sibling and renamed over the original; line endings are preserved; files with nothing to shred are not rewritten. A shredded transcript still opens in the viewer and still checks (no cost or diagnostic rule reads the content of a tool result).
+- **Network:** none. Nothing is verified against a provider. Exit 1 when something at or above `--fail-on` (default `error`) was found, so it can run as a scheduled task or CI step: `glassbox fence --since 7d --format json --out fence.json`.
+- **Limits.** A password in prose with no context word, or a token in a format the table does not know, passes through. Treat a clean sweep as "nothing the rules know about", not as proof.
+- **The habit this should set:** rotate the key first (the row's advice line says where), then shred. Shredding without rotating removes the evidence, not the exposure.
+
+## 6c. CLAUDE.md compliance — `glassbox adhere`
+
+`glassbox adhere` reads the project's instruction files (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`) and the project's own transcripts, and reports per rule how often the agent obeyed it. It reads nothing else and writes nothing unless `--out` is given. Nine rule shapes are checkable mechanically (run X before commit, use A not B, never run / never touch, ask before, read before edit, commit message format, no new docs); the rest are listed as not checkable. Prompts, commands and paths appear in the evidence unless `--redact` is passed, in which case they become `«N chars»` and only the rule text (the team's own CLAUDE.md) remains. Network: none. See docs/ADHERE.md.
 
 ## 7. What leaves the machine when you share a report
 

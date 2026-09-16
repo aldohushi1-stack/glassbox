@@ -1,0 +1,84 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox — the next products</title><style>
+@page{size:A4;margin:16mm 16mm 18mm}
+body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto}
+h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt}
+h3{font-size:11pt;margin:12pt 0 3pt;color:#0F172A}
+p{margin:5pt 0} em{color:#4B5563} code{font:9.2pt "JetBrains Mono",Consolas,monospace;background:#F3F4F6;padding:0 3px;border-radius:3px}
+table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{border:1px solid #D1D5DB;padding:4pt 6pt;vertical-align:top;text-align:left} th{background:#F9FAFB}
+.tag{display:inline-block;font-size:8.3pt;font-weight:600;letter-spacing:.02em;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle}
+.built{background:#DCFCE7;color:#166534}.next{background:#FFEDD5;color:#9A3412}.later{background:#E5E7EB;color:#374151}.gone{background:#F3F4F6;color:#6B7280}
+.meta{font-size:9.3pt;color:#4B5563;margin:2pt 0 4pt}
+.foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt}
+.lead{font-size:11pt;color:#374151}
+</style></head><body>
+<h1>Glassbox — the next products</h1>
+<p><em>The list from 16 September 2026. What each one is, why Claude's own system would be better for it, why it is worth Aldo's time, and how big it is. Written by Claude for Aldo Hushi, BlueprintAU, Adelaide.</em></p>
+
+<p class="lead">On 5 September the brief was "go wild — build a tool Claude's own system would benefit from and that gets you noticed". Four things were on the table: an Agent Trace Viewer, a Skill Linter, a Memory Auditor and Session Receipts. The viewer became Glassbox and is at 0.8.0 eleven days later. This is the rest of that list, plus the ideas that only became visible once Glassbox existed. Every one of them rides on code Glassbox already has, and every one answers a question an IT department asks before it buys.</p>
+
+<h2>The original list, revisited</h2>
+
+<h3>Session Receipts <span class="tag gone">absorbed into Glassbox</span></h3>
+<p class="meta">Where it went: <code>check --rates</code>, the cost summary, the Stop hook's one-screen summary, the audit report generator.</p>
+<p>The idea was a receipt at the end of every session — what it cost, what it did, what went wrong. That is exactly what the Stop hook prints and what the audit report is built from. Nothing left to build as a separate thing.</p>
+
+<h3>Memory Auditor <span class="tag next">open — small build</span></h3>
+<p class="meta">Two to three days. Reuses Glassbox's file scanning and the audit report generator.</p>
+<p><strong>What.</strong> Reads a project's <code>CLAUDE.md</code> files, the user's memory directory and any <code>.glassbox/last-session.md</code>, and reports stale lines ("uses Postgres" beside "moved to SQLite"), duplicates across files, instructions that contradict each other, lines that reference files or commands that no longer exist, and the token tax the whole set adds to every session before the first word is typed.</p>
+<p><strong>Why Claude is better for it.</strong> Memory and CLAUDE.md are loaded into every session and nobody prunes them. Every stale line is a small chance the model follows it confidently and does the wrong thing. A clean memory is a more predictable agent.</p>
+<p><strong>Why Aldo.</strong> It is a natural section of the paid audit: "your team's CLAUDE.md files cost $X a month to load and a third of the lines are dead". It reads a folder; it never needs a transcript.</p>
+
+<h3>Skill Linter <span class="tag later">partly overtaken — fold into Adherence</span></h3>
+<p class="meta">Anthropic has since shipped <code>skill-creator</code> and <code>/skill-doctor</code>, which cover the static checks: description quality, trigger words, length, structure.</p>
+<p>What they do not do is the thing Glassbox is uniquely placed for: measuring from transcripts whether a skill actually fires when it should, and what it costs when it does. That is a rule inside Adherence (below), not a product of its own.</p>
+
+<h2>The new ideas</h2>
+
+<h3>Fence — secrets in transcripts <span class="tag built">built today · v0.8.0</span></h3>
+<p class="meta">Shipped 16 Sep 2026: <code>glassbox fence [ID|FILE|DIR] [--since] [--format] [--out] [--fail-on] [--shred]</code>. 9 tests, e2e and audit green; verified on the transcript of the session that built it (50 findings — the planted test values — 96 values shredded, every line still parses).</p>
+<p><strong>What.</strong> Every Claude Code session is a plain-text file under <code>~/.claude/projects</code>, and everything the agent read is in it — the <code>.env</code> it opened, the token <code>git remote -v</code> printed, the key the user pasted. Those files never expire, sync wherever the home folder syncs, and get attached to bug reports. Fence scans them for credentials by format (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, private keys, database URLs with passwords), secrets by context (<code>password=</code>, <code>api_key:</code>, <code>Bearer</code>, basic-auth URLs, JWTs) and credential-file reads (<code>.env</code>, <code>.npmrc</code>, <code>id_rsa</code>, <code>*.pem</code> …). Each row is a masked preview and a fingerprint, never the value. <code>--shred</code> overwrites the value in place with <code>[FENCED:rule:fingerprint]</code>; a shredded transcript still opens and checks.</p>
+<p><strong>Why Claude is better for it.</strong> A transcript that leaks a key is a reason for a company to switch the agent off. Making the artefact the agent leaves behind safe to keep is part of making the agent safe to run.</p>
+<p><strong>Why Aldo.</strong> For a 100-seat IT department this is the scariest slide in the pilot deck and the one that gets Glassbox bought: "does it work?" is the audit; "is it safe?" is Fence. It is also the first thing in the toolchain that looks back at those files at all.</p>
+
+<h3>Adherence — a CLAUDE.md compliance report <span class="tag next">next — the one nobody has</span></h3>
+<p class="meta">Two to three days for the first rule pack. A Glassbox rule pack plus a small parser for CLAUDE.md, not a new product.</p>
+<p><strong>What.</strong> Cross-reference every rule in a project's <code>CLAUDE.md</code> against thirty sessions of transcripts and report which rules the agent obeyed, which it ignored, and what ignoring them cost: "'run tests before committing' — skipped in 11 of 14 sessions that committed", "'use pnpm' — npm was run 23 times", "'never touch migrations/' — edited twice". The first version handles the rule shapes that are mechanically checkable (run X before Y, use tool A not B, never touch path P, always read before edit, ask before Z) and lists the rest as "not checkable yet". Skills get the same treatment: did the skill fire on the prompts it should have, and what did it cost when it did.</p>
+<p><strong>Why Claude is better for it.</strong> It is the first honest answer to "is my CLAUDE.md doing anything?" — and a measured list of the instructions the model drops is the most useful feedback a model team could be handed. It closes the loop the Stop hook opened.</p>
+<p><strong>Why Aldo.</strong> Nobody has this. It is the demo that makes a room of engineers lean in, and it is the audit's headline finding for any team that has written a CLAUDE.md and wondered.</p>
+
+<h3>Startup tax — the cold-open analyser <span class="tag next">next — one day</span></h3>
+<p class="meta">One rule in <code>check</code> plus a table in <code>collect</code>. Transcripts already carry the first request's cache-write size.</p>
+<p><strong>What.</strong> Before the first prompt a session loads CLAUDE.md, skills, memory and every MCP tool schema. Measure that fixed cost per session and per fleet, rank the contributors, and pair it with the one recommendation a customer can act on the same afternoon: "the Gmail MCP costs 4k tokens on every session and was used in 2 of 40 — defer it". Fleet-wide through <code>collect</code>.</p>
+<p><strong>Why Claude is better for it.</strong> Fewer bloated prompts means more of the context window for the work and fewer compactions.</p>
+<p><strong>Why Aldo.</strong> It is the cost-audit finding with the shortest path from report to saving.</p>
+
+<h3>Approvals — a permission-friction report <span class="tag later">later — two days</span></h3>
+<p class="meta">Glassbox already parses <code>permission-denied</code> events; this is the other side of them.</p>
+<p><strong>What.</strong> Mine transcripts for what the user keeps approving by hand and propose the allowlist rules that would stop the prompts; and the reverse — the denials that show something the agent keeps trying to do and shouldn't, which belong in CLAUDE.md as a rule.</p>
+<p><strong>Why Claude is better for it.</strong> Less friction for the user, fewer sessions stalled at a prompt nobody is there to answer.</p>
+<p><strong>Why Aldo.</strong> A small, concrete deliverable for the workshop tier: a settings.json diff the team can adopt in ten minutes.</p>
+
+<h3>Replay — a regression harness for the configuration layer <span class="tag later">back pocket — months</span></h3>
+<p class="meta">A real engineering project. Needs the Agent SDK, a sandbox per replay, and a way to diff two runs.</p>
+<p><strong>What.</strong> Take a recorded session, change one thing — a CLAUDE.md line, a skill, a hook, the model — and re-run the same prompts to see what the agent does differently. Diff the two runs with <code>compare</code>. Nobody tests their CLAUDE.md today; this makes it testable.</p>
+<p><strong>Why Claude is better for it.</strong> It turns "we changed the instructions and hope it helped" into an experiment with a result.</p>
+<p><strong>Why Aldo.</strong> This is the one Anthropic itself would notice, and the one to build once Glassbox has a customer paying for it — it is the only item on this list that costs tokens to run.</p>
+
+<h2>At a glance</h2>
+<table>
+<thead><tr><th>product</th><th>status</th><th>size</th><th>what it answers</th><th>where it sells</th></tr></thead>
+<tbody>
+<tr><td>Fence</td><td>built — 0.8.0</td><td>done</td><td>Is it safe? What is already on the disk?</td><td>pilot deck, IT sign-off</td></tr>
+<tr><td>Adherence</td><td>next</td><td>2–3 days</td><td>Does my CLAUDE.md do anything?</td><td>audit headline, the demo</td></tr>
+<tr><td>Startup tax</td><td>next</td><td>1 day</td><td>What does every session cost before I type?</td><td>audit quick win</td></tr>
+<tr><td>Memory Auditor</td><td>open</td><td>2–3 days</td><td>Which instructions are stale or contradictory?</td><td>audit section</td></tr>
+<tr><td>Approvals</td><td>later</td><td>2 days</td><td>Why am I asked so often?</td><td>workshop deliverable</td></tr>
+<tr><td>Skill Linter</td><td>folded into Adherence</td><td>—</td><td>Do my skills fire?</td><td>—</td></tr>
+<tr><td>Replay</td><td>back pocket</td><td>months</td><td>Did my change help?</td><td>the Anthropic conversation</td></tr>
+</tbody>
+</table>
+
+<p>If it were my call: Adherence and Startup tax next, in that order, because between them and Fence the three questions an IT head asks first — does it work, is it safe, what does it cost — each have a command.</p>
+
+<p class="foot">glassbox-trace 0.8.0 · github.com/aldohushi1-stack/glassbox · blueprintau.com/glassbox · hi@aldo.ltd · 16 September 2026</p>
+</body></html>
