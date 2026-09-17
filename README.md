@@ -99,6 +99,8 @@ glassbox fence 81c4cbfd                one session (and its subagents)
 glassbox fence ./archive               every .jsonl under a folder
 glassbox fence --format md --out fence.md
 glassbox fence --shred                 overwrite each value in place with [FENCED:<rule>:<fingerprint>]
+glassbox fence --sessions-only         transcripts only (the default sweep also covers prompt history, paste cache, file history, debug logs, shell snapshots)
+glassbox fence --key team.key          one shared fingerprint key for a fleet
 ```
 
 ```
@@ -111,7 +113,7 @@ Glassbox fence · 34 sessions under /home/aldo/.claude/projects · 212 MB
     INFO  credential-file-read line 211  /home/aldo/api/.env  — tool input · Read
 ```
 
-Each row is a masked preview and a fingerprint (first 8 hex of SHA-256) — enough to know which key it is and to see the same key across sessions, never enough to use it. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
+Each row is a masked preview and a fingerprint (first 8 hex of HMAC-SHA256 under a key that stays on the machine, so even a weak password's fingerprint can't be guessed against) — enough to know which key it is and to see the same key across sessions, never enough to use it. A sweep of the whole home also covers the other places Claude Code keeps text: prompt history, the paste cache, file-history snapshots, debug logs and shell snapshots. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
 
 ### Is my CLAUDE.md doing anything? — `glassbox adhere`
 
@@ -221,3 +223,7 @@ Your context is private — by construction, not by promise.
 - **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
+
+## Security
+
+Found a way Glassbox could leak, run something it shouldn't, or be tampered with? Please report it privately — see [SECURITY.md](SECURITY.md).

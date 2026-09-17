@@ -5,6 +5,10 @@
 // are never deleted, they sync wherever the home folder syncs, and they get attached to bug reports. `fence`
 // scans them (a session, a file, a folder, or the whole home), reports each hit with a masked preview and a
 // fingerprint (never the value), and with --shred rewrites the value in place as [FENCED:<rule>:<fingerprint>].
+// Run over the whole home it also scans the other places Claude Code keeps text (STORES: prompt history, the
+// paste cache, file-history snapshots, debug logs, shell snapshots).
+// Fingerprints are keyed (HMAC-SHA256 under a 32-byte key that stays on the machine), so a report holding the
+// fingerprint of a weak password gives nobody anything to check guesses against.
 // No network: nothing is verified against a provider, and the report is meant to stay on the machine.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,7 +27,36 @@ const DUMP_CMD = /(?:^|[;&|]\s*)(?:cat|type|less|more|head|tail|Get-Content|gc)\
 
 // Shannon entropy in bits per character.
 export function entropy(s) { const n = s.length; if (!n) return 0; const c = new Map(); for (const ch of s) c.set(ch, (c.get(ch) || 0) + 1); let h = 0; for (const k of c.values()) { const p = k / n; h -= p * Math.log2(p); } return h; }
-export const fingerprint = (v) => crypto.createHash('sha256').update(v).digest('hex').slice(0, 8);
+// Keyed fingerprint: the first 8 hex of HMAC-SHA256(key, value). Without a key (pure use, tests) a random key for
+// this process is used, so fingerprints are stable within a run and are never a plain, guessable hash.
+const PROCESS_KEY = crypto.randomBytes(32);
+export const fingerprint = (v, key) => crypto.createHmac('sha256', key || PROCESS_KEY).update(String(v)).digest('hex').slice(0, 8);
+export const defaultKeyFile = (home) => path.join(home || claudeHome(), 'glassbox', 'fence.key');
+// A key file holds 64 hex characters. loadKey(file) reads one; ensureKey(file) creates it (owner-only) when missing.
+export function loadKey(file) {
+  let raw; try { raw = fs.readFileSync(file, 'utf8').trim(); } catch (e) { throw new Error(`--key ${file}: not found`); }
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) throw new Error(`--key ${file}: must hold 64 hex characters (a 32-byte key)`);
+  return Buffer.from(raw, 'hex');
+}
+export function ensureKey(file) {
+  if (fs.existsSync(file)) return loadKey(file);
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const key = crypto.randomBytes(32);
+  fs.writeFileSync(file, key.toString('hex') + '\n', { mode: 0o600, flag: 'wx' });
+  return key;
+}
+
+// The other places under the Claude home that hold text a secret can land in (anthropics/claude-code#50014).
+// Scanned when fence runs over the whole home without --project or --sessions-only.
+export const STORES = [
+  { id: 'history', where: 'prompt history', file: 'history.jsonl' },
+  { id: 'paste-cache', where: 'paste cache', dir: 'paste-cache' },
+  { id: 'file-history', where: 'file history', dir: 'file-history', session: (rel) => rel.split(/[\\/]/)[0] },
+  { id: 'debug', where: 'debug log', dir: 'debug', session: (rel) => path.basename(rel).replace(/\.[^.]+$/, '') },
+  { id: 'shell-snapshots', where: 'shell snapshot', dir: 'shell-snapshots' },
+];
+const STORE_MAX_BYTES = 64 * 1024 * 1024;
+const isBinary = (buf) => buf.subarray(0, 8192).includes(0);
 export function mask(v) { const s = String(v); if (/-----BEGIN/.test(s)) return `PRIVATE KEY block (${s.length} chars)`; return `${s.length > 6 ? s.slice(0, 4) : ''}…${s.slice(-2)} (${s.length} chars)`; }
 
 // Detectors, most specific first: a hit whose span overlaps an earlier hit is dropped, so a GitHub token after
@@ -100,7 +133,8 @@ function fileReadHit(rec) {
 }
 
 // Scan raw transcript text. Returns hits in file order: { rule, severity, line, start, end, value, preview, fingerprint, where, tool?, path? }.
-export function scanText(text) {
+export function scanText(text, opts = {}) {
+  const fp = (v) => fingerprint(v, opts.key);
   const starts = lineIndex(text);
   const hits = [];
   const spans = []; // [start, end] of accepted hits, for overlap suppression
@@ -113,7 +147,7 @@ export function scanText(text) {
       if (d.ok && !d.ok(value)) continue;
       if (overlaps(start, end)) continue;
       spans.push([start, end]);
-      hits.push({ rule: d.id, severity: d.severity, start, end, value, preview: mask(value), fingerprint: fingerprint(value), line: lineAt(starts, start) });
+      hits.push({ rule: d.id, severity: d.severity, start, end, value, preview: mask(value), fingerprint: fp(value), line: lineAt(starts, start) });
     }
   }
   hits.sort((a, b) => a.start - b.start);
@@ -125,11 +159,11 @@ export function scanText(text) {
     const raw = lineText(text, starts, n); if (!raw.trim()) continue;
     let rec = null; try { rec = JSON.parse(raw); } catch (e) { continue; }
     const fr = fileReadHit(rec);
-    if (fr) fileReads.push({ rule: 'credential-file-read', severity: 'info', line: n, start: starts[n - 1], end: starts[n - 1], value: null, preview: fr.path, fingerprint: fingerprint(fr.path), where: 'tool input', tool: fr.tool, path: fr.path });
+    if (fr) fileReads.push({ rule: 'credential-file-read', severity: 'info', line: n, start: starts[n - 1], end: starts[n - 1], value: null, preview: fr.path, fingerprint: fp(fr.path), where: 'tool input', tool: fr.tool, path: fr.path });
     const loc = locate(rec, tools);
     if (hitLines.has(n)) parsed.set(n, loc);
   }
-  for (const h of hits) Object.assign(h, parsed.get(h.line) || { where: 'other' });
+  for (const h of hits) Object.assign(h, opts.where ? { where: opts.where } : parsed.get(h.line) || { where: 'other' });
   return hits.concat(fileReads).sort((a, b) => a.start - b.start || SEV[a.severity] - SEV[b.severity]);
 }
 
@@ -148,9 +182,13 @@ function rows(hits) {
 }
 
 export function scanFile(file, meta = {}) {
-  const text = fs.readFileSync(file, 'utf8');
-  const findings = rows(scanText(text)).map((r) => Object.assign(r, { file, session: meta.session || path.basename(file).replace(/\.jsonl$/, ''), project: meta.project || undefined }));
-  return { file, bytes: Buffer.byteLength(text), lines: text.split('\n').length, findings, text };
+  const buf = fs.readFileSync(file);
+  if (meta.store && isBinary(buf)) return { file, bytes: buf.length, skipped: 'binary file', findings: [] };
+  const text = buf.toString('utf8');
+  const hits = scanText(text, { key: meta.key, where: meta.where });
+  const findings = rows(meta.store ? hits.filter((h) => h.rule !== 'credential-file-read') : hits).map((r) => Object.assign(r, {
+    file, session: meta.store ? meta.session || undefined : meta.session || path.basename(file).replace(/\.jsonl$/, ''), project: meta.project || undefined, store: meta.store || undefined }));
+  return { file, bytes: buf.length, lines: text.split('\n').length, findings, text, raw: buf };
 }
 
 // Rewrite every hit in place. `replacer(finding)` gives the replacement text; the default contains no quote,
@@ -158,30 +196,53 @@ export function scanFile(file, meta = {}) {
 // anything is written; on failure the file is left as it was.
 export function shredFile(file, findings, opts = {}) {
   const replacer = opts.replacer || ((f) => `[FENCED:${f.rule}:${f.fingerprint}]`);
-  const text = opts.text != null ? opts.text : fs.readFileSync(file, 'utf8');
+  const raw = opts.raw || fs.readFileSync(file);
+  const text = opts.text != null ? opts.text : raw.toString('utf8');
+  const json = opts.json != null ? opts.json : /\.jsonl$/i.test(file);
   const spans = [];
   for (const f of findings) for (const [s, e] of (f.spans || [])) spans.push({ s, e, rep: replacer(f) });
   if (!spans.length) return { written: false, values: 0, reason: 'nothing to shred' };
+  if (!Buffer.from(text, 'utf8').equals(raw)) return { written: false, values: spans.length, reason: 'not plain UTF-8 text; nothing written' };
   spans.sort((a, b) => a.s - b.s);
   let out = '', pos = 0;
   for (const sp of spans) { if (sp.s < pos) continue; out += text.slice(pos, sp.s) + sp.rep; pos = sp.e; }
   out += text.slice(pos);
   const before = text.split('\n'), after = out.split('\n');
   if (before.length !== after.length) return { written: false, values: spans.length, reason: 'line count changed; nothing written' };
-  for (let i = 0; i < after.length; i++) { if (after[i] === before[i]) continue; const l = after[i].replace(/\r$/, ''); if (!l.trim()) continue; try { JSON.parse(l); } catch (e) { return { written: false, values: spans.length, reason: `line ${i + 1} would not parse after the rewrite; nothing written` }; } }
+  if (json) for (let i = 0; i < after.length; i++) { if (after[i] === before[i]) continue; const l = after[i].replace(/\r$/, ''); if (!l.trim()) continue; try { JSON.parse(l); } catch (e) { return { written: false, values: spans.length, reason: `line ${i + 1} would not parse after the rewrite; nothing written` }; } }
   const tmp = file + '.glassbox-shred~';
-  fs.writeFileSync(tmp, out); fs.renameSync(tmp, file);
+  const mode = fs.statSync(file).mode & 0o777;
+  fs.writeFileSync(tmp, out, { mode }); fs.renameSync(tmp, file);
   return { written: true, values: spans.length };
 }
 
-// Which files to scan. opts: { home, target, since (ms epoch), project, shred }.
+// Which files to scan. opts: { home, target, since (ms epoch), project, sessionsOnly }.
 export function targets(opts = {}) {
   const home = opts.home || claudeHome();
   const list = [];
   const add = (file, session, project) => list.push({ file, session, project });
   const addSession = (s) => { add(s.file, s.id, s.project); for (const f of subagentFiles(s)) add(f.path, s.id, s.project); };
   const t = opts.target;
-  if (!t) { for (const s of findSessions({ home, project: opts.project })) if (opts.since == null || s.mtime >= opts.since) addSession(s); return { list, mode: 'home', home }; }
+  if (!t) {
+    for (const s of findSessions({ home, project: opts.project })) if (opts.since == null || s.mtime >= opts.since) addSession(s);
+    const res = { list, mode: 'home', home };
+    if (opts.sessionsOnly) return res;
+    if (opts.project) { res.storesNote = 'prompt history, paste cache, file history, debug logs and shell snapshots are not scanned with --project (they are not kept per project)'; return res; }
+    res.stores = {};
+    const recent = (p) => opts.since == null || fs.statSync(p).mtimeMs >= opts.since;
+    for (const st of STORES) {
+      const found = [];
+      if (st.file) { const p = path.join(home, st.file); if (fs.existsSync(p) && fs.statSync(p).isFile() && recent(p)) found.push({ p, rel: st.file }); }
+      else {
+        const root = path.join(home, st.dir);
+        const walk = (dir) => { let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; } for (const e of ents.sort((a, b) => a.name.localeCompare(b.name))) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (e.isFile() && recent(p)) found.push({ p, rel: path.relative(root, p) }); } };
+        walk(root);
+      }
+      for (const f of found) list.push({ file: f.p, store: st.id, where: st.where, session: st.session ? st.session(f.rel) : null });
+      if (found.length) res.stores[st.id] = found.length;
+    }
+    return res;
+  }
   if (fs.existsSync(t) && fs.statSync(t).isDirectory()) {
     const walk = (dir) => { for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else if (e.isFile() && /\.jsonl$/i.test(e.name) && e.name !== 'journal.jsonl' && (opts.since == null || fs.statSync(p).mtimeMs >= opts.since)) add(p, e.name.replace(/\.jsonl$/i, ''), null); } };
     walk(path.resolve(t)); return { list, mode: 'dir', dir: path.resolve(t) };
@@ -192,23 +253,31 @@ export function targets(opts = {}) {
 // The report. opts as `targets` plus { shred }.
 export function fence(opts = {}) {
   const tg = targets(opts);
-  const files = [], findings = []; let bytes = 0; const sessions = new Set();
+  const home = opts.home || claudeHome();
+  const keyFile = opts.keyFile ? path.resolve(opts.keyFile) : defaultKeyFile(home);
+  const key = opts.keyFile ? loadKey(keyFile) : ensureKey(keyFile);
+  const files = [], findings = [], skipped = []; let bytes = 0; const sessions = new Set();
   const shredded = { files: 0, values: 0, refused: [] };
   for (const t of tg.list) {
-    let r; try { r = scanFile(t.file, { session: t.session, project: t.project }); } catch (e) { shredded.refused.push({ file: t.file, reason: e.message }); continue; }
-    files.push({ file: t.file, session: t.session, bytes: r.bytes, findings: r.findings.length });
-    bytes += r.bytes; sessions.add(t.session);
+    if (t.store && fs.statSync(t.file).size > STORE_MAX_BYTES) { skipped.push({ file: t.file, reason: `larger than ${STORE_MAX_BYTES / 1048576} MB` }); continue; }
+    let r; try { r = scanFile(t.file, { session: t.session, project: t.project, store: t.store, where: t.where, key }); } catch (e) { shredded.refused.push({ file: t.file, reason: e.message }); continue; }
+    if (r.skipped) { skipped.push({ file: t.file, reason: r.skipped }); continue; }
+    files.push({ file: t.file, session: t.session || undefined, store: t.store, bytes: r.bytes, findings: r.findings.length });
+    bytes += r.bytes; if (!t.store) sessions.add(t.session);
     findings.push(...r.findings);
-    if (opts.shred) { const s = shredFile(t.file, r.findings, { text: r.text }); if (s.written) { shredded.files++; shredded.values += s.values; } else if (s.reason !== 'nothing to shred') shredded.refused.push({ file: t.file, reason: s.reason }); }
+    if (opts.shred) { const s = shredFile(t.file, r.findings, { text: r.text, raw: r.raw }); if (s.written) { shredded.files++; shredded.values += s.values; } else if (s.reason !== 'nothing to shred') shredded.refused.push({ file: t.file, reason: s.reason }); }
   }
   findings.sort((a, b) => SEV[a.severity] - SEV[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
+  // Files actually scanned per store (skipped ones are listed under scanned.skipped); undefined when stores were not in scope.
+  let storeCounts; if (tg.stores) { storeCounts = {}; for (const st of STORES) { const n = files.filter((f) => f.store === st.id).length; if (n) storeCounts[st.id] = n; } }
   const bySeverity = { error: 0, warn: 0, info: 0 }; for (const f of findings) bySeverity[f.severity]++;
   const byRule = {}; for (const f of findings) byRule[f.rule] = (byRule[f.rule] || 0) + f.count;
   const secretMap = new Map();
-  for (const f of findings) { if (f.rule === 'credential-file-read') continue; const k = f.fingerprint; if (!secretMap.has(k)) secretMap.set(k, { fingerprint: k, rule: f.rule, severity: f.severity, preview: f.preview, sessions: new Set(), files: new Set(), occurrences: 0, advice: ADVICE[f.rule] }); const s = secretMap.get(k); s.sessions.add(f.session); s.files.add(f.file); s.occurrences += f.count; }
+  for (const f of findings) { if (f.rule === 'credential-file-read') continue; const k = f.fingerprint; if (!secretMap.has(k)) secretMap.set(k, { fingerprint: k, rule: f.rule, severity: f.severity, preview: f.preview, sessions: new Set(), files: new Set(), occurrences: 0, advice: ADVICE[f.rule] }); const s = secretMap.get(k); if (f.session && !f.store) s.sessions.add(f.session); s.files.add(f.file); s.occurrences += f.count; }
   const secrets = [...secretMap.values()].map((s) => Object.assign(s, { sessions: s.sessions.size, files: s.files.size })).sort((a, b) => SEV[a.severity] - SEV[b.severity] || b.sessions - a.sessions || b.occurrences - a.occurrences);
-  const rep = { glassbox: core.VERSION, kind: 'fence', schema: 1, generated: new Date().toISOString(), mode: tg.mode, home: tg.home, dir: tg.dir, since: opts.since ? new Date(opts.since).toISOString() : undefined,
-    scanned: { files: files.length, sessions: sessions.size, bytes },
+  const rep = { glassbox: core.VERSION, kind: 'fence', schema: 2, generated: new Date().toISOString(), mode: tg.mode, home: tg.home, dir: tg.dir, since: opts.since ? new Date(opts.since).toISOString() : undefined,
+    fingerprint: { alg: 'hmac-sha256', chars: 8, key: keyFile },
+    scanned: { files: files.length, sessions: sessions.size, bytes, stores: storeCounts, storesNote: tg.storesNote, skipped },
     summary: { bySeverity, byRule, filesWithFindings: files.filter((f) => f.findings).length, distinctSecrets: secrets.length, secrets },
     findings, files };
   if (opts.shred) rep.shredded = shredded;
@@ -217,6 +286,8 @@ export function fence(opts = {}) {
 
 export function failedAt(rep, failOn = 'error') { if (!(failOn in SEV)) throw new Error(`--fail-on must be error, warn or info (got "${failOn}")`); return rep.findings.some((f) => SEV[f.severity] <= SEV[failOn]); }
 
+const STORE_WORDS = { history: 'prompt history', 'paste-cache': 'paste cache', 'file-history': 'file history', debug: 'debug logs', 'shell-snapshots': 'shell snapshots' };
+const storeLine = (stores) => { const n = Object.values(stores).reduce((a, b) => a + b, 0); return `${n} other Claude Code file${n === 1 ? '' : 's'} (${Object.keys(stores).map((k) => STORE_WORDS[k] || k).join(', ')})`; };
 const fmtBytes = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B';
 const place = (f) => `${f.where}${f.tool ? ' · ' + f.tool : ''}${f.path && f.rule !== 'credential-file-read' ? ' ' + f.path : ''}`;
 
@@ -224,7 +295,9 @@ export function fenceText(rep) {
   const L = [];
   const what = rep.mode === 'home' ? `${rep.scanned.sessions} session${rep.scanned.sessions === 1 ? '' : 's'} under ${path.join(rep.home, 'projects')}` : rep.mode === 'dir' ? `${rep.scanned.files} file${rep.scanned.files === 1 ? '' : 's'} under ${rep.dir}` : `${rep.scanned.files} file${rep.scanned.files === 1 ? '' : 's'}`;
   const s = rep.summary.bySeverity;
-  L.push(`Glassbox fence · ${what} · ${fmtBytes(rep.scanned.bytes)}${rep.since ? ` · since ${rep.since.slice(0, 10)}` : ''}`);
+  const nStore = rep.scanned.stores ? Object.values(rep.scanned.stores).reduce((a, b) => a + b, 0) : 0;
+  L.push(`Glassbox fence · ${what}${nStore ? ` + ${storeLine(rep.scanned.stores)}` : ''} · ${fmtBytes(rep.scanned.bytes)}${rep.since ? ` · since ${rep.since.slice(0, 10)}` : ''}`);
+  if (rep.scanned.storesNote) L.push(`  (${rep.scanned.storesNote})`);
   if (!rep.findings.length) { L.push('  nothing found — no known credential formats, no secrets named by context, no credential-file reads'); }
   else {
     L.push(`  ${s.error} error · ${s.warn} warn · ${s.info} info · ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files`, '');
@@ -237,12 +310,15 @@ export function fenceText(rep) {
     for (const x of rep.summary.secrets.slice(0, 20)) L.push(`    ${x.severity.toUpperCase().padEnd(5)} ${x.rule.padEnd(21)} ${x.fingerprint}  ${x.preview}  in ${x.sessions} session${x.sessions === 1 ? '' : 's'}, ${x.occurrences} place${x.occurrences === 1 ? '' : 's'}`);
     L.push('', '  A secret that reached a transcript reached a disk: rotate it, then run again with --shred to overwrite it in place.');
   }
+  if (rep.scanned.skipped && rep.scanned.skipped.length) L.push(`  skipped ${rep.scanned.skipped.length} file${rep.scanned.skipped.length === 1 ? '' : 's'} (binary or too large)`);
+  L.push(`  fingerprints: HMAC-SHA256 under ${rep.fingerprint.key} (keep that file on this machine)`);
   if (rep.shredded) { L.push('', `  Shredded ${rep.shredded.values} value${rep.shredded.values === 1 ? '' : 's'} in ${rep.shredded.files} file${rep.shredded.files === 1 ? '' : 's'} (each is now [FENCED:<rule>:<fingerprint>]; no backup was kept).`); for (const r of rep.shredded.refused) L.push(`  refused ${r.file}: ${r.reason}`); }
   return L.join('\n') + '\n';
 }
 
 export function fenceMarkdown(rep) {
-  const L = [`# Glassbox fence — ${rep.generated.slice(0, 10)}`, '', `Scanned ${rep.scanned.files} file${rep.scanned.files === 1 ? '' : 's'} (${rep.scanned.sessions} session${rep.scanned.sessions === 1 ? '' : 's'}, ${fmtBytes(rep.scanned.bytes)})${rep.since ? ` written since ${rep.since.slice(0, 10)}` : ''}. Previews are masked and fingerprints are the first 8 hex of SHA-256; this report holds no secret values.`, ''];
+  const L = [`# Glassbox fence — ${rep.generated.slice(0, 10)}`, '', `Scanned ${rep.scanned.files} file${rep.scanned.files === 1 ? '' : 's'} (${rep.scanned.sessions} session${rep.scanned.sessions === 1 ? '' : 's'}${rep.scanned.stores && Object.keys(rep.scanned.stores).length ? ` + ${storeLine(rep.scanned.stores)}` : ''}, ${fmtBytes(rep.scanned.bytes)})${rep.since ? ` written since ${rep.since.slice(0, 10)}` : ''}. Previews are masked and fingerprints are the first 8 hex of HMAC-SHA256 under a key kept on this machine; this report holds no secret values.`, ''];
+  if (rep.scanned.storesNote) L.push(`_${rep.scanned.storesNote}._`, '');
   const s = rep.summary.bySeverity;
   if (!rep.findings.length) { L.push('**Nothing found.** No known credential formats, no secrets named by context, no credential-file reads.'); return L.join('\n') + '\n'; }
   L.push(`**${s.error} error · ${s.warn} warn · ${s.info} info** — ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files.`, '');
@@ -251,11 +327,12 @@ export function fenceMarkdown(rep) {
   L.push('', '## Where, file by file', '');
   const byFile = new Map(); for (const f of rep.findings) { if (!byFile.has(f.file)) byFile.set(f.file, []); byFile.get(f.file).push(f); }
   for (const [file, list] of byFile) {
-    L.push(`### ${file}`, '', `session \`${list[0].session}\`${list[0].project ? ` · project ${list[0].project}` : ''}`, '', '| rule | severity | line | preview | where |', '|---|---|---:|---|---|');
+    L.push(`### ${file}`, '', list[0].store ? `${STORE_WORDS[list[0].store] || list[0].store}${list[0].session ? ` · session \`${list[0].session}\`` : ''}` : `session \`${list[0].session}\`${list[0].project ? ` · project ${list[0].project}` : ''}`, '', '| rule | severity | line | preview | where |', '|---|---|---:|---|---|');
     for (const f of list) L.push(`| \`${f.rule}\` | ${f.severity} | ${f.line} | ${f.preview}${f.count > 1 ? ` ×${f.count}` : ''} | ${place(f)} |`);
     L.push('');
   }
   L.push('## What to do', '', 'A secret that reached a transcript reached a disk, and whatever backs that disk up. Rotate each one above, then run `glassbox fence --shred` to overwrite the values in place with `[FENCED:<rule>:<fingerprint>]`. Shredded transcripts still open and check.', '');
+  if (rep.scanned.skipped && rep.scanned.skipped.length) L.push(`Skipped ${rep.scanned.skipped.length} file${rep.scanned.skipped.length === 1 ? '' : 's'} (binary or too large).`, '');
   if (rep.shredded) { L.push(`Shredded ${rep.shredded.values} value${rep.shredded.values === 1 ? '' : 's'} in ${rep.shredded.files} file${rep.shredded.files === 1 ? '' : 's'}; no backup was kept.`); for (const r of rep.shredded.refused) L.push(`- refused ${r.file}: ${r.reason}`); L.push(''); }
   return L.join('\n');
 }

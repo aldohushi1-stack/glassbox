@@ -338,7 +338,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -381,7 +381,7 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  is my CLAUDE.md doing anything? every rule in the project's instruction files judged
                                  against every session of that project: obeyed / broken per occasion, with evidence;
                                  shapes it cannot check are listed as such. --fail-under 80 exits 1 below that rate
-  glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred]
+  glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred] [--key FILE] [--sessions-only]
                                  secrets that reached a transcript: known key formats, secrets named by context,
                                  credential-file reads — with a masked preview and a fingerprint, never the value.
                                  no target = every session under the home; exit 1 when anything at/above --fail-on was found
@@ -550,7 +550,7 @@ export async function main(argv, io = {}) {
       const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
       const failOn = args.flags['fail-on'] || 'error';
       const fmtOut = outputFormat(args.flags);
-      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred });
+      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred, keyFile: args.flags.key, sessionsOnly: !!args.flags['sessions-only'] });
       const failed = failedAt(rep, failOn);
       const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? fenceMarkdown(rep) : fenceText(rep);
       if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.scanned.files} files, ${rep.findings.length} findings${rep.shredded ? `, ${rep.shredded.values} values shredded` : ''})`); }
