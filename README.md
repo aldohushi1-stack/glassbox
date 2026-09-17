@@ -6,7 +6,7 @@
 
 Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call and tool call — subagents and Workflow agents included — where the tokens and money went, and a list of things a reviewer would flag — retry loops, failing tools, oversized results, context that cost you money, files every subagent re-read — each with the evidence and one line on what to do differently. Compare two sessions side by side. Watch one live while Claude Code writes it. Hand the findings back to the agent. Nothing leaves your machine, and no tokens are spent: every rule is mechanical.
 
-**Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would. In GitHub Actions it's one step, `uses: aldohushi1-stack/glassbox@main`, with the report in the job summary ([docs/CI.md](docs/CI.md)).
+**Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would ([docs/CI.md](docs/CI.md)).
 
 ![Glassbox showing the trace of the session that built it](dist/screenshot-dark.png)
 
@@ -31,14 +31,20 @@ glassbox open 81c4 --out trace.html   write a self-contained HTML you can send t
 glassbox check                        print findings; exit 1 on any error-level finding
 glassbox check --format md            the findings as Markdown written for the agent: evidence + what to do next time
 glassbox check --fail-on warn --format json   stricter, machine-readable (CI, hooks, agents); add --redact before sharing
+glassbox check --all --since 30d --redact --legend audit.legend.json --format json
+                                      every session, counts only, files as keys; the legend (key → path) stays with you
+glassbox reveal report.md --legend audit.legend.json   turn the keys in a report back into paths, on your machine
 glassbox compare 81c4 9f0a            same task, two sessions: time, tokens, cost, tools and findings side by side
 glassbox compare 81c4 9f0a --out cmp.html     …as one HTML with both sessions in it
 glassbox watch                        live tail: the viewer follows the newest session as Claude Code writes it
+glassbox collect ./reports --format md --out fleet.md
+                                      one report from a folder of redacted check reports, one per machine
+glassbox clean                        remove the temp files `open` and the hook leave behind
 ```
 
 The npm package is `glassbox-trace` (plain `glassbox` was already taken); the command it installs is `glassbox`. Subagent transcripts next to the session are included automatically. `GLASSBOX_HOME` overrides `~/.claude`; `GLASSBOX_BROWSER` names the command used to open HTML.
 
-**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema`; `--redact` blanks prompt text, tool inputs and quoted output. The GitHub Action (`uses: aldohushi1-stack/glassbox@main`) checks every session the job wrote, puts the report in the job summary, turns each error and warning into an annotation, and fails the step at `fail-on` — inputs and outputs in [docs/CI.md](docs/CI.md).
+**In CI:** exit 0 clean, 1 on findings at/above `--fail-on`, 2 on a usage error; `--format json` carries `glassbox` (version) and `schema` (2 since 0.6.0: adds `summary.files` and `evidence.files` when a legend is used; schema-1 readers can ignore them); `--redact` blanks prompt text, tool inputs and quoted output. A GitHub Actions example for Agent SDK runs is in [docs/CI.md](docs/CI.md).
 
 **Feed it back to Claude.** `glassbox check --format md` prints the findings the way an agent needs them: each one with the concrete tool calls and request numbers it is about, and a fixed "next time" line per rule. Paste it into the next session ("here's what went wrong last time"), pipe it into a file, or let the Stop hook below deliver it automatically.
 
@@ -46,24 +52,32 @@ The npm package is `glassbox-trace` (plain `glassbox` was already taken); the co
 
 **Watch a session live.** `glassbox watch` serves the viewer from `127.0.0.1` and streams the transcript to it as it grows — new tool calls land on the timeline within a second, tiles and findings update, **Follow** keeps the right edge on now (pan or zoom and it lets go). Loopback only; nothing leaves the machine.
 
-**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook: every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings — with their evidence and the "next time" advice — are handed back to the agent; it reads them and says, in a sentence, what it would do differently. Each finding is handed back once per session, it never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
+**Let the agent read its own recorder.** `glassbox hook install` adds a Claude Code Stop hook (the command it writes is `npx -y glassbox-trace hook …`, which resolves the package on each run; pass `--command glassbox` after `npm i -g glassbox-trace@<version>` to pin it, or use the plugin below, which runs its bundled copy): every session ends with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings). Add `--feedback` and the findings — with their evidence and the "next time" advice — are handed back to the agent; it reads them and says, in a sentence, what it would do differently. Each finding is handed back once per session, it never loops (`stop_hook_active` is respected), never blocks a clean session, and `glassbox hook uninstall` removes it, with a `.glassbox-backup` of `settings.json` kept.
 
 Feedback at the end of a session can only change that session's last reply. Add `--context` to carry it forward: the Stop hook keeps the findings (and, with `--feedback`, the agent's answer) in `<project>/.glassbox/last-session.md` — git-ignored, deleted after a clean session — and a SessionStart hook gives them to the next session in that project.
 
-**Stop a loop before it happens.** `--guard` adds a PreToolUse hook: when the agent is about to repeat a call that has already failed twice in a row, unchanged, it blocks the call and tells the agent why ("read the error, change something, or ask"). It is deliberately narrow. Anything that could change the outcome in between — an edit, another command, a success, a new prompt — resets it, so re-running the tests after a fix is never blocked; calls a person stopped don't count; it never approves anything, so your permission prompts are untouched. Replayed over 4,121 real tool calls it blocked none, so it stays out of the way until an agent is actually stuck. It runs before every tool call, so it points at your installed copy with `node` rather than going through `npx`.
+**Stop a loop before it happens.** `--guard` adds a PreToolUse hook: when the agent is about to repeat a call that has already failed twice in a row, unchanged, in the current turn, it blocks the call and tells the agent why, with the last error, and to change something or ask you rather than try again. It is deliberately narrow. Anything that could change the outcome in between — an edit, another command, a success, a new prompt — resets it, so re-running the tests after a fix is never blocked; calls a person stopped don't count; it never approves anything, so your permission prompts are untouched. Replayed over 4,121 real tool calls it blocked none, so it stays out of the way until an agent is actually stuck. It runs before every tool call, so it needs an installed copy: `--guard` writes a direct `node "…/bin/glassbox.mjs" hook …` command (for the Stop hook too) and refuses to install from an `npx` cache, where each call would cost seconds. The plugin doesn't include the guard ([why](docs/PLUGIN.md#the-loop-guard-is-not-in-the-plugin)); if both are installed, the plugin sees the CLI hook and steps aside.
 
 ```
-npm i -g glassbox-trace
-glassbox hook install --feedback --context --guard --fail-on warn   # summary, feedback, notes for the next session, loop guard
-glassbox hook install                                               # summary only
+glassbox hook install --feedback --context --fail-on warn   # summary, feedback, and notes for the next session
+glassbox hook install                                       # summary only
 glassbox hook uninstall
+
+npm i -g glassbox-trace                                     # the guard needs an installed copy, not npx
+glassbox hook install --feedback --context --guard          # all of the above, plus the loop guard
 ```
 
 **Or install it as a Claude Code plugin** — the same hooks plus `/glassbox:check` and a skill Claude uses when you ask "what went wrong in this session?", running the bundled code (no npx): `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`. Feedback and context are opt-in plugin options. See [docs/PLUGIN.md](docs/PLUGIN.md).
 
 **Many sessions at once.** `glassbox check --all --since 1h` checks every session written in the last hour (or `--all` alone for all of them), one line each, exit 1 if any fails — for CI jobs that run several `claude -p` tasks. `--rates rates.json` (or `GLASSBOX_RATES`) pins a team rate card for `check`, `compare` and the hook: `{ "claude-opus-5": { "in": 5, "out": 25, "read": 0.5, "w5m": 6.25, "w1h": 10 } }`, USD per million tokens, keyed by model-id prefix.
 
+**A whole team.** Each machine writes one redacted report — `glassbox check --all --since 30d --redact --legend audit.legend.json --format json > <share>/<name>.json` — and `glassbox collect <share>` turns the folder into one fleet report: totals, which sessions carried the spend, every rule with how many sessions it hit and its "next time" line, one row per source, and the keyed files that were read too many times. Counts, keys and findings only; reports that were not made with `--redact` are skipped. `--format md --out fleet.md` for the readout, `--since 14d` to window it. A two-week, no-hooks pilot built on this is written up in [docs/PILOT.md](docs/PILOT.md).
+
+`glassbox clean` deletes what `open` and the hook leave in the temp folder (viewer files with the transcript inside, hook state).
+
 **In the browser:** the viewer is one HTML file — open `dist/glassbox.html` (double-click, no server; the CLI, compare-from-terminal and live tail need Node 18+). It shows the demo session at rest. Then either drop your `.jsonl` (or the whole `<session-id>` folder for subagent lanes), or in Chrome/Edge click **Open folder…**, pick `~/.claude/projects`, and choose a session from the list — the folder is remembered, so next time it's **Recent**. Finding the file by hand: `ls -t ~/.claude/projects/*/*.jsonl | head` on macOS/Linux, `%USERPROFILE%\.claude\projects\` on Windows.
+
+**Cowork sessions that run in the cloud** keep their transcript in the cloud workspace, not on your machine, and it goes away when the session ends. Before you finish, ask Claude to copy it to a folder you've connected ("save this session's transcript to my Glassbox folder"); it can read its own `~/.claude/projects/…/<session-id>.jsonl` and write it out. Cowork sessions that run locally, and all Claude Code sessions, are already where `glassbox list` looks.
 
 Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → context & cost → findings → tools → turns. Click anything for detail. Every selection is a permalink (`#req=17`, `#tool=…`, `#find=3`, `#turn=2`).
 
@@ -74,6 +88,52 @@ Read top to bottom: stats → timeline (with minimap, search, fit-to-turn) → c
 **Share mode** blanks every prompt, tool input, result and assistant text in the view; **Export redacted** downloads a structure-only `.jsonl` that keeps timestamps, usage and tool names — safe to post publicly.
 
 **Accessibility:** WCAG 2.2 AA contrast in both themes, full keyboard operation with roving focus on the timeline and chart, screen-reader names on every span and row, live announcements on load and search, focus-managed detail panel, reduced-motion respected. `npm run audit` re-checks all of it with axe-core and fails the build on regressions.
+
+### Secrets in transcripts — `glassbox fence`
+
+Every session transcript is plain text, and everything the agent read is in it: the `.env` it opened to find a port, the token `git remote -v` printed, the key you pasted. `fence` scans them and tells you what is there — never the value itself:
+
+```
+glassbox fence                         every session under ~/.claude — exit 1 if a credential was found
+glassbox fence 81c4cbfd                one session (and its subagents)
+glassbox fence ./archive               every .jsonl under a folder
+glassbox fence --format md --out fence.md
+glassbox fence --shred                 overwrite each value in place with [FENCED:<rule>:<fingerprint>]
+```
+
+```
+Glassbox fence · 34 sessions under /home/aldo/.claude/projects · 212 MB
+  3 error · 1 warn · 2 info · 3 distinct secrets in 2 of 41 files
+
+  /home/aldo/.claude/projects/-home-aldo-api/7c1e…jsonl
+    ERROR anthropic-key   line   212  sk-a…oP (62 chars)  ×2  — tool result · Read /home/aldo/api/.env
+    ERROR github-token    line   340  ghp_…r8 (40 chars)      — tool input · Bash
+    INFO  credential-file-read line 211  /home/aldo/api/.env  — tool input · Read
+```
+
+Each row is a masked preview and a fingerprint (first 8 hex of SHA-256) — enough to know which key it is and to see the same key across sessions, never enough to use it. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
+
+### Is my CLAUDE.md doing anything? — `glassbox adhere`
+
+Every rule in the project's instruction files, judged against every session of that project, per occasion, with evidence:
+
+```
+glassbox adhere                        the project in the current folder
+glassbox adhere --project ~/code/api --since 30d --format md --out adhere.md
+glassbox adhere --fail-under 80        exit 1 below that rate
+```
+
+```
+Glassbox adhere · /home/aldo/api
+  11 rules · 9 checkable · 2 not checkable yet · 34 sessions · obeyed 212 of 301 occasions (70%)
+
+  IGNORED        prefer-tool       0/38   0%  Use rg rather than grep.  (CLAUDE.md:11)
+                   ↳ 535876c9 t3  "Continue from where you left off."  →  grep -n "^export" src/cli.mjs | sed -n 1,80p
+  IGNORED        ask-before        0/1    0%  Ask before committing.  (CLAUDE.md:7)
+  OBEYED         never-touch       8/8  100%  Never edit files in dist/ by hand.  (CLAUDE.md:5)
+```
+
+Nine rule shapes are checkable from tool calls — run X before commit/push, run X after changes, use A not B, never run, never touch, ask before, read before edit, commit message format, no new docs — and everything else is listed as *not checkable yet* with its line number, so the report never claims more than it measured. Commands are judged on their shell surface (a `git push --force` inside a document being written is not a force push). The first real run, on the session that built it, scored 22%. Details and the honest caveats in [docs/ADHERE.md](docs/ADHERE.md).
 
 ## What it flags
 
@@ -126,7 +186,6 @@ src/viewer.html       the UI; the build inlines trace-core and the demo
 src/cli.mjs           CLI library (session discovery, embed, check, compare, hook); bin/glassbox.mjs is the entry point
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
 src/guard.mjs         the PreToolUse loop guard (`hook --guard`)
-action.yml            the GitHub Action; scripts/action.mjs does the work
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
 scripts/corpus-audit.mjs  run every rule over your local sessions; counts only (--baseline to diff two runs)
@@ -153,6 +212,12 @@ console.log(compare({ trace, findings, cost }, other));      // other = the same
 
 ## Privacy
 
-The page makes no network requests except the Google Fonts stylesheet (it falls back to system fonts if that's blocked). `glassbox watch` binds to `127.0.0.1` only and stops with the command. Transcripts contain everything the agent saw; that's why share mode exists.
+Your context is private — by construction, not by promise.
+
+- **Nothing leaves.** The viewer makes no network requests at all — fonts, scripts and the demo are inside the one file, and the test suite fails if a build references anything outside it. The CLI sends nothing anywhere. `glassbox watch` binds to `127.0.0.1` only and stops with the command. The one network activity is installation: `npx` fetching the package, or the plugin marketplace fetching this repo.
+- **What it touches.** It reads `~/.claude/projects/**` and writes only what you ask for: `open` writes a self-contained HTML to your temp folder (transcript included — delete it when done, or use `--out`), `hook install` edits `~/.claude/settings.json` with a backup beside it, `--context` writes `<project>/.glassbox/last-session.md`, `--legend` writes the legend. The full inventory — files, processes, hooks, network, uninstall — is in [docs/IT.md](docs/IT.md), written for whoever has to approve it.
+- **Counts, not text.** Transcripts contain everything the agent saw; that's why share mode and `--redact` exist. Redacted output keeps tool names, numbers, timings and cost and drops every string — prompts, commands, results, titles. Where a finding would quote something it says `«240 chars»`.
+- **What is already on disk.** `glassbox fence` finds credentials that reached a transcript (known key formats, secrets named by context, credential-file reads), reports them masked and fingerprinted, and `--shred` overwrites them in place. See above.
+- **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi

@@ -1,7 +1,7 @@
 {
   "name": "glassbox-trace",
-  "version": "0.5.0",
-  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. Timeline, token and cost burn, auto-diagnostics with evidence and advice, session compare, live tail, a CLI and a Claude Code Stop hook that feeds the findings back to the agent.",
+  "version": "0.9.1",
+  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. Timeline, token and cost burn, auto-diagnostics with evidence and advice, session compare, live tail, a fleet view, a secrets scanner for transcripts (fence), a CLAUDE.md compliance report (adhere), a CLI and a Claude Code Stop hook that feeds the findings back to the agent.",
   "main": "src/trace-core.js",
   "scripts": {
     "test": "node --test test/*.test.mjs",
@@ -30,6 +30,10 @@
   "keywords": [
     "claude-code",
     "claude-code-log",
+    "secrets",
+    "secret-scanning",
+    "claude-md",
+    "adherence",
     "compare",
     "live-tail",
     "claude",
@@ -44,7 +48,7 @@
     "accessibility"
   ],
   "devDependencies": {
-    "playwright": "^1.49.0"
+    "playwright": "1.63.0"
   },
   "homepage": "https://github.com/aldohushi1-stack/glassbox#readme",
   "repository": {

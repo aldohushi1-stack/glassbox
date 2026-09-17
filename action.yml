@@ -19,7 +19,7 @@ inputs:
     required: false
     default: ''
   fail-on:
-    description: Fail the step when any finding is at or above this severity: error, warn, info, or never.
+    description: 'Fail the step when any finding is at or above this severity: error, warn, info, or never.'
     required: false
     default: warn
   redact:

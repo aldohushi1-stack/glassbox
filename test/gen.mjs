@@ -14,7 +14,7 @@ export function session(opts = {}) {
   let context = opts.context || 20000;
 
   const base = (extra) => {
-    const r = Object.assign({ parentUuid: parent, isSidechain: !!agentId, userType: 'external', cwd: '/work', sessionId, version: '2.1.261', gitBranch: 'main', uuid: uid('u'), timestamp: new Date(t).toISOString() }, extra);
+    const r = Object.assign({ parentUuid: parent, isSidechain: !!agentId, userType: 'external', cwd: opts.cwd || '/work', sessionId, version: '2.1.261', gitBranch: 'main', uuid: uid('u'), timestamp: new Date(t).toISOString() }, extra);
     if (agentId) r.agentId = agentId;
     parent = r.uuid;
     records.push(r);
