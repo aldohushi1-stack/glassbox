@@ -4,3 +4,7 @@ dist/audit-*.png
 dist/big-fixture.jsonl
 dist/audit.json
 *.glassbox-backup
+
+# Promo videos and their build inputs (voice takes, TTS model) stay local, never on GitHub
+promo/
+promo-*/

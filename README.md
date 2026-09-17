@@ -56,10 +56,15 @@ The npm package is `glassbox-trace` (plain `glassbox` was already taken); the co
 
 Feedback at the end of a session can only change that session's last reply. Add `--context` to carry it forward: the Stop hook keeps the findings (and, with `--feedback`, the agent's answer) in `<project>/.glassbox/last-session.md` — git-ignored, deleted after a clean session — and a SessionStart hook gives them to the next session in that project.
 
+**Stop a loop before it happens.** `--guard` adds a PreToolUse hook: when the agent is about to repeat a call that has already failed twice in a row, unchanged, in the current turn, it blocks the call and tells the agent why, with the last error, and to change something or ask you rather than try again. It is deliberately narrow. Anything that could change the outcome in between — an edit, another command, a success, a new prompt — resets it, so re-running the tests after a fix is never blocked; calls a person stopped don't count; it never approves anything, so your permission prompts are untouched. Replayed over 4,121 real tool calls it blocked none, so it stays out of the way until an agent is actually stuck. It runs before every tool call, so it needs an installed copy: `--guard` writes a direct `node "…/bin/glassbox.mjs" hook …` command (for the Stop hook too) and refuses to install from an `npx` cache, where each call would cost seconds. The plugin doesn't include the guard ([why](docs/PLUGIN.md#the-loop-guard-is-not-in-the-plugin)); if both are installed, the plugin sees the CLI hook and steps aside.
+
 ```
 glassbox hook install --feedback --context --fail-on warn   # summary, feedback, and notes for the next session
 glassbox hook install                                       # summary only
 glassbox hook uninstall
+
+npm i -g glassbox-trace                                     # the guard needs an installed copy, not npx
+glassbox hook install --feedback --context --guard          # all of the above, plus the loop guard
 ```
 
 **Or install it as a Claude Code plugin** — the same hooks plus `/glassbox:check` and a skill Claude uses when you ask "what went wrong in this session?", running the bundled code (no npx): `/plugin marketplace add aldohushi1-stack/glassbox`, then `/plugin install glassbox@glassbox-trace`. Feedback and context are opt-in plugin options. See [docs/PLUGIN.md](docs/PLUGIN.md).
@@ -94,6 +99,8 @@ glassbox fence 81c4cbfd                one session (and its subagents)
 glassbox fence ./archive               every .jsonl under a folder
 glassbox fence --format md --out fence.md
 glassbox fence --shred                 overwrite each value in place with [FENCED:<rule>:<fingerprint>]
+glassbox fence --sessions-only         transcripts only (the default sweep also covers prompt history, paste cache, file history, debug logs, shell snapshots)
+glassbox fence --key team.key          one shared fingerprint key for a fleet
 ```
 
 ```
@@ -106,7 +113,7 @@ Glassbox fence · 34 sessions under /home/aldo/.claude/projects · 212 MB
     INFO  credential-file-read line 211  /home/aldo/api/.env  — tool input · Read
 ```
 
-Each row is a masked preview and a fingerprint (first 8 hex of SHA-256) — enough to know which key it is and to see the same key across sessions, never enough to use it. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
+Each row is a masked preview and a fingerprint (first 8 hex of HMAC-SHA256 under a key that stays on the machine, so even a weak password's fingerprint can't be guessed against) — enough to know which key it is and to see the same key across sessions, never enough to use it. A sweep of the whole home also covers the other places Claude Code keeps text: prompt history, the paste cache, file-history snapshots, debug logs and shell snapshots. `error` is a credential whose format identifies it (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, a private key block, a database URL with its password); `warn` is a secret named by its context (`password=`, `api_key:`, `Bearer …`, a URL with credentials, a JWT), kept only when the value has the entropy of a real one and is not a placeholder; `info` is a read of a credential file (`.env`, `.npmrc`, `.netrc`, `~/.aws/credentials`, `id_rsa`, `*.pem` …) whose contents are now in the transcript whether or not a rule recognised them. A secret that reached a transcript reached a disk, and whatever backs that disk up: rotate it, then `--shred`. Shredded transcripts still open and check. It verifies nothing against any provider (no network), and a password in prose with no context word passes through — it is a net, not a guarantee. Details in [docs/FENCE.md](docs/FENCE.md).
 
 ### Is my CLAUDE.md doing anything? — `glassbox adhere`
 
@@ -180,6 +187,7 @@ src/trace-core.js     pure engine: parseTrace · diagnose · estimateCost · red
 src/viewer.html       the UI; the build inlines trace-core and the demo
 src/cli.mjs           CLI library (session discovery, embed, check, compare, hook); bin/glassbox.mjs is the entry point
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
+src/guard.mjs         the PreToolUse loop guard (`hook --guard`)
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
 scripts/corpus-audit.mjs  run every rule over your local sessions; counts only (--baseline to diff two runs)
@@ -215,3 +223,7 @@ Your context is private — by construction, not by promise.
 - **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
 Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
+
+## Security
+
+Found a way Glassbox could leak, run something it shouldn't, or be tampered with? Please report it privately — see [SECURITY.md](SECURITY.md).

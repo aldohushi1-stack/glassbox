@@ -15,6 +15,8 @@ Then Actions → publish → Run workflow (0.7.0).
 
 ## Still NOT to upload — local work in progress
 
+> **Update 17 Sep 2026:** no longer parked; it ships in 0.9.1 — see RELEASE-0.9.0.md, "After 0.9.0".
+
 `src/guard.mjs`, `test/guard.test.mjs`, `hooks/glassbox-hook.mjs` (local copy imports `HOOK_RE`, which cli.mjs doesn't export — GitHub's copy is the working one), `docs/PLUGIN.md` (documents `--guard`, which doesn't exist).
 
 ## Site (cPanel, zip relative to public_html)

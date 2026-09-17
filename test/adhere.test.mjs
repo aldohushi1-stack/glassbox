@@ -119,6 +119,55 @@ test('parseRules: more phrasings land on the right shape', () => {
   assert.equal(parseRules('Be concise.', 'x').rules.length, 0);
 });
 
+test('parseRules: ask-before, reversed form ("Before X … wait for confirmation") and one rule per named action', () => {
+  const acts = (line) => parseRules(line, 'x').rules.filter((r) => r.kind === 'ask-before').map((r) => r.action);
+  // The line that motivated it (a real CLAUDE.md).
+  const real = '- **Double-confirm before any source-code edit.** Treat project source code as read-only by default. Before editing any code file, any config that affects a running system, or any commit / push / deploy, state the exact change in plain language and wait for explicit confirmation — even when the request seemed obvious. (Editing notes in the vault does not require confirmation.)';
+  const { rules, unchecked } = parseRules(real, 'CLAUDE.md');
+  assert.deepEqual(rules.map((r) => r.action), ['commit', 'push', 'deploy']);
+  assert.deepEqual(rules.map((r) => r.id), ['CLAUDE.md:1:3#commit', 'CLAUDE.md:1:3#push', 'CLAUDE.md:1:3#deploy'], 'ids stay unique');
+  assert.ok(rules.every((r) => r.line === 1 && /^Before editing/.test(r.text)));
+  assert.equal(unchecked.length, 2, 'the other two sentences are still not checkable');
+  assert.deepEqual(acts('Before you push, get my approval.'), ['push']);
+  assert.deepEqual(acts('Prior to deleting or removing files, wait for my explicit permission.'), ['delete']);
+  assert.deepEqual(acts('Before merging, always ask for sign-off.'), ['merge']);
+  // Forward forms name several actions too; a single action keeps the plain id.
+  assert.deepEqual(acts('Ask before committing or pushing.'), ['commit', 'push']);
+  assert.deepEqual(acts('Wait for explicit approval before any deploy.'), ['deploy']);
+  assert.deepEqual(acts('Do not commit, push or merge unless I ask.'), ['commit', 'push', 'merge']);
+  assert.equal(parseRules('Ask before committing.', 'x').rules[0].id, 'x:1');
+  // A before-clause with no checkable action, or a confirmation with no before-clause, is left alone.
+  assert.deepEqual(acts('Before editing any code file, wait for explicit confirmation.'), []);
+  assert.deepEqual(acts('Wait for confirmation.'), []);
+  assert.deepEqual(acts('Before committing, run the tests.'), []);
+  assert.equal(parseRules("Don't create README files or docs unless I ask.", 'x').rules[0].kind, 'no-new-docs');
+});
+
+test('adhere: a reversed multi-action line is judged per action and labelled apart in the renderings', () => {
+  const w = world();
+  fs.writeFileSync(path.join(w.proj, 'CLAUDE.md'), 'Before any commit / push, wait for explicit confirmation.\n');
+  const s = session({ sessionId: 'multi-1', cwd: w.proj, start: Date.parse('2026-09-14T09:00:00Z') });
+  s.user('commit the fix');
+  s.call('Bash', { command: 'git commit -m "fix: x"' }, 'ok');
+  s.call('Bash', { command: 'git push' }, 'ok');
+  s.assistant([{ text: 'done' }]);
+  w.put(w.pdir, s);
+  const rep = adhere({ project: w.proj, home: w.home });
+  assert.equal(rep.summary.rules, 2);
+  const row = (a) => rep.rules.find((r) => r.action === a);
+  assert.deepEqual([row('commit').obeyed, row('commit').broken], [1, 0], 'the prompt asked for the commit');
+  assert.deepEqual([row('push').obeyed, row('push').broken], [0, 1], 'nobody asked for the push');
+  const text = adhereText(rep), md = adhereMarkdown(rep);
+  assert.match(text, /ask-before:commit/); assert.match(text, /ask-before:push/);
+  assert.match(md, /`ask-before:push`/);
+});
+
+test('parseRules: "read the whole thing" and "verify the date" have no mechanical shape and stay unchecked', () => {
+  const { rules, unchecked } = parseRules('- **Full reads, no skimming.** When asked to read, review, or audit something, read the whole thing, every line, front to back.\n- **Verify the date.** Check the actual system date before writing a date into anything permanent; a conversation can stay open overnight.', 'x');
+  assert.equal(rules.length, 0);
+  assert.equal(unchecked.length, 4);
+});
+
 test('adhere: one obeying session and one breaking session give the expected counts per rule', () => {
   const w = world();
   w.put(w.pdir, good('good1111-0000', w.proj)); w.put(w.pdir, bad('bad11111-0000', w.proj));

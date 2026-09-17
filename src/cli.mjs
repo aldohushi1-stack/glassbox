@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { readTextFile } from './textfile.mjs';
+import { guardResponse } from './guard.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 // fileURLToPath, not URL.pathname: on Windows the latter gives "/C:/…" which path.resolve turns into "\C:\…".
@@ -248,6 +249,8 @@ export function hookResponse(input, opts = {}) {
   const failOn = opts.failOn || 'warn';
   const feedback = !!opts.feedback;
   if (input && input.hook_event_name === 'SessionStart') return opts.context ? sessionStartResponse(input) : { suppressOutput: true };
+  // PreToolUse: null means "say nothing" (normal permission flow), never an approval.
+  if (input && input.hook_event_name === 'PreToolUse') return opts.guard ? guardResponse(input) : null;
   // Second Stop after a feedback block: record what the agent said it would do differently, then let it stop.
   if (opts.context && input && input.hook_event_name === 'Stop' && input.stop_hook_active) {
     const file = notesPath(input.cwd);
@@ -289,23 +292,33 @@ export function readStdinJson() {
   return new Promise((resolve) => { let buf = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { buf += d; }); process.stdin.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch (e) { resolve({}); } }); if (process.stdin.isTTY) resolve({}); });
 }
 
-const HOOK_RE = /\bglassbox(?:-trace)?\s+hook\b/;
+// A Glassbox hook command in settings.json: `npx -y glassbox-trace hook …`, `glassbox hook …`, or the direct
+// form `node "…/bin/glassbox.mjs" hook …` that --guard installs.
+export const HOOK_RE = /\bglassbox(?:-trace)?(?:\.mjs)?["']?\s+hook\b/;
 export function settingsPath(home) { return path.join(home || claudeHome(), 'settings.json'); }
 export function installHook(opts = {}) {
   const file = settingsPath(opts.home);
   let settings = {};
   if (fs.existsSync(file)) { try { settings = JSON.parse(readTextFile(file)); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
-  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
-  for (const ev of opts.events || (opts.context ? ['Stop', 'SessionStart'] : ['Stop'])) {
+  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.guard ? ' --guard' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  const events = opts.events || ['Stop', ...(opts.context ? ['SessionStart'] : []), ...(opts.guard ? ['PreToolUse'] : [])];
+  for (const ev of events) {
     const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
     const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
-    kept.push({ hooks: [{ type: 'command', command: cmd, timeout: 60 }] });
+    // PreToolUse runs before every tool call, so it gets a short timeout; no matcher means all tools.
+    kept.push({ hooks: [{ type: 'command', command: cmd, timeout: ev === 'PreToolUse' ? 10 : 60 }] });
     settings.hooks[ev] = kept;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
-  return { file, command: cmd };
+  return { file, command: cmd, events };
+}
+// The guard runs before every tool call, so it can't go through npx (seconds per call). Point the hook at
+// this install's own entry point instead — unless this *is* a throwaway npx cache copy.
+export function guardCommand(root) {
+  if (/[\\/]_npx[\\/]/.test(root)) throw new Error('--guard runs before every tool call, and through npx that takes seconds each time. Install Glassbox once (npm i -g glassbox-trace) and run `glassbox hook install --guard` again, or pass --command with a direct path.');
+  return `node "${path.join(root, 'bin', 'glassbox.mjs')}"`;
 }
 export function uninstallHook(opts = {}) {
   const file = settingsPath(opts.home);
@@ -325,7 +338,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -353,10 +366,11 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  same task, two sessions: what changed in time, tokens, cost, tools and findings
   glassbox watch [ID|FILE] [--port N] [--no-open]
                                  live tail: serves the viewer on 127.0.0.1 and pushes the transcript as it grows
-  glassbox hook install [--feedback] [--context] [--fail-on warn]
+  glassbox hook install [--feedback] [--context] [--guard] [--fail-on warn]
                                  add a Claude Code Stop hook so every session ends with a Glassbox summary;
                                  --feedback also hands the findings back to the agent once, so it can learn from them;
-                                 --context keeps them in <project>/.glassbox/last-session.md and gives them to the next session
+                                 --context keeps them in <project>/.glassbox/last-session.md and gives them to the next session;
+                                 --guard blocks a tool call that already failed twice in a row, unchanged, and says why
   glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
   glassbox collect DIR [--since 30d] [--format text|md|json] [--out FILE] [--top N]
                                  fleet view from a folder of check reports: each machine writes one with
@@ -367,7 +381,7 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  is my CLAUDE.md doing anything? every rule in the project's instruction files judged
                                  against every session of that project: obeyed / broken per occasion, with evidence;
                                  shapes it cannot check are listed as such. --fail-under 80 exits 1 below that rate
-  glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred]
+  glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred] [--key FILE] [--sessions-only]
                                  secrets that reached a transcript: known key formats, secrets named by context,
                                  credential-file reads — with a masked preview and a fingerprint, never the value.
                                  no target = every session under the home; exit 1 when anything at/above --fail-on was found
@@ -520,13 +534,14 @@ export async function main(argv, io = {}) {
     }
     if (cmd === 'hook') {
       const sub = args._[1];
-      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, context: !!args.flags.context, failOn: args.flags['fail-on'], command: args.flags.command, events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed ${args.flags.context ? 'Stop and SessionStart hooks' : 'Stop hook'} in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}${args.flags.context ? `; findings are kept in <project>/${NOTES_FILE.replace(/\\/g, '/')} and handed to the next session there` : ''}. Restart Claude Code to pick it up.`); return 0; }
+      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, context: !!args.flags.context, guard: !!args.flags.guard, failOn: args.flags['fail-on'], command: args.flags.command || (args.flags.guard ? guardCommand(ROOT) : undefined), events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed ${r.events.join(', ')} hook${r.events.length > 1 ? 's' : ''} in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}${args.flags.context ? `; findings are kept in <project>/${NOTES_FILE.replace(/\\/g, '/')} and handed to the next session there` : ''}${args.flags.guard ? '; a call that already failed twice in a row, unchanged, is blocked with the reason' : ''}. Restart Claude Code to pick it up.`); return 0; }
       if (sub === 'uninstall') { const r = uninstallHook({ home }); out(`Removed ${r.removed} Glassbox hook${r.removed === 1 ? '' : 's'} from ${r.file}`); return 0; }
       // A hook must never fail loudly: exit 2 from a Stop hook blocks Claude with the error as the reason.
-      let reply;
-      try { const input = io.stdin !== undefined ? io.stdin : await readStdinJson(); reply = hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback, context: !!args.flags.context, rates, stateDir: io.stateDir }); }
-      catch (e) { reply = { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
-      out(JSON.stringify(reply));
+      // A null reply prints nothing, which for PreToolUse means "no decision".
+      let reply = null, event = null;
+      try { const input = io.stdin !== undefined ? io.stdin : await readStdinJson(); event = input && input.hook_event_name; reply = hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback, context: !!args.flags.context, guard: !!args.flags.guard, rates, stateDir: io.stateDir }); }
+      catch (e) { reply = event === 'PreToolUse' ? null : { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
+      if (reply != null) out(JSON.stringify(reply));
       return 0;
     }
     if (cmd === 'fence') {
@@ -535,7 +550,7 @@ export async function main(argv, io = {}) {
       const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
       const failOn = args.flags['fail-on'] || 'error';
       const fmtOut = outputFormat(args.flags);
-      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred });
+      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred, keyFile: args.flags.key, sessionsOnly: !!args.flags['sessions-only'] });
       const failed = failedAt(rep, failOn);
       const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? fenceMarkdown(rep) : fenceText(rep);
       if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.scanned.files} files, ${rep.findings.length} findings${rep.shredded ? `, ${rep.shredded.values} values shredded` : ''})`); }

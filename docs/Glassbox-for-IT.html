@@ -1,14 +1,14 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox for IT — glassbox-trace 0.7.1</title><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox for IT — glassbox-trace 0.9.1</title><style>
 @page{size:A4;margin:16mm 16mm 18mm}
 body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto}
-h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt}
+h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt} h3{font-size:11pt;margin:10pt 0 3pt}
 p{margin:5pt 0} em{color:#4B5563} code{font:9.2pt "JetBrains Mono",Consolas,monospace;background:#F3F4F6;padding:0 3px;border-radius:3px}
-pre{background:#F3F4F6;padding:6pt 8pt;border-radius:4px;font:9.2pt "JetBrains Mono",Consolas,monospace;white-space:pre-wrap}
+pre{background:#F3F4F6;padding:6pt 8pt;border-radius:4px;font:9.2pt "JetBrains Mono",Consolas,monospace;white-space:pre-wrap} pre code{background:none;padding:0}
 table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{border:1px solid #D1D5DB;padding:4pt 6pt;vertical-align:top;text-align:left} th{background:#F9FAFB}
 ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:none}
 .foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt}
 </style></head><body><h1>Glassbox for IT</h1>
-<p><em>What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.7.1. If anything here stops being true, that is a bug — open an issue.</em></p>
+<p><em>What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.9.1. If anything here stops being true, that is a bug — open an issue.</em></p>
 <p>Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.</p>
 <h2>1. The three ways it can be on a machine</h2>
 <table>
@@ -29,8 +29,8 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 </tr>
 <tr>
 <td><strong>The CLI</strong></td>
-<td>npm package <code>glassbox-trace</code>: 11 files, ~300 KB packed, <strong>zero dependencies</strong> (<code>package.json</code> has no <code>dependencies</code> field); published with npm provenance from the GitHub Actions workflow in this repo</td>
-<td><code>npx glassbox-trace</code> (fetches on each run unless cached) or <code>npm i -g glassbox-trace@0.7.1</code> (fetches once, pinned)</td>
+<td>npm package <code>glassbox-trace</code>: 14 files, ~325 KB packed, <strong>zero dependencies</strong> (<code>package.json</code> has no <code>dependencies</code> field); published with npm provenance from the GitHub Actions workflow in this repo</td>
+<td><code>npx glassbox-trace</code> (fetches on each run unless cached) or <code>npm i -g glassbox-trace@0.9.1</code> (fetches once, pinned)</td>
 <td><code>node</code> ≥ 18</td>
 </tr>
 <tr>
@@ -44,12 +44,12 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.</p>
 <h2>2. Network</h2>
 <p><strong>The viewer makes no network requests.</strong> Fonts, scripts and the demo session are inside the file. This is enforced by the test suite: <code>test/offline.test.mjs</code> fails the build if the file references anything that is not a <code>data:</code> URL, and the browser test logs every request the page makes and fails if any is not <code>file:</code>, <code>data:</code> or <code>blob:</code>. (Versions up to 0.6.1 loaded one stylesheet from <code>fonts.googleapis.com</code>; that is gone.)</p>
-<p><strong>The CLI makes no network requests.</strong> <code>list</code>, <code>open</code>, <code>check</code>, <code>compare</code>, <code>reveal</code>, <code>collect</code>, <code>clean</code>, <code>hook</code> and <code>watch</code> open no sockets to anything outside the machine.</p>
+<p><strong>The CLI makes no network requests.</strong> <code>list</code>, <code>open</code>, <code>check</code>, <code>compare</code>, <code>reveal</code>, <code>collect</code>, <code>clean</code>, <code>fence</code>, <code>adhere</code>, <code>hook</code> and <code>watch</code> open no sockets to anything outside the machine.</p>
 <p><code>glassbox watch</code> starts an HTTP server bound to <code>127.0.0.1</code> on a random free port (or <code>--port N</code>) for the lifetime of the command, to stream the transcript to the browser tab it opens. It is not reachable from other machines and stops with Ctrl+C.</p>
 <p>The only network activity is installation: npm fetching the package (<code>npx</code> does this on each run if the package is not cached; a global install does it once), or Claude Code's plugin marketplace cloning this repository.</p>
 <h2>3. Files it reads</h2>
 <ul>
-<li><code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code> and the <code>&lt;session-id&gt;/subagents/**</code> beside it — Claude Code's own transcripts. <code>GLASSBOX_HOME</code> or <code>--home</code> points at a different <code>.claude</code> directory. <code>list</code> reads directory entries and file sizes; <code>list --grep</code> reads every transcript's full text to search it; <code>open</code>, <code>check</code>, <code>compare</code>, <code>watch</code> read the session(s) named.</li>
+<li><code>~/.claude/projects/&lt;project&gt;/&lt;session-id&gt;.jsonl</code> and the <code>&lt;session-id&gt;/subagents/**</code> beside it — Claude Code's own transcripts. <code>GLASSBOX_HOME</code> or <code>--home</code> points at a different <code>.claude</code> directory. <code>list</code> reads directory entries and file sizes; <code>list --grep</code> reads every transcript's full text to search it; <code>open</code>, <code>check</code>, <code>compare</code>, <code>watch</code> read the session(s) named; the loop guard (§6, only with <code>--guard</code>) reads the last 4 MB of the current session's transcript before each tool call.</li>
 <li>A <code>.jsonl</code> file or folder the user names on the command line or drops onto the page.</li>
 <li><code>~/.claude/settings.json</code> — only by <code>hook install</code> / <code>hook uninstall</code>, and by the plugin hook to see whether a CLI hook is already installed.</li>
 <li><code>--rates FILE</code> / <code>GLASSBOX_RATES</code> (a rate card), <code>--legend FILE</code> (a legend), when given.</li>
@@ -88,7 +88,7 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <tr>
 <td><code>glassbox hook install</code></td>
 <td><code>~/.claude/settings.json</code> (+ <code>settings.json.glassbox-backup</code>)</td>
-<td>a <code>Stop</code> (and with <code>--context</code>, <code>SessionStart</code>) hook entry</td>
+<td>a <code>Stop</code> hook entry, plus <code>SessionStart</code> with <code>--context</code> and <code>PreToolUse</code> with <code>--guard</code></td>
 <td>until <code>hook uninstall</code></td>
 </tr>
 <tr>
@@ -115,20 +115,34 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <h2>5. Processes it starts</h2>
 <ul>
 <li><code>open</code> and <code>watch</code> open the browser through the platform opener: <code>cmd /c start "" &lt;file&gt;</code> on Windows, <code>open</code> on macOS, <code>xdg-open</code> on Linux, or whatever <code>GLASSBOX_BROWSER</code> names. <code>--no-open</code> suppresses it.</li>
-<li>The Stop hook and SessionStart hook run <code>node</code> once per event (see §6).</li>
+<li>The Stop and SessionStart hooks run <code>node</code> once per event; the PreToolUse guard, if installed, runs <code>node</code> once before every tool call (see §6).</li>
 <li>Nothing else: no daemons, no scheduled tasks, no services, no shell-outs to anything but the opener above.</li>
 </ul>
 <h2>6. The hooks, exactly</h2>
-<p>Claude Code runs hooks as the user, with the hook's JSON on stdin and a JSON reply on stdout. Glassbox installs at most two.</p>
+<p>Claude Code runs hooks as the user, with the hook's JSON on stdin and a JSON reply on stdout. The plugin registers two (Stop, SessionStart). <code>glassbox hook install</code> adds one to three: Stop always, SessionStart with <code>--context</code>, PreToolUse with <code>--guard</code>.</p>
 <p><strong>Stop</strong> (every time Claude Code finishes a turn). Reads the transcript named in the hook input, runs the rules, and returns a one-screen summary (turns, tool calls, context peak, cost, top findings) that Claude Code shows in the terminal. Timeout 60 s. Always exits 0 — it never blocks a session because it failed. With <strong>feedback</strong> on (off by default), when a finding at or above the threshold has not been shown before in that session, the hook returns <code>decision: "block"</code> once with the findings as the reason; Claude reads them, answers in a sentence what it would do differently, then stops. That extra turn costs tokens (one short reply) and happens at most once per new finding per session.</p>
-<p><strong>SessionStart</strong> (only installed with <code>--context</code> / plugin option <code>context</code>; off by default). If <code>&lt;project&gt;/.glassbox/last-session.md</code> exists, its text is returned as <code>additionalContext</code>, so the next session in that project starts knowing what went wrong last time. Timeout 15 s.</p>
+<p><strong>SessionStart</strong> (does something only with <code>--context</code> / plugin option <code>context</code>; off by default — the CLI installs it only with <code>--context</code>, the plugin always registers it and it adds nothing to the session while the option is off). If <code>&lt;project&gt;/.glassbox/last-session.md</code> exists, its text is returned as <code>additionalContext</code>, so the next session in that project starts knowing what went wrong last time. Timeout 15 s (plugin) or 60 s (CLI).</p>
 <p>Two things to know about <strong>context</strong> before turning it on for a team:</p>
 <ol>
 <li>It puts a file in the project directory whose contents are fed to the next session's model. The file is written by the hook from the transcript, and it is git-ignored, but anyone who can write to that directory can change what the next session is told. Treat <code>.glassbox/</code> like any other file that shapes agent behaviour (<code>CLAUDE.md</code>, <code>.claude/settings.json</code>).</li>
 <li>The notes quote from the session (tool inputs and outputs, up to 6,000 chars). On a shared project directory that is data at rest.</li>
 </ol>
-<p><strong>How the CLI hook is invoked.</strong> <code>glassbox hook install</code> writes the command <code>npx -y glassbox-trace hook …</code> into <code>settings.json</code>, so each run resolves the package through npm (cached after the first). To pin: <code>npm i -g glassbox-trace@0.7.1</code>, then <code>glassbox hook install --command glassbox …</code>, or use the plugin, whose hooks run <code>node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs</code> — the bundled copy, no npx.</p>
-<p>There is no PreToolUse hook: Glassbox never approves, denies or alters a tool call.</p>
+<p><strong>PreToolUse — the loop guard</strong> (CLI only, installed with <code>hook install --guard</code>; off by default; not in the plugin). Runs before every tool call, for every tool. It reads the last 4 MB of the session's transcript (for a subagent's call, the subagent's own transcript) and looks only at the current turn. If the call about to run is the same as one that has already failed twice in a row — same tool, same input, ignoring <code>description</code>, <code>timeout</code> and <code>run_in_background</code> — with nothing in between but reads, it returns <code>permissionDecision: "deny"</code> with a reason that quotes the first line of the last error (≤ 300 chars); Claude Code doesn't run that call and the model gets the reason instead. In every other case it prints nothing, which leaves Claude Code's normal permission flow in charge. It never returns <code>allow</code> and never changes a tool's input. A success, an edit, any other non-read call, a new human prompt, or the same call rejected or interrupted by a person resets the count. It writes nothing and opens no sockets; on any error it prints nothing and exits 0. Timeout 10 s. Replayed over 4,121 tool calls from 33 real sessions, it denied none.</p>
+<p>Because it starts <code>node</code> before every tool call, <code>hook install --guard</code> writes a direct command, <code>node "&lt;install dir&gt;/bin/glassbox.mjs" hook … --guard</code>, for every hook it installs, and refuses to run from an npx cache, where each call would cost seconds. It is not in the plugin: a plugin's hooks run for every user of the plugin, whether or not they want the guard.</p>
+<p><strong>How the CLI hook is invoked.</strong> <code>glassbox hook install</code> writes the command <code>npx -y glassbox-trace hook …</code> into <code>settings.json</code>, so each run resolves the package through npm (cached after the first). To pin: <code>npm i -g glassbox-trace@0.9.1</code>, then <code>glassbox hook install --command glassbox …</code>, or use the plugin, whose hooks run <code>node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs</code> — the bundled copy, no npx. With <code>--guard</code> the command is the direct <code>node "…/bin/glassbox.mjs"</code> form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.</p>
+<p>Glassbox never approves or alters a tool call. The only PreToolUse hook is the opt-in guard above, and its only decision is to deny.</p>
+<h2>6b. Secrets in transcripts — <code>glassbox fence</code></h2>
+<p>The transcripts Claude Code writes are plain text, never expire, and contain everything the agent read. If a developer's session opened a <code>.env</code>, ran <code>git remote -v</code> against a URL with a token in it, or pasted a key into the prompt, that value is now in a file under <code>~/.claude/projects</code> — on the laptop, in its backups, and in any copy attached to a bug report. Nothing in the Claude Code toolchain looks back at those files.</p>
+<p><code>glassbox fence</code> does. It scans a session, a file, a folder, or every session under the home for: credentials whose format identifies them (AWS access key ids, GitHub / Anthropic / OpenAI / Slack / Stripe / Google / npm / SendGrid tokens, private key blocks, database URLs with a password) — <strong>error</strong>; secrets named by their context (<code>password=</code>, <code>api_key:</code>, <code>Bearer …</code>, basic-auth URLs, JWTs) when the value has the entropy of a real one and is not a placeholder — <strong>warn</strong>; and reads of credential files (<code>.env</code>, <code>.npmrc</code>, <code>.netrc</code>, <code>~/.aws/credentials</code>, <code>id_rsa</code>, <code>*.pem</code>, <code>secrets.json</code> …) — <strong>info</strong>, because the file's contents are in the transcript whether or not a pattern matched them.</p>
+<ul>
+<li><strong>What the report holds.</strong> A masked preview (<code>ghp_…r8 (40 chars)</code>), the first 8 hex of the value's SHA-256 as a fingerprint, the rule, the line, and where in the record it sits (user prompt, assistant text, tool input, tool result, with the tool and — for a Read — the path). Never the value. The fingerprint lets the same key be recognised across sessions and machines without the report carrying it.</li>
+<li><strong><code>--shred</code></strong> overwrites each value <em>in the transcript file</em> with <code>[FENCED:&lt;rule&gt;:&lt;fingerprint&gt;]</code>. No backup is kept — a backup of a secret is the thing being removed. Every rewritten line is parsed again before anything is written; if one would not parse, the file is left untouched and the refusal is reported. Files are written to a temporary sibling and renamed over the original; line endings are preserved; files with nothing to shred are not rewritten. A shredded transcript still opens in the viewer and still checks (no cost or diagnostic rule reads the content of a tool result).</li>
+<li><strong>Network:</strong> none. Nothing is verified against a provider. Exit 1 when something at or above <code>--fail-on</code> (default <code>error</code>) was found, so it can run as a scheduled task or CI step: <code>glassbox fence --since 7d --format json --out fence.json</code>.</li>
+<li><strong>Limits.</strong> A password in prose with no context word, or a token in a format the table does not know, passes through. Treat a clean sweep as "nothing the rules know about", not as proof.</li>
+<li><strong>The habit this should set:</strong> rotate the key first (the row's advice line says where), then shred. Shredding without rotating removes the evidence, not the exposure.</li>
+</ul>
+<h2>6c. CLAUDE.md compliance — <code>glassbox adhere</code></h2>
+<p><code>glassbox adhere</code> reads the project's instruction files (<code>CLAUDE.md</code>, <code>.claude/CLAUDE.md</code>, <code>CLAUDE.local.md</code>, <code>~/.claude/CLAUDE.md</code>) and the project's own transcripts, and reports per rule how often the agent obeyed it. It reads nothing else and writes nothing unless <code>--out</code> is given. Nine rule shapes are checkable mechanically (run X before commit, use A not B, never run / never touch, ask before, read before edit, commit message format, no new docs); the rest are listed as not checkable. Prompts, commands and paths appear in the evidence unless <code>--redact</code> is passed, in which case they become <code>«N chars»</code> and only the rule text (the team's own CLAUDE.md) remains. Network: none. See docs/ADHERE.md.</p>
 <h2>7. What leaves the machine when you share a report</h2>
 <p>Nothing leaves unless a person sends it. The formats built for sending are:</p>
 <ul>
@@ -146,7 +160,7 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>Costs are estimates from a rate card of Anthropic list prices (README, "Token and cost accounting"), or the <code>total_cost_usd</code> an Agent SDK run reports. Teams on negotiated rates, seats or credits pass their own card with <code>--rates FILE</code> or <code>GLASSBOX_RATES</code>; unknown models show "—" rather than a wrong number. The token counts are exact — they are read from the transcript.</p>
 <h2>9. Removal</h2>
 <ul>
-<li>CLI hook: <code>glassbox hook uninstall</code> (removes the entries it added; <code>settings.json.glassbox-backup</code> is left for you to delete).</li>
+<li>CLI hook: <code>glassbox hook uninstall</code> (removes every entry it added, the guard's PreToolUse entry included; <code>settings.json.glassbox-backup</code> is left for you to delete).</li>
 <li>Plugin: <code>/plugin uninstall glassbox@glassbox-trace</code>.</li>
 <li>Package: <code>npm uninstall -g glassbox-trace</code>; <code>npx</code> caches live under npm's cache directory (<code>npm cache clean --force</code> clears them).</li>
 <li>Files: <code>glassbox clean</code> removes <code>&lt;temp&gt;/glassbox-*.html</code> and <code>&lt;temp&gt;/glassbox-hook/</code>; any <code>.glassbox/</code> directory in a project, any legend, report or <code>--out</code> file you created are yours to delete.</li>
@@ -154,9 +168,9 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>Nothing else was changed on the machine.</p>
 <h2>10. Provenance and verification</h2>
 <ul>
-<li>Source: <a href="https://github.com/aldohushi1-stack/glassbox">github.com/aldohushi1-stack/glassbox</a>, MIT. The engine is one file, <code>src/trace-core.js</code>, with no DOM and no imports; the CLI is <code>src/cli.mjs</code>, with <code>src/collect.mjs</code>, <code>src/tail.mjs</code> and <code>src/textfile.mjs</code>. It is small enough to read.</li>
+<li>Source: <a href="https://github.com/aldohushi1-stack/glassbox">github.com/aldohushi1-stack/glassbox</a>, MIT. The engine is one file, <code>src/trace-core.js</code>, with no DOM and no imports; the CLI is <code>src/cli.mjs</code>, with <code>src/collect.mjs</code>, <code>src/tail.mjs</code>, <code>src/textfile.mjs</code>, <code>src/fence.mjs</code>, <code>src/adhere.mjs</code> and <code>src/guard.mjs</code>. It is small enough to read.</li>
 <li>npm releases are published by the repository's GitHub Actions workflow with <code>npm publish --provenance</code>, so npm shows which commit and workflow built each version.</li>
-<li><code>npm test</code> runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks, collect, offline check); <code>npm run e2e</code> runs the browser suite with the request log; <code>npm run audit</code> runs the accessibility gate. All three run in CI on every push.</li>
+<li><code>npm test</code> runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks and the guard, collect, fence, adhere, offline check); <code>npm run e2e</code> runs the browser suite with the request log; <code>npm run audit</code> runs the accessibility gate. All three run in CI on every push.</li>
 <li>To check a build yourself: open <code>dist/glassbox.html</code> with the browser's network panel open. It should show one entry, the file.</li>
 </ul>
-<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.7.1 · MIT · github.com/aldohushi1-stack/glassbox/blob/main/docs/IT.md · this PDF is a snapshot; the Markdown on GitHub is the maintained copy.</p></body></html>
+<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.9.1 · github.com/aldohushi1-stack/glassbox/blob/main/docs/IT.md · pilot plan: docs/PILOT.md</p></body></html>

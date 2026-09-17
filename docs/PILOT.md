@@ -8,7 +8,7 @@ One fleet report (`glassbox collect`) over every Claude Code session the five ra
 
 ## What you don't get, and don't have to give
 
-- No hooks. The Stop and SessionStart hooks (`docs/IT.md` §6) stay off; nothing runs unless a person runs it.
+- No hooks. The Stop and SessionStart hooks and the PreToolUse loop guard (`docs/IT.md` §6) stay off; nothing runs unless a person runs it.
 - No transcript leaves a machine. The only thing that moves is a JSON of counts, timings, rule ids and hashed file keys.
 - No names in the report unless you want them: developers pick their own source name (`--out <share>/<name>.json`) and it can be `dev-3`.
 - No install on the fleet. `npx glassbox-trace@<version>` fetches the package into npm's cache on first run, or IT puts one pinned copy on a share. Node 18+ is the only requirement.
@@ -23,7 +23,7 @@ Five developers who use Claude Code most days, ideally a mix (one who lives in i
 **Day 0 — set up (15 minutes each).** Each developer runs, once, on their own machine:
 
 ```
-npx glassbox-trace@0.9.0 list --last 5
+npx glassbox-trace@0.9.1 list --last 5
 ```
 
 That proves Node and the package work and shows the sessions Glassbox can see (Claude Code writes them to `~/.claude/projects` by itself). Nothing else changes.
@@ -31,7 +31,7 @@ That proves Node and the package work and shows the sessions Glassbox can see (C
 Optionally, the same day, each developer also runs the secrets sweep on their own machine and keeps the result to themselves:
 
 ```
-npx glassbox-trace@0.9.0 fence
+npx glassbox-trace@0.9.1 fence
 ```
 
 It lists any credential that has already reached a transcript on that machine — masked, with a fingerprint, never the value. If it finds one, the developer rotates that key and runs `fence --shred` to overwrite it in place. The pilot report never sees this output; the point is that nobody copies a report to the share on day 14 from a machine that still has a live key in a transcript.
@@ -41,13 +41,13 @@ It lists any credential that has already reached a transcript on that machine �
 **Day 14 — each developer runs one command** and copies one file to the share:
 
 ```
-npx glassbox-trace@0.9.0 check --all --since 14d --redact --legend audit.legend.json --format json > <share>/<name>.json
+npx glassbox-trace@0.9.1 check --all --since 14d --redact --legend audit.legend.json --format json > <share>/<name>.json
 ```
 
-On Windows PowerShell, run it through `cmd` so the file is saved as UTF-8 (0.9.0 also reads the UTF-16 file PowerShell's own `>` writes, but older versions skip it):
+On Windows PowerShell, run it through `cmd` so the file is saved as UTF-8 (0.9.1 also reads the UTF-16 file PowerShell's own `>` writes, but older versions skip it):
 
 ```
-cmd /c "npx glassbox-trace@0.9.0 check --all --since 14d --redact --legend audit.legend.json --format json > <share>\<name>.json"
+cmd /c "npx glassbox-trace@0.9.1 check --all --since 14d --redact --legend audit.legend.json --format json > <share>\<name>.json"
 ```
 
 `--redact` drops every string from the transcript (prompts, commands, results, titles); `--legend` turns file paths into `file:1a2b3c4d` keys and keeps the key→path map in `audit.legend.json` on that machine. The developer can open the JSON before copying it — it is meant to be read. Search it for a word only their code knows; it won't be there.
@@ -55,7 +55,7 @@ cmd /c "npx glassbox-trace@0.9.0 check --all --since 14d --redact --legend audit
 **Day 15 — the owner runs collect** on the folder:
 
 ```
-npx glassbox-trace@0.9.0 collect <share> --format md --out fleet.md
+npx glassbox-trace@0.9.1 collect <share> --format md --out fleet.md
 ```
 
 and sends `fleet.md` to whoever is doing the readout. Unredacted files are skipped with a message, so a mistake on one machine cannot leak through the report.

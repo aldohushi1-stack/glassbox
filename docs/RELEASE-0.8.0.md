@@ -33,7 +33,7 @@ Then Actions → publish → Run workflow (0.8.0). Do not publish a GitHub Relea
 
 ## Still unpushed from before (local only, good)
 
-`test/action.test.mjs`, `docs/CI.md` (newer), and the Node 24 workflow files in `launch/workflows-node24/` → `.github/workflows/` (Aldo uploads those; the web upload to `.github/workflows` is blocked for Claude). `src/guard.mjs` / `test/guard.test.mjs` remain parked in `sesh\glassbox-wip` and must not go up.
+`test/action.test.mjs`, `docs/CI.md` (newer), and the Node 24 workflow files in `launch/workflows-node24/` → `.github/workflows/` (Aldo uploads those; the web upload to `.github/workflows` is blocked for Claude). `src/guard.mjs` / `test/guard.test.mjs` remain parked in `sesh\glassbox-wip` and must not go up. *(Update 17 Sep 2026: no longer parked; it ships in 0.9.1 — see RELEASE-0.9.0.md, "After 0.9.0".)*
 
 ## Site
 

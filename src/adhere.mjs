@@ -30,9 +30,31 @@ const ACTION = (w) => /^commit/i.test(w) ? 'commit' : /^push/i.test(w) ? 'push' 
 const strip = (s) => s.replace(/`/g, '').replace(/\s+/g, ' ').trim();
 const whatOf = (s) => { const w = strip(s).replace(/^(?:the|all|your|our)\s+/i, ''); if (/^(?:tests?|test suite|unit tests|the tests)$/i.test(w)) return 'tests'; if (/^(?:formatter|code formatter)$/i.test(w)) return 'formatter'; if (/^(?:linter|lint)$/i.test(w)) return 'linter'; return w.replace(/\.$/, ''); };
 
-// Each matcher returns the rule's parameters or null. Order matters: first match wins.
+// ask-before: the actions named in a clause, in order, once each ("any commit / push / deploy" is three rules).
+const ACT_WORD = String.raw`(?:commit|push|delet|remov|install|creat|deploy|merg)\w*`;
+const actionsIn = (s) => [...new Set((s.match(new RegExp(String.raw`\b${ACT_WORD}`, 'gi')) || []).map(ACTION))];
+// A run of actions joined by , / or and: "committing, pushing or deploying". Stops at the first non-action word.
+const actList = (w) => String.raw`${w}(?:\s*(?:,|\/|\bor\b|\band\b)\s*(?:(?:or|and)\s+)?(?:any\s+|a\s+|an\s+)?${w})*`;
+const ACT_LIST = actList(ACT_WORD);
+const ACT_LIST_NC = actList(ACT_WORD.replace('creat|', '')); // "don't create … unless I ask" belongs to no-new-docs
+const ASK_VERB = String.raw`(?:ask(?:\s+me)?|check with me|confirm(?:\s+with me)?|get (?:my )?(?:explicit\s+)?(?:permission|approval|ok|confirmation)|wait for (?:my\s+|your\s+|an?\s+)?(?:explicit\s+)?(?:confirmation|approval|permission|go-?ahead|ok))`;
+const CONFIRM_NOUN = String.raw`(?:wait(?:ing)? for|get(?:ting)?|obtain(?:ing)?|ask(?:ing)? for|receiv(?:e|ing))\s+(?:my\s+|your\s+|an?\s+|the\s+)?(?:explicit\s+|express\s+|written\s+|clear\s+)?(?:confirmation|approval|permission|sign-?off|go-?ahead|ok)\b`;
+
+// Each matcher returns the rule's parameters (an array for one rule per action) or null. Order matters: first match wins.
 const SHAPES = [
-  { kind: 'ask-before', m: (s) => { let m = s.match(/\b(?:ask(?:\s+me)?|check with me|confirm(?:\s+with me)?|get (?:my )?(?:permission|approval|ok))\s*(?:first\s+)?(?:before|prior to)\s+(?:you\s+)?(?:\w+ing\s+)?(commit|push|delet|remov|install|creat|deploy|merg)\w*/i) || s.match(/\b(?:ask(?:\s+me)?|check with me)\s+before\s+(?:you\s+)?(commit|push|delet|remov|install|creat|deploy|merg)\w*/i); if (m) return { action: ACTION(m[1]) }; m = s.match(/\b(?:never|don't|do not|don’t)\s+(commit|push|delete|remove|install|deploy|merge)\b[^.]*?\b(?:without|unless)\s+(?:first\s+)?(?:asking|being asked|i ask|you ask|i tell|told|permission|approval|confirm|checking|explicit)/i); if (m) return { action: ACTION(m[1]) }; return null; } },
+  { kind: 'ask-before', m: (s) => {
+    const each = (acts) => acts.length ? acts.map((action) => ({ action })) : null;
+    // "ask before committing or pushing" · "wait for approval before any deploy"
+    let m = s.match(new RegExp(String.raw`\b${ASK_VERB}\s*(?:first\s+)?(?:before|prior to)\s+(?:you\s+)?(?:any\s+|a\s+|an\s+)?(?:\w+ing\s+)?(${ACT_LIST})`, 'i'));
+    if (m) return each(actionsIn(m[1]));
+    // Reversed: "Before editing X, or any commit / push / deploy, state the change and wait for explicit confirmation."
+    m = s.match(new RegExp(String.raw`\b(?:before|prior to)\s+([^.]*?)\b${CONFIRM_NOUN}`, 'i'));
+    if (m) { const r = each(actionsIn(m[1])); if (r) return r; }
+    // "never push without asking" · "do not commit or push unless I ask"
+    m = s.match(new RegExp(String.raw`\b(?:never|don't|do not|don’t)\s+(${ACT_LIST_NC})\b[^.]*?\b(?:without|unless)\s+(?:first\s+)?(?:asking|being asked|i ask|you ask|i tell|told|permission|approval|confirm|checking|explicit)`, 'i'));
+    if (m) return each(actionsIn(m[1]));
+    return null;
+  } },
   { kind: 'run-before', m: (s) => { let m = s.match(/\b(?:always\s+)?run\s+(?:the\s+)?(`[^`]+`|[\w][\w .:/-]*?)\s+(?:before|prior to)\s+(?:you\s+|every\s+|each\s+|any\s+|a\s+)?(?:\w+ing\s+)?(commit|push|merg|pull request|pr\b|open)/i); if (m) return { what: whatOf(m[1]), trigger: /^(commit)/i.test(m[2]) ? 'commit' : 'push' }; m = s.match(/\b(?:never|don't|do not|don’t)\s+(commit|push)\b[^.]*?\b(?:without|unless)\s+(?:first\s+)?(?:running\s+|you(?:'ve| have)?\s+run\s+|the\s+)?(`[^`]+`|[\w][\w .:/-]*?)(?:\s+(?:pass(?:es|ing)?|first|succeed\w*))?\.?$/i); if (m && !/\bask|permission|approv|confirm|check/i.test(s)) return { what: whatOf(m[2]), trigger: m[1].toLowerCase() }; m = s.match(/\b(tests?|test suite|linter|lint|build|typecheck|type check)\s+(?:must|should|need to|has to|have to)\s+(?:pass|succeed|be green)\s+(?:before|prior to)\s+(?:you\s+|every\s+|each\s+|any\s+)?(?:\w+ing\s+)?(commit|push|merg)/i); if (m) return { what: whatOf(m[1]), trigger: /^commit/i.test(m[2]) ? 'commit' : 'push' }; return null; } },
   { kind: 'run-after', m: (s) => { let m = s.match(/\brun\s+(?:the\s+)?(`[^`]+`|[\w][\w .:/-]*?)\s+after\s+(?:you\s+)?(?:making\s+|every\s+|each\s+|any\s+|all\s+)?(?:change|edit|modif|writ)/i); if (m) return { what: whatOf(m[1]) }; m = s.match(/\b(format|lint|typecheck)\s+(?:the\s+)?(?:code|files?)\s+after\s+(?:you\s+)?(?:making\s+|every\s+|each\s+|any\s+)?(?:change|edit|modif)/i); if (m) return { what: /^format/i.test(m[1]) ? 'formatter' : /^lint/i.test(m[1]) ? 'linter' : m[1] }; return null; } },
   { kind: 'prefer-tool', m: (s) => { let m = s.match(new RegExp(`\\b(?:never|don't|do not|don\u2019t|avoid)\\s+(?:us(?:e|ing)\\s+)?\`?(${TOOLS_RE})\`?\\b`, 'i')); if (m) { const avoid = m[1].toLowerCase(); return { prefer: PREFER_FOR[avoid] || null, avoid: [avoid] }; } m = s.match(new RegExp(`\\buse\\s+\`?(${TOOLS_RE})\`?\\b(?:[^.]*?\\b(?:not|instead of|rather than|never|over)\\s+\`?(${TOOLS_RE})\`?)?`, 'i')); if (m) { const prefer = m[1].toLowerCase(); const avoid = m[2] ? [m[2].toLowerCase()] : (PM_PAIRS[prefer] || []); return avoid.length ? { prefer, avoid } : null; } return null; } },
@@ -58,10 +80,11 @@ export function parseRules(text, file) {
     const parts = body.split(/(?<=[.!])\s+(?=[A-Z`])/);
     for (const part of parts) {
       const s = part.trim(); if (!s) continue;
-      let hit = null;
-      for (const sh of SHAPES) { const p = sh.m(s); if (p) { hit = Object.assign({ kind: sh.kind }, p); break; } }
+      let hits = null;
+      for (const sh of SHAPES) { const p = sh.m(s); if (p) { hits = [].concat(p).map((x) => Object.assign({ kind: sh.kind }, x)); break; } }
       const rec = { id: `${file}:${n}${parts.length > 1 ? ':' + (parts.indexOf(part) + 1) : ''}`, file, line: n, text: strip(s) };
-      if (hit) rules.push(Object.assign(rec, hit)); else unchecked.push(rec);
+      if (!hits) unchecked.push(rec);
+      else for (const h of hits) rules.push(Object.assign({}, rec, hits.length > 1 ? { id: `${rec.id}#${h.action}` } : null, h));
     }
   }
   return { rules, unchecked };
@@ -215,7 +238,8 @@ export function adhere(opts = {}) {
     const rate = occ.length ? obeyed / occ.length : null;
     const verdict = !occ.length ? 'never came up' : rate === 1 ? 'obeyed' : rate >= 0.8 ? 'mostly obeyed' : rate > 0 ? 'often ignored' : 'ignored';
     const examples = occ.filter((o) => !o.obeyed).slice(0, 3).map((o) => ({ session: o.session, turn: o.turn, prompt: R(o.prompt), detail: R(o.detail) }));
-    const row = { id: r.id, file: r.file, line: r.line, text: r.text, kind: r.kind, occasions: occ.length, obeyed, broken, rate, verdict, examples, sessionsBroken: new Set(occ.filter((o) => !o.obeyed).map((o) => o.session)).size };
+    // One line can hold several ask-before rules ("commit / push / deploy"); the label tells them apart.
+    const row = { id: r.id, file: r.file, line: r.line, text: r.text, kind: r.kind, label: r.id.includes('#') ? `${r.kind}:${r.action}` : r.kind, occasions: occ.length, obeyed, broken, rate, verdict, examples, sessionsBroken: new Set(occ.filter((o) => !o.obeyed).map((o) => o.session)).size };
     for (const k of ['what', 'trigger', 'prefer', 'avoid', 'pattern', 'path', 'action', 'style', 'unlessAsked']) if (r[k] !== undefined) row[k] = r[k];
     if (NOTES[r.kind]) row.note = NOTES[r.kind];
     return row;
@@ -239,7 +263,7 @@ export function adhereText(rep) {
   L.push('');
   const order = { 'ignored': 0, 'often ignored': 1, 'mostly obeyed': 2, 'obeyed': 3, 'never came up': 4 };
   for (const r of rep.rules.slice().sort((a, b) => order[a.verdict] - order[b.verdict] || b.occasions - a.occasions)) {
-    L.push(`  ${r.verdict.toUpperCase().padEnd(14)} ${r.kind.padEnd(17)} ${r.occasions ? `${r.obeyed}/${r.occasions} ${pct(r.rate).padStart(4)}` : '   —      '}  ${r.text}  (${r.file}:${r.line})`);
+    L.push(`  ${r.verdict.toUpperCase().padEnd(14)} ${r.label.padEnd(17)} ${r.occasions ? `${r.obeyed}/${r.occasions} ${pct(r.rate).padStart(4)}` : '   —      '}  ${r.text}  (${r.file}:${r.line})`);
     for (const e of r.examples) L.push(`                   ↳ ${e.session.slice(0, 8)} t${e.turn == null ? '?' : e.turn}  "${e.prompt}"  →  ${e.detail}`);
   }
   if (rep.unchecked.length) { L.push('', `  Not checkable yet (${rep.unchecked.length}) — no mechanical test for these shapes; they are loaded every session all the same:`); for (const u of rep.unchecked) L.push(`    · ${u.text}  (${u.file}:${u.line})`); }
@@ -252,9 +276,9 @@ export function adhereMarkdown(rep) {
   const L = ['# Is my CLAUDE.md doing anything?', '', `Project \`${rep.project}\` · ${rep.generated.slice(0, 10)}${rep.since ? ` · sessions since ${rep.since.slice(0, 10)}` : ''}`, '', `**${headline(rep)}**`, ''];
   if (s.sessionsWithBreach) L.push(`${s.sessionsWithBreach} of ${s.sessions} sessions broke at least one rule; those sessions cost ${usd(s.breachCost)} in total (where the breaches happened, not what they cost).`, '');
   L.push('## Rules', '', '| rule | kind | occasions | obeyed | broken | rate | verdict |', '|---|---|---:|---:|---:|---:|---|');
-  for (const r of rep.rules) L.push(`| ${r.text.replace(/\|/g, '\\|')} <br><sub>${r.file}:${r.line}</sub> | \`${r.kind}\` | ${r.occasions} | ${r.obeyed} | ${r.broken} | ${pct(r.rate)} | ${r.verdict} |`);
+  for (const r of rep.rules) L.push(`| ${r.text.replace(/\|/g, '\\|')} <br><sub>${r.file}:${r.line}</sub> | \`${r.label}\` | ${r.occasions} | ${r.obeyed} | ${r.broken} | ${pct(r.rate)} | ${r.verdict} |`);
   const withEx = rep.rules.filter((r) => r.examples.length);
-  if (withEx.length) { L.push('', '## Evidence', ''); for (const r of withEx) { L.push(`### ${r.text}`, '', `\`${r.kind}\` · ${r.broken} of ${r.occasions} occasions broken across ${r.sessionsBroken} session${r.sessionsBroken === 1 ? '' : 's'}${r.note ? ` · ${r.note}` : ''}`, ''); for (const e of r.examples) L.push(`- \`${e.session.slice(0, 8)}\` turn ${e.turn == null ? '?' : e.turn} — prompt: "${e.prompt}" — ${e.detail.replace(/\|/g, '\\|')}`); L.push(''); } }
+  if (withEx.length) { L.push('', '## Evidence', ''); for (const r of withEx) { L.push(`### ${r.text}`, '', `\`${r.label}\` · ${r.broken} of ${r.occasions} occasions broken across ${r.sessionsBroken} session${r.sessionsBroken === 1 ? '' : 's'}${r.note ? ` · ${r.note}` : ''}`, ''); for (const e of r.examples) L.push(`- \`${e.session.slice(0, 8)}\` turn ${e.turn == null ? '?' : e.turn} — prompt: "${e.prompt}" — ${e.detail.replace(/\|/g, '\\|')}`); L.push(''); } }
   if (rep.unchecked.length) { L.push('## Not checkable yet', '', 'No mechanical test exists for these shapes; they are loaded into every session all the same.', ''); for (const u of rep.unchecked) L.push(`- ${u.text} <sub>${u.file}:${u.line}</sub>`); L.push(''); }
   L.push('## How to read this', '', 'Every number comes from tool calls in the transcripts, judged per occasion (a commit, a write, a command). "Asked" means the turn\'s own prompt named the action, an AskUserQuestion ran first, or the previous turn ended with a question — a standing instruction from an earlier turn counts as unasked. "Ran the tests" means a test command ran, not that it passed. A rule that never came up is not an obeyed rule. `glassbox adhere --format json` has every occasion.', '');
   return L.join('\n');

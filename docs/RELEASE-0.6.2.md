@@ -16,6 +16,8 @@ Then Actions → publish → Run workflow (0.6.2), and the site upload below.
 
 ## Do NOT upload these — local work in progress, not part of this release
 
+> **Update 17 Sep 2026:** the guard is finished (the three gaps below are fixed locally) and is no longer parked. It is not in 0.9.0; it ships in 0.9.1 — see RELEASE-0.9.0.md, "After 0.9.0", for what goes up with it and in what order.
+
 - `src/guard.mjs`, `test/guard.test.mjs` — the PreToolUse guard; it calls `core.denialKind`, which `trace-core.js` doesn't have yet (4 tests fail).
 - `hooks/glassbox-hook.mjs` — imports `HOOK_RE` from `cli.mjs`, which isn't exported; the copy on GitHub inlines the regex and works. Uploading the local file would break the plugin for everyone (the hook would exit 1 on every turn).
 - `docs/PLUGIN.md` — local copy documents `hook install --guard`, which the CLI doesn't have.
