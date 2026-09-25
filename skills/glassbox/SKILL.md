@@ -29,6 +29,7 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" check ${CLAUDE_SESSION_ID} --forma
 2. If a finding points at something still wrong in the work (a failing command you routed around, tests that never passed, an unanswered tool call), fix it or tell the user plainly.
 3. Otherwise state in one or two sentences what you will do differently for the rest of the session (for example: stop repeating a failing command, read narrower file ranges, keep large outputs out of context). Do not redo finished work because of a finding.
 4. Refer to findings by rule id (`retry-loop`, `context-bloat`, ...). Paste the full report only if the user asks for it.
+5. An `unverified-claim` or `contradicted-claim` finding quotes a sentence you told the user with no tool result behind it in this transcript, or one the transcript contradicts. Run the check the sentence needs (the test, the `git status`, the `npm view`) and correct the sentence if the result differs; if you cannot check, say so in the words "not verified" rather than restating the claim.
 
 ## Other commands
 
@@ -39,6 +40,7 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" check ${CLAUDE_SESSION_ID} --forma
 | Check many sessions | `node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" check --all --since 1d` (one line per session; `--project PATH`) |
 | Compare two sessions | `node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" compare A B --format md` (time, tokens, cost, tools, findings only in one side); `--out cmp.html` for the side-by-side viewer; `--label-a NAME --label-b NAME` |
 | Live tail | `node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" watch [ID]` serves the viewer on 127.0.0.1 until stopped. Only when the user asks, and in the background. |
+| Said vs did | `node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" claims ${CLAUDE_SESSION_ID} --format md` lists every claim the agent made about its own work (tests pass, committed, live, verified, nothing changed) with the tool result behind it or the gap. `check` already carries the same rows as `contradicted-claim` / `unverified-claim` / `stale-claim`. |
 
 If a session isn't found and Claude Code uses a custom config directory, add `--home "$CLAUDE_CONFIG_DIR"` (or set `GLASSBOX_HOME`).
 
