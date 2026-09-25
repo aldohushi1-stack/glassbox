@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { readTextFile } from './textfile.mjs';
 import { guardResponse } from './guard.mjs';
+import { judgeClaims, claimFindings, claimsText, claimsMarkdown } from './claims.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 // fileURLToPath, not URL.pathname: on Windows the latter gives "/C:/…" which path.resolve turns into "\C:\…".
@@ -84,7 +85,18 @@ export function loadSessionFiles(s) {
   return files;
 }
 
-export function analyse(files, rates) { const trace = core.parseTrace(files); const findings = core.diagnose(trace, rates ? { rates } : undefined); const cost = core.estimateCost(trace, rates); return { trace, findings, cost }; }
+// Findings are the mechanical rules from trace-core plus the claims ledger's three (contradicted / unverified /
+// stale), in one list, so check, the hook, the Action and compare all see them.
+const SEV_ORDER = { error: 0, warn: 1, info: 2 };
+export function analyse(files, rates) {
+  const trace = core.parseTrace(files);
+  const findings = core.diagnose(trace, rates ? { rates } : undefined);
+  const cost = core.estimateCost(trace, rates);
+  const claims = judgeClaims(trace);
+  findings.push(...claimFindings(claims));
+  findings.sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity] || (b.metric || 0) - (a.metric || 0));
+  return { trace, findings, cost, claims };
+}
 
 // A team rate card: --rates FILE or GLASSBOX_RATES. JSON keyed by model-id prefix, USD per million tokens:
 //   { "claude-opus-5": { "in": 4, "out": 20, "read": 0.4, "w5m": 5, "w1h": 8 } }
@@ -165,7 +177,7 @@ export function collapseFindings(findings) {
 }
 const findingLine = ({ f, n }) => `${f.severity.toUpperCase().padEnd(5)} ${f.id.padEnd(16)} ${f.title}${n > 1 ? `  ×${n}` : ''}`;
 
-export function checkReport({ trace, findings, cost }, opts = {}) {
+export function checkReport({ trace, findings, cost, claims }, opts = {}) {
   const failOn = opts.failOn || 'error';
   const failing = findings.filter((f) => SEV[f.severity] <= SEV[failOn]);
   const T = trace.totals, m = trace.meta;
@@ -177,6 +189,7 @@ export function checkReport({ trace, findings, cost }, opts = {}) {
   const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source, start: m.start != null ? new Date(m.start).toISOString() : null, end: m.end != null ? new Date(m.end).toISOString() : null };
   // Per-file use, keyed when a legend is given; with --redact and no legend the paths would leak, so it is omitted.
   if (legend || !redact) summary.files = core.fileStats(trace).map((r) => ({ key: legend ? legend.keyFor(r.path) : r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agents, chars: r.chars }));
+  if (claims) summary.claims = claims.summary; // said vs did, in one line of numbers (additive; schema stays 2)
   const findingJson = (f) => {
     const ev = f.evidence || {};
     const paths = Array.from(new Set((ev.toolCallIds || []).map((id) => { const c = trace.toolCalls.find((x) => x.id === id); return c ? core.filePathOf(c) : null; }).filter(Boolean)));
@@ -381,6 +394,10 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  is my CLAUDE.md doing anything? every rule in the project's instruction files judged
                                  against every session of that project: obeyed / broken per occasion, with evidence;
                                  shapes it cannot check are listed as such. --fail-under 80 exits 1 below that rate
+  glassbox claims [ID|FILE] [--format text|md|json] [--out FILE] [--redact] [--fail-on contradicted|unverified|none]
+                                 said vs did: every claim the agent made about its own work (tests pass, committed,
+                                 live, verified, nothing changed) matched to the tool result behind it — or the gap.
+                                 exit 1 when a claim at/above --fail-on has no receipt (default: contradicted)
   glassbox fence [ID|FILE|DIR] [--since 30d] [--format text|md|json] [--out FILE] [--fail-on error|warn|info] [--shred] [--key FILE] [--sessions-only]
                                  secrets that reached a transcript: known key formats, secrets named by context,
                                  credential-file reads — with a masked preview and a fingerprint, never the value.
@@ -543,6 +560,22 @@ export async function main(argv, io = {}) {
       catch (e) { reply = event === 'PreToolUse' ? null : { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
       if (reply != null) out(JSON.stringify(reply));
       return 0;
+    }
+    if (cmd === 'claims') {
+      // Said vs did: the claims ledger for one session (subagents included).
+      const s = resolveTarget(args._[1], { home });
+      const { trace } = analyse(loadSessionFiles(s), rates);
+      const rep = judgeClaims(trace);
+      const failOn = String(args.flags['fail-on'] || 'contradicted');
+      if (!['contradicted', 'unverified', 'none'].includes(failOn)) throw new Error(`--fail-on must be contradicted, unverified or none (got "${failOn}")`);
+      const redact = !!args.flags.redact;
+      if (redact) { rep.redacted = true; for (const c of rep.claims) c.text = `«${c.text.length} chars»`; }
+      const fmtOut = outputFormat(args.flags);
+      const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? claimsMarkdown(rep, trace, { redact }) : claimsText(rep, { redact });
+      if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.summary.claims} claims, ${rep.summary.unverified} unverified, ${rep.summary.contradicted} contradicted)`); }
+      else out(text.replace(/\n$/, ''));
+      const failed = failOn === 'none' ? false : failOn === 'unverified' ? (rep.summary.unverified + rep.summary.contradicted) > 0 : rep.summary.contradicted > 0;
+      return failed ? 1 : 0;
     }
     if (cmd === 'fence') {
       // Secrets that reached a transcript. No target = every session under the home; an id, a file, or a folder of .jsonl.

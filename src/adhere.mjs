@@ -17,6 +17,10 @@ const core = require('./trace-core.js');
 export const encodeProject = (p) => String(p).replace(/[\\/:]/g, '-');
 const norm = (p) => String(p || '').replace(/\\/g, '/').toLowerCase();
 const WRITE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
+// Commands come from every shell tool Claude Code offers, not only Bash: PowerShell on Windows, and Cowork's
+// device_bash on the user's machine. A `git push` from PowerShell is a push (0.9.1 missed all of them).
+export const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
+export const isShell = (c) => SHELL_TOOLS.has(c.name) || /device_bash$/.test(c.name || '');
 const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'NotebookEdit']);
 const READ_TOOLS = new Set(['Read', 'NotebookRead']);
 
@@ -172,9 +176,10 @@ function judgeSession(rules, s, project) {
   const turnPrompt = (i) => { const t = turns.find((x) => x.index === i && x.agent === 'main') || turns.find((x) => x.index === i); return t ? { text: t.promptText || '', kind: t.promptKind } : { text: '', kind: null }; };
   const prevTurnAsked = (i) => { const prev = trace.requests.filter((r) => r.turnIndex === i - 1 && r.agent === 'main'); if (!prev.length) return false; const last = prev[prev.length - 1]; const texts = (last.blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join(' ').trim(); return /\?\s*$/.test(texts); };
   const short = (t) => String(t == null ? '' : t).replace(/\s+/g, ' ').trim().slice(0, 160);
-  const occ = (c, obeyed, detail) => ({ obeyed, session: s.id, turn: c.turnIndex, prompt: turnPrompt(c.turnIndex).text.replace(/\s+/g, ' ').slice(0, 80), detail: short(detail), at: c.start });
-  const sessionOcc = (obeyed, detail, c) => ({ obeyed, session: s.id, turn: c ? c.turnIndex : null, prompt: c ? turnPrompt(c.turnIndex).text.replace(/\s+/g, ' ').slice(0, 80) : '', detail: short(detail), at: c ? c.start : trace.meta.start });
-  const bash = calls.filter((c) => c.name === 'Bash' && typeof c.input?.command === 'string');
+  // turn is 1-based, the number `check` prints and the viewer shows (turnIndex + 1).
+  const occ = (c, obeyed, detail) => ({ obeyed, session: s.id, turn: c.turnIndex + 1, prompt: turnPrompt(c.turnIndex).text.replace(/\s+/g, ' ').slice(0, 80), detail: short(detail), at: c.start });
+  const sessionOcc = (obeyed, detail, c) => ({ obeyed, session: s.id, turn: c ? c.turnIndex + 1 : null, prompt: c ? turnPrompt(c.turnIndex).text.replace(/\s+/g, ' ').slice(0, 80) : '', detail: short(detail), at: c ? c.start : trace.meta.start });
+  const bash = calls.filter((c) => isShell(c) && typeof c.input?.command === 'string');
   const writes = calls.filter((c) => WRITE_TOOLS.has(c.name) && c.input && typeof c.input.file_path === 'string');
   const out = rules.map(() => []);
   rules.forEach((r, i) => {
