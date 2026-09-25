@@ -322,3 +322,32 @@ test('shell surface: heredoc bodies and inline programs are content, not command
   assert.equal(r('ask-before').obeyed, 1, 'the prompt asked for the commit');
   for (const rule of rep.rules) for (const e of rule.examples) assert.ok(e.detail.length <= 160 && !e.detail.includes('\n'), 'evidence is one short line');
 });
+
+test('adhere 0.9.2: PowerShell and device_bash commands count like Bash; turn numbers print 1-based like check', () => {
+  const w = world();
+  fs.writeFileSync(path.join(w.proj, 'CLAUDE.md'), '- Always run the tests before committing.\n- Ask before pushing.\n- Never run `git push --force`.\n');
+  const s = session({ sessionId: 'shells-1', cwd: w.proj, start: Date.parse('2026-09-14T09:00:00Z') });
+  s.summary('windows session');
+  s.user('build it');
+  s.call('PowerShell', { command: 'cd C:\\proj; node --test test/*.test.mjs 2>&1 | Select-String "^# (pass|fail)"' }, '# pass 12\n# fail 0');
+  s.call('PowerShell', { command: 'cd C:\\proj; git commit -q -m "feat: build"' }, 'ok');
+  s.assistant([{ text: 'Committed. Want me to push?' }]);
+  s.user('yes push');
+  s.call('mcp__remote-devices__device_bash', { command: 'git push origin main' }, 'ok');
+  s.assistant([{ text: 'pushed' }]);
+  s.user('now force push it');
+  s.call('PowerShell', { command: 'git push --force origin main' }, 'ok');
+  s.assistant([{ text: 'done' }]);
+  w.put(w.pdir, s);
+  const rep = adhere({ home: w.home, project: w.proj });
+  const by = (k) => rep.rules.find((r) => r.kind === k);
+  assert.equal(by('run-before').occasions, 1, 'the PowerShell commit is an occasion');
+  assert.equal(by('run-before').obeyed, 1, 'the PowerShell test run before it counts');
+  assert.equal(by('ask-before').occasions, 2, 'device_bash and PowerShell pushes are occasions');
+  assert.equal(by('ask-before').obeyed, 2, 'both pushes were asked for in their turn');
+  assert.equal(by('never-run').occasions, 1); assert.equal(by('never-run').broken, 1, 'a PowerShell force push is a breach');
+  // Turn numbers: the force push happened in the third human turn — check prints "turn 3", so adhere must say t3, not t2.
+  assert.equal(by('never-run').examples[0].turn, 3);
+  assert.match(adhereText(rep), /shells-1 t3 /);
+  assert.match(adhereMarkdown(rep), /`shells-1` turn 3 /);
+});
