@@ -1,6 +1,6 @@
 # Glassbox for IT
 
-_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.9.1. If anything here stops being true, that is a bug — open an issue._
+_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.10.0. If anything here stops being true, that is a bug — open an issue._
 
 Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.
 
@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 14 files, ~325 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.9.1` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 15 files, ~340 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.10.0` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -18,7 +18,7 @@ For a managed fleet the simplest shape is: the HTML file on an internal share (n
 
 **The viewer makes no network requests.** Fonts, scripts and the demo session are inside the file. This is enforced by the test suite: `test/offline.test.mjs` fails the build if the file references anything that is not a `data:` URL, and the browser test logs every request the page makes and fails if any is not `file:`, `data:` or `blob:`. (Versions up to 0.6.1 loaded one stylesheet from `fonts.googleapis.com`; that is gone.)
 
-**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `fence`, `adhere`, `hook` and `watch` open no sockets to anything outside the machine.
+**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `fence`, `adhere`, `claims`, `hook` and `watch` open no sockets to anything outside the machine.
 
 `glassbox watch` starts an HTTP server bound to `127.0.0.1` on a random free port (or `--port N`) for the lifetime of the command, to stream the transcript to the browser tab it opens. It is not reachable from other machines and stops with Ctrl+C.
 
@@ -74,7 +74,7 @@ Two things to know about **context** before turning it on for a team:
 
 Because it starts `node` before every tool call, `hook install --guard` writes a direct command, `node "<install dir>/bin/glassbox.mjs" hook … --guard`, for every hook it installs, and refuses to run from an npx cache, where each call would cost seconds. It is not in the plugin: a plugin's hooks run for every user of the plugin, whether or not they want the guard.
 
-**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.9.1`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
+**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.10.0`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
 
 Glassbox never approves or alters a tool call. The only PreToolUse hook is the opt-in guard above, and its only decision is to deny.
 
@@ -93,6 +93,10 @@ The transcripts Claude Code writes are plain text, never expire, and contain eve
 ## 6c. CLAUDE.md compliance — `glassbox adhere`
 
 `glassbox adhere` reads the project's instruction files (`CLAUDE.md`, `.claude/CLAUDE.md`, `CLAUDE.local.md`, `~/.claude/CLAUDE.md`) and the project's own transcripts, and reports per rule how often the agent obeyed it. It reads nothing else and writes nothing unless `--out` is given. Nine rule shapes are checkable mechanically (run X before commit, use A not B, never run / never touch, ask before, read before edit, commit message format, no new docs); the rest are listed as not checkable. Prompts, commands and paths appear in the evidence unless `--redact` is passed, in which case they become `«N chars»` and only the rule text (the team's own CLAUDE.md) remains. Network: none. See docs/ADHERE.md.
+
+## 6d. Said vs did — `glassbox claims`
+
+`glassbox claims` reads one session's transcript (subagents included) and lists every sentence in which the agent told the human what it had done — tests pass, committed, published, verified, nothing changed, file written — with the tool result in that transcript that backs it, or the gap. It reads nothing else and writes nothing unless `--out` is given. The same ledger runs inside `check` as three rules (`contradicted-claim`, `unverified-claim`, `stale-claim`), so a Stop hook with `--feedback` hands an unbacked sentence back to the agent in the same session. The sentences are the agent's own words and appear in the report unless `--redact` is passed, in which case they become `«N chars»` (and any sha, version or number quoted from them is blanked in the notes); tool names, turn numbers, verdicts and a run's own counts remain. A verdict is about the sentence, never the code, and it cannot see checks made outside the transcript. Network: none. See docs/CLAIMS.md.
 
 ## 7. What leaves the machine when you share a report
 
@@ -121,9 +125,9 @@ Nothing else was changed on the machine.
 
 ## 10. Provenance and verification
 
-- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs`, with `src/collect.mjs`, `src/tail.mjs`, `src/textfile.mjs`, `src/fence.mjs`, `src/adhere.mjs` and `src/guard.mjs`. It is small enough to read.
+- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs`, with `src/collect.mjs`, `src/tail.mjs`, `src/textfile.mjs`, `src/fence.mjs`, `src/adhere.mjs`, `src/claims.mjs` and `src/guard.mjs`. It is small enough to read.
 - npm releases are published by the repository's GitHub Actions workflow with `npm publish --provenance`, so npm shows which commit and workflow built each version.
-- `npm test` runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks and the guard, collect, fence, adhere, offline check); `npm run e2e` runs the browser suite with the request log; `npm run audit` runs the accessibility gate. All three run in CI on every push.
+- `npm test` runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks and the guard, collect, fence, adhere, claims, offline check); `npm run e2e` runs the browser suite with the request log; `npm run audit` runs the accessibility gate. All three run in CI on every push.
 - Security reports: see [SECURITY.md](../SECURITY.md) — privately, never in a public issue.
 - To check a build yourself: open `dist/glassbox.html` with the browser's network panel open. It should show one entry, the file.
 

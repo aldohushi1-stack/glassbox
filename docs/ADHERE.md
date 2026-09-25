@@ -36,7 +36,7 @@ Glassbox adhere · /home/aldo/api
   NEVER CAME UP  commit-format        —       Use conventional commits.  (CLAUDE.md:6)
 ```
 
-One line per rule, worst first: verdict, shape, obeyed/occasions, the rule's own text, where it lives. Up to three examples per broken rule with the session, the turn's prompt and the command or path. Then the lines it could not check, then one sentence about what a number here means.
+One line per rule, worst first: verdict, shape, obeyed/occasions, the rule's own text, where it lives. Up to three examples per broken rule with the session, the turn (numbered as `check` and the viewer number it, from 1), the turn's prompt and the command or path. Commands are read from every shell tool — `Bash`, `PowerShell` and Cowork's `device_bash` — so a `git push` from PowerShell is a push (0.9.1 only read `Bash`). Then the lines it could not check, then one sentence about what a number here means.
 
 ## The nine shapes it can check
 

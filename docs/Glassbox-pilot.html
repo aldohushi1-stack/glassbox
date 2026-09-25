@@ -1,13 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><title>A two-week Glassbox pilot</title><style>
-@page{size:A4;margin:16mm 16mm 18mm}
-body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto}
-h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt} h3{font-size:11pt;margin:10pt 0 3pt}
-p{margin:5pt 0} em{color:#4B5563} code{font:9.2pt "JetBrains Mono",Consolas,monospace;background:#F3F4F6;padding:0 3px;border-radius:3px}
-pre{background:#F3F4F6;padding:6pt 8pt;border-radius:4px;font:9.2pt "JetBrains Mono",Consolas,monospace;white-space:pre-wrap} pre code{background:none;padding:0}
-table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{border:1px solid #D1D5DB;padding:4pt 6pt;vertical-align:top;text-align:left} th{background:#F9FAFB}
-ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:none}
-.foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt}
-</style></head><body><h1>A two-week Glassbox pilot</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>A two-week Glassbox pilot — glassbox-trace 0.10.0</title><style> @page{size:A4;margin:16mm 16mm 18mm} body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto} h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt} h3{font-size:11pt;margin:10pt 0 3pt} p{margin:5pt 0} em{color:#4B5563} code{font:9.2pt "JetBrains Mono",Consolas,monospace;background:#F3F4F6;padding:0 3px;border-radius:3px} pre{background:#F3F4F6;padding:6pt 8pt;border-radius:4px;font:9.2pt "JetBrains Mono",Consolas,monospace;white-space:pre-wrap} pre code{background:none;padding:0} table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{border:1px solid #D1D5DB;padding:4pt 6pt;vertical-align:top;text-align:left} th{background:#F9FAFB} ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:none} .foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt} </style></head><body><h1>A two-week Glassbox pilot</h1>
 <p><em>For a team lead or IT owner who wants to know what Claude Code is doing on their developers' machines before deciding anything. Five people, two weeks, nothing installed that runs on its own, nothing that leaves the building. At the end: one report and a 30-minute readout.</em></p>
 <h2>What you get</h2>
 <p>One fleet report (<code>glassbox collect</code>) over every Claude Code session the five ran in the fortnight: how much it cost and where it concentrated, which of the twenty-odd rules fired and how often, one line per developer, and the files that were read too many times — as keys, not names. Plus a readout that turns the numbers into three or four habits worth changing, and a view on whether the paid audit is worth it for the whole team. If the report shows nothing you didn't already know, that's the answer too.</p>
@@ -23,23 +14,23 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>Five developers who use Claude Code most days, ideally a mix (one who lives in it, one who is sceptical, one on a big refactor, one on small tickets, one who runs subagents or workflows). One shared folder they can write to (a file share, a Git repo they push to, a SharePoint library — anything). One owner who runs the collect at the end.</p>
 <h2>The fortnight</h2>
 <p><strong>Day 0 — set up (15 minutes each).</strong> Each developer runs, once, on their own machine:</p>
-<pre><code>npx glassbox-trace@0.9.1 list --last 5
+<pre><code>npx glassbox-trace@0.10.0 list --last 5
 </code></pre>
 <p>That proves Node and the package work and shows the sessions Glassbox can see (Claude Code writes them to <code>~/.claude/projects</code> by itself). Nothing else changes.</p>
 <p>Optionally, the same day, each developer also runs the secrets sweep on their own machine and keeps the result to themselves:</p>
-<pre><code>npx glassbox-trace@0.9.1 fence
+<pre><code>npx glassbox-trace@0.10.0 fence
 </code></pre>
 <p>It lists any credential that has already reached a transcript on that machine — masked, with a fingerprint, never the value. If it finds one, the developer rotates that key and runs <code>fence --shred</code> to overwrite it in place. The pilot report never sees this output; the point is that nobody copies a report to the share on day 14 from a machine that still has a live key in a transcript.</p>
 <p><strong>Days 1–14 — nothing.</strong> Work as normal. Sessions accumulate on each machine as they always have.</p>
 <p><strong>Day 14 — each developer runs one command</strong> and copies one file to the share:</p>
-<pre><code>npx glassbox-trace@0.9.1 check --all --since 14d --redact --legend audit.legend.json --format json &gt; &lt;share&gt;/&lt;name&gt;.json
+<pre><code>npx glassbox-trace@0.10.0 check --all --since 14d --redact --legend audit.legend.json --format json &gt; &lt;share&gt;/&lt;name&gt;.json
 </code></pre>
-<p>On Windows PowerShell, run it through <code>cmd</code> so the file is saved as UTF-8 (0.9.1 also reads the UTF-16 file PowerShell's own <code>&gt;</code> writes, but older versions skip it):</p>
-<pre><code>cmd /c &quot;npx glassbox-trace@0.9.1 check --all --since 14d --redact --legend audit.legend.json --format json &gt; &lt;share&gt;\&lt;name&gt;.json&quot;
+<p>On Windows PowerShell, run it through <code>cmd</code> so the file is saved as UTF-8 (0.9.1 and later also read the UTF-16 file PowerShell's own <code>&gt;</code> writes, but older versions skip it):</p>
+<pre><code>cmd /c &quot;npx glassbox-trace@0.10.0 check --all --since 14d --redact --legend audit.legend.json --format json &gt; &lt;share&gt;\&lt;name&gt;.json&quot;
 </code></pre>
 <p><code>--redact</code> drops every string from the transcript (prompts, commands, results, titles); <code>--legend</code> turns file paths into <code>file:1a2b3c4d</code> keys and keeps the key→path map in <code>audit.legend.json</code> on that machine. The developer can open the JSON before copying it — it is meant to be read. Search it for a word only their code knows; it won't be there.</p>
 <p><strong>Day 15 — the owner runs collect</strong> on the folder:</p>
-<pre><code>npx glassbox-trace@0.9.1 collect &lt;share&gt; --format md --out fleet.md
+<pre><code>npx glassbox-trace@0.10.0 collect &lt;share&gt; --format md --out fleet.md
 </code></pre>
 <p>and sends <code>fleet.md</code> to whoever is doing the readout. Unredacted files are skipped with a message, so a mistake on one machine cannot leak through the report.</p>
 <p><strong>Day 16 — readout, 30 minutes.</strong> Walk the report top to bottom: totals, the concentration line ("2 sessions carried half the spend"), the rules table with its "next time" column, the by-source table, the hammered files. For each of the top three findings, the developer whose machine it came from runs <code>glassbox reveal fleet.md --legend audit.legend.json</code> locally to see which file it was — the names stay in the room. Leave with three habits and a yes/no on going wider.</p>
@@ -47,4 +38,4 @@ ol,ul{margin:4pt 0 4pt 18pt} li{margin:2pt 0} a{color:#C2410C;text-decoration:no
 <p>Costs are estimates from Anthropic's list prices unless the team passes its own rate card (<code>--rates</code>), so if you are on seats or credits treat the dollar column as a proportion, not an invoice; the token and time columns are exact. Findings are mechanical rules with published thresholds (README, "What it flags"), tuned so the median session has two of them and none at warn or above. A session with ten is unusual; a rule that fires in every session is a habit.</p>
 <h2>After the pilot</h2>
 <p>Three ways it goes: nothing worth changing (you're done, and it cost you an hour); a few habits worth fixing (the readout gives you the wording, and <code>glassbox hook install --feedback</code> lets the agent hear it itself, if you want that); or enough spend concentrated in enough sessions that a proper audit pays for itself — that conversation starts from your own numbers, not a pitch.</p>
-<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.9.1 · github.com/aldohushi1-stack/glassbox/blob/main/docs/PILOT.md · IT inventory: docs/IT.md</p></body></html>
+<p>Questions: hi@aldo.ltd · Aldo Hushi, BlueprintAU, Adelaide.</p><p class="foot">glassbox-trace 0.10.0 · github.com/aldohushi1-stack/glassbox/blob/main/docs/PILOT.md · IT inventory: docs/IT.md</p></body></html>
