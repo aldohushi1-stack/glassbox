@@ -39,6 +39,7 @@ glassbox compare 81c4 9f0a --out cmp.html     …as one HTML with both sessions 
 glassbox watch                        live tail: the viewer follows the newest session as Claude Code writes it
 glassbox collect ./reports --format md --out fleet.md
                                       one report from a folder of redacted check reports, one per machine
+glassbox claims 81c4 --format md      said vs did: every claim the agent made about its own work, with the tool result behind it — or the gap
 glassbox clean                        remove the temp files `open` and the hook leave behind
 ```
 
@@ -137,6 +138,32 @@ Glassbox adhere · /home/aldo/api
 
 Nine rule shapes are checkable from tool calls — run X before commit/push, run X after changes, use A not B, never run, never touch, ask before, read before edit, commit message format, no new docs — and everything else is listed as *not checkable yet* with its line number, so the report never claims more than it measured. Commands are judged on their shell surface (a `git push --force` inside a document being written is not a force push). The first real run, on the session that built it, scored 22%. Details and the honest caveats in [docs/ADHERE.md](docs/ADHERE.md).
 
+### Said vs did — `glassbox claims`
+
+Every sentence in which the agent told you what it did — "all 76 tests pass", "committed as `753be02`", "live on npm", "nothing changed" — matched to the tool result that should be standing behind it, or to the gap where one should be:
+
+```
+glassbox claims                        the newest session (subagents included)
+glassbox claims 81c4 --format md --out claims.md
+glassbox claims --fail-on unverified   exit 1 on any claim without a receipt (default: contradicted only)
+```
+
+```
+Glassbox claims · 38f81247
+  69 claims · 61 verified · 7 declared · 1 unverified · 0 contradicted
+
+  UNVERIFIED   test     t23  Your folder is as I left it: `master` is GitHub's `main` plus the loop guard and Action commit,…
+               ↳ no test, build, validate or CI result in the window
+  VERIFIED     test     t3   58 of 58 pass.
+               ↳ 58 passed, 0 failed (1 call)
+  VERIFIED     ship     t4   I committed it as `753be02` on branch `wait-aware-findings`: 6 files, 117 lines added and 6 rem…
+               ↳ ship result in the window (1 call)
+  DECLARED     declared t3   Not verified: the browser e2e test (`test/browser.e2e.mjs`) didn't run because Playwright isn't…
+               ↳ the agent said so
+```
+
+Six kinds of claim (tests pass, shipped, verified, fixed, nothing changed, file written), judged on the same agent's tool calls in that turn: a test claim needs a test run after the last edit — from `Bash`, `PowerShell` or Cowork's `device_bash` — with its counts read and compared; a shipped claim needs the commit, push, publish or upload result, carrying the sha or version the sentence names; "nothing changed" needs a `git status` after the thing that could have changed it. An agent that says "not verified" gets a *declared* row and no finding. The same ledger runs inside `check` as three rules — `contradicted-claim` (error), `unverified-claim` (warn), `stale-claim` (info) — so the Stop hook hands the sentence back to the agent that wrote it. On sixteen real sessions (367 claims; three of them checked by hand first) the ledger found one unverified sentence — "the tests still pass", 24 minutes after the last run — five fixes never re-run after their edit, and no contradictions. A verdict is about the sentence, never the code. Details in [docs/CLAIMS.md](docs/CLAIMS.md).
+
 ## What it flags
 
 | rule | fires when |
@@ -157,6 +184,7 @@ Nine rule shapes are checkable from tool calls — run X before commit/push, run
 | `slow-tool` | a tool call ≥ 60 s (warn at 5 min); one line per tool when repeated; blocking `TaskOutput` waits roll up per background task as info; time spent on the human (questions, permission prompts) is excluded |
 | `permission-denied` | tool calls the human rejected, a permission rule or auto mode blocked, or an interrupt stopped (info) |
 | `max-tokens`, `api-error`, `hook-error`, `compaction`, `thinking-heavy`, `subagent-share`, `long-turn` | what they say (`long-turn`: ≥ 30 tool calls after one prompt in the main conversation) |
+| `contradicted-claim`, `unverified-claim`, `stale-claim` | the agent told the human something the transcript contradicts (error), has no receipt for (warn), or checked before its last edit / only partly (info) — see `glassbox claims` above |
 
 Identical findings print once with a `×N` count in `check`. All mechanical, no AI. The thresholds were tuned on a corpus of 33 real sessions (481 findings → 142, median 2 per session); `node scripts/corpus-audit.mjs` re-runs that audit on your own sessions and prints counts only. Thresholds are in `TraceCore.DEFAULTS` and can be overridden when calling `diagnose(trace, opts)`. Every rule has a one-line "next time" in `TraceCore.ADVICE`, which is what the Markdown report and the Stop hook hand back to the agent.
 
@@ -188,6 +216,7 @@ src/viewer.html       the UI; the build inlines trace-core and the demo
 src/cli.mjs           CLI library (session discovery, embed, check, compare, hook); bin/glassbox.mjs is the entry point
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
 src/guard.mjs         the PreToolUse loop guard (`hook --guard`)
+src/claims.mjs        said vs did: claims out of the agent's text, judged against the tool calls (`claims`, and three `check` rules)
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
 scripts/corpus-audit.mjs  run every rule over your local sessions; counts only (--baseline to diff two runs)
