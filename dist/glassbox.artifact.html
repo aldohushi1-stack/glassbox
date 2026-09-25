@@ -401,7 +401,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.9.1';
+  const VERSION = '0.10.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -1326,6 +1326,10 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     'permission-denied': 'Before a call the user may not want (installs, network, deleting, publishing), say what it will do and ask; for calls they always allow, suggest a permissions allow rule so the prompt goes away.',
     'duplicate-subagent-read': 'When several subagents need the same file, put the relevant excerpt in their briefs or have one agent summarise it once, instead of every agent reading it into its own context.',
     'idle-cache-expiry': 'The cache expired while the session sat idle; resume sooner, use the 1-hour cache lifetime where available, or start a fresh session with a summary instead of re-sending the whole history.',
+    // claims ledger (src/claims.mjs): said vs did
+    'unverified-claim': "Say it after you've checked it: a test claim needs a test run after your last edit, a shipped claim needs the command's result in this transcript, a 'nothing changed' claim needs a git status after the thing that could have changed it. If you did not check, say 'not re-run' instead.",
+    'contradicted-claim': 'The transcript disagrees with what you told the user; read the tool result you are summarising before you summarise it, and correct the statement now.',
+    'stale-claim': 'The check you are citing ran before your last edit, or covers only part of what you said; run it again or say exactly what it covered.',
   };
 
   // Advice for a concrete finding: the rule's line, except where the evidence says otherwise.
@@ -1374,7 +1378,7 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
   }
 
   // Rules whose detail quotes tool output or model text (everything else is names and numbers).
-  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error', 'duplicate-subagent-read']);
+  const CONTENT_DETAIL = new Set(['failed-tool', 'api-error', 'hook-error', 'duplicate-subagent-read', 'unverified-claim', 'contradicted-claim', 'stale-claim']);
   function redactDetail(f) { return CONTENT_DETAIL.has(f.id) ? blank(f.detail) : f.detail; }
 
   // ---------------------------------------------------------------------------
