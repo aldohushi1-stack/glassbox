@@ -86,6 +86,7 @@ Each finding: `{ id, severity: error|warn|info, title, detail, evidence: { toolC
 | `slow-tool` | Tool duration ≥ 60 s; ≥ 3 from one tool become one finding; `user`-category calls and denied calls excluded (human time); blocking `TaskOutput` waits roll up per task | info (warn ≥ 300 s); waits always info |
 | `slow-model` | Response time ≥ 60 s with < 1 500 output tokens (latency, rate limit, stall) | warn |
 | `long-generation` | Response time ≥ 60 s with a big output streamed below 15 tok/s | info |
+| `missing-final-usage` | Subagent responses (not main: there it is the live last response) with no record carrying `stop_reason`, excluding API errors, `<synthetic>` and empty usage. `metric` = count; no `cost` (the gap is not waste the agent can recover). Numbers and versions only, so `--redact` keeps the detail | info |
 | `max-tokens` | `stop_reason === 'max_tokens'` | warn |
 | `api-error` | assistant record with `isApiErrorMessage`, or `system` `subtype: api_error` | error |
 | `hook-error` | `stop_hook_summary` with non-empty `hookErrors` | warn |
@@ -313,3 +314,17 @@ Two blind spots, both found by reading three real sessions against the field-not
 **What it is not.** It cannot see checks done outside the transcript, it reads runner output with regexes (an unknown runner yields *unverified*, never *contradicted*), it has no matcher for negative claims ("zero analytics" — the live-site session's self-corrected error is invisible to it), and it is not a lie detector — an unverified claim is a claim without a receipt, and the report says so.
 
 **After it** (outlines in `docs/CLAIMS.md`, *Next rules*): *reward hacking* — `test-loosened` (a literal assertion widened to a wildcard right after a failing run: one true specimen in the three sessions, `4m 46s` → `4m \d\ds`, with three benign look-alikes to test against), `test-skipped`, `expectation-rewritten`, `check-bypassed`; *prompt injection* — directives from external results, host text allowlisted (`<system-reminder>`, tool hints, the Chrome tool's tab notes: 34 of them across the three sessions, all legitimate), "acted on" judged from the next five tool inputs; vocabulary scoring rejected after it ranked Glassbox's own source first.
+
+## 19. v0.10.1 — the cost floor (subagent responses with no final usage)
+
+Reported upstream by Aldo as anthropics/claude-code#93620 (11 Sep 2026): a subagent response is written as one record per content block, and the first record's `output_tokens` is a partial running count. 0.5.0 took the largest value per field, which is right when the last record is final. On 27–28 Sep two other users measured that on recent versions (a Windows machine, 2.1.247–2.1.283; a macOS machine, 2.1.219–2.1.281) most subagent responses **never get a final record**: every record has `stop_reason: null`, `usage` lacks the final-only keys, and `output_tokens` is a small partial count. 67% of subagent responses on 2.1.281 (0.5% on 2.1.280); input and cache fields are unaffected. The output is not on disk anywhere, so no parser can recover it.
+
+What 0.10.1 does, test-first (`test/usage-floor.test.mjs`, 10 tests):
+
+- `req.usageFinal` — false for a subagent response with no `stop_reason` on any record (API errors, `<synthetic>` and empty usage excluded). The main transcript is never judged: there that shape is the live, unfinished last response.
+- `totals.usagePartial` — `{ responses, of, outputSeen, versions, agents, estimate }`. `estimate` = the median output of the session's complete subagent `tool_use` responses (≥ 5 of them, else null), and `missingOutput` = Σ max(0, median − seen). Median, not mean: file writes make the mean jumpy. It is an estimate of a lower bound's gap, and labelled as one everywhere.
+- `estimateCost()` adds `lowerBound`, `partialResponses`, `missing` (the estimate priced at each request's output rate). A run-reported cost (stream-json `total_cost_usd`) is the bill and is never a floor.
+- Rule `missing-final-usage`, **info** on purpose: it is not the agent's doing, so it must not fail `--fail-on warn` in CI or come back through the Stop hook's feedback. `ADVICE` tells the reader to compare against Claude Code's own total.
+- Surfaces: markdown report (`est. cost at least $X` + a floor line), check JSON (`summary.costLowerBound`, `summary.usagePartial`; schema stays 2, additive), `collect` (fleet cost `at least`, a *Cost floor* row, `≥` in text), viewer cost tile (`≥ $X`, "a floor — N subagent responses missing final usage · ~$Y more").
+- The repo's own real fixture (Claude Code 2.1.261, 5 Sep 2026) already had it: 5 of its 6 subagent responses have no final record.
+

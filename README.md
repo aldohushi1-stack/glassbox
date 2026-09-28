@@ -181,6 +181,7 @@ Six kinds of claim (tests pass, shipped, verified, fixed, nothing changed, file 
 | `low-cache-hit` | < 50% of input served from cache over ≥ 5 requests |
 | `slow-model` | ≥ 60 s for a response under 1,500 tokens (latency / rate limit / stall) |
 | `long-generation` | ≥ 60 s for a big response streamed below 15 tok/s |
+| `missing-final-usage` | subagent responses whose final usage record never reached the transcript — the cost shown is a floor, with an estimate of the gap (info; a Claude Code bug, [#93620](https://github.com/anthropics/claude-code/issues/93620), not the agent's doing) |
 | `slow-tool` | a tool call ≥ 60 s (warn at 5 min); one line per tool when repeated; blocking `TaskOutput` waits roll up per background task as info; time spent on the human (questions, permission prompts) is excluded |
 | `permission-denied` | tool calls the human rejected, a permission rule or auto mode blocked, or an interrupt stopped (info) |
 | `max-tokens`, `api-error`, `hook-error`, `compaction`, `thinking-heavy`, `subagent-share`, `long-turn` | what they say (`long-turn`: ≥ 30 tool calls after one prompt in the main conversation) |
@@ -190,7 +191,7 @@ Identical findings print once with a `×N` count in `check`. All mechanical, no 
 
 ## Token and cost accounting
 
-- Usage is counted once per API request (assistant records sharing a `requestId`), not once per record. Subagent transcripts rewrite `output_tokens` while a response streams, so the largest value across the request's records is used.
+- Usage is counted once per API request (assistant records sharing a `requestId`), not once per record. Subagent transcripts rewrite `output_tokens` while a response streams, so the largest value across the request's records is used. Since Claude Code ~2.1.278 many subagent responses never get their final record written at all (every record has `stop_reason: null` and a partial count — [anthropics/claude-code#93620](https://github.com/anthropics/claude-code/issues/93620)); those output tokens are not on disk anywhere, so Glassbox counts the responses, shows the cost as **≥ $X** (a floor) and estimates the gap from the median of the session's own complete subagent tool-use responses (needs five). Compare with Claude Code's own total (`/cost`, the status line) before budgeting from a floor.
 - Context size = uncached input + cache read + cache write — the prompt the model actually saw.
 - Thinking tokens are part of output tokens; shown as a share, never added twice.
 - Cost is estimated from an editable rate card (defaults from the Claude pricing page, 2026-09-05; prefix-matched so dated model ids resolve). A `stream-json` `result` record with `total_cost_usd` overrides the estimate. Unknown models show "—" rather than a wrong number.
