@@ -1,6 +1,6 @@
 # Glassbox for IT
 
-_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.10.0. If anything here stops being true, that is a bug — open an issue._
+_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.10.1. If anything here stops being true, that is a bug — open an issue._
 
 Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.
 
@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 15 files, ~340 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.10.0` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 15 files, ~340 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.10.1` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -74,7 +74,7 @@ Two things to know about **context** before turning it on for a team:
 
 Because it starts `node` before every tool call, `hook install --guard` writes a direct command, `node "<install dir>/bin/glassbox.mjs" hook … --guard`, for every hook it installs, and refuses to run from an npx cache, where each call would cost seconds. It is not in the plugin: a plugin's hooks run for every user of the plugin, whether or not they want the guard.
 
-**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.10.0`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
+**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.10.1`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
 
 Glassbox never approves or alters a tool call. The only PreToolUse hook is the opt-in guard above, and its only decision is to deny.
 
