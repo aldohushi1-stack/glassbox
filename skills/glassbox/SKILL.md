@@ -30,6 +30,7 @@ node "${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs" check ${CLAUDE_SESSION_ID} --forma
 3. Otherwise state in one or two sentences what you will do differently for the rest of the session (for example: stop repeating a failing command, read narrower file ranges, keep large outputs out of context). Do not redo finished work because of a finding.
 4. Refer to findings by rule id (`retry-loop`, `context-bloat`, ...). Paste the full report only if the user asks for it.
 5. An `unverified-claim` or `contradicted-claim` finding quotes a sentence you told the user with no tool result behind it in this transcript, or one the transcript contradicts. Run the check the sentence needs (the test, the `git status`, the `npm view`) and correct the sentence if the result differs; if you cannot check, say so in the words "not verified" rather than restating the claim.
+6. A `missing-final-usage` finding is not something you did: Claude Code did not write some subagent responses' final usage to disk (anthropics/claude-code#93620), so the cost is a floor. When you report the session's cost, say "at least" and give the estimate; don't try to fix it.
 
 ## Other commands
 
