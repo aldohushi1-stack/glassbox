@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.10.0';
+  const VERSION = '0.10.1';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -417,7 +417,7 @@
           let turn = currentTurn(a.id);
           if (!turn) turn = ensureTurn(rec, 'implicit', '');
           req = {
-            id: key, agent: a.id, model: msg.model || null, stopReason: null, start: t, end: t,
+            id: key, agent: a.id, model: msg.model || null, stopReason: null, start: t, end: t, version: rec.version || null,
             usage: emptyUsage(), blocks: [], turnIndex: turn.index, contextTokens: 0, records: 0,
             isApiError: !!rec.isApiErrorMessage, uuid: rec.uuid || null,
           };
@@ -432,6 +432,7 @@
         maxUsage(req.usage, usageFrom(msg.usage)); // turn and agent totals are summed once, after the loop
         req.records++;
         if (msg.stop_reason) req.stopReason = msg.stop_reason;
+        if (!req.version && rec.version) req.version = rec.version;
         if (rec.isApiErrorMessage) req.isApiError = true;
         const content = Array.isArray(msg.content) ? msg.content : (msg.content != null ? [{ type: 'text', text: String(msg.content) }] : []);
         const blockIndex = typeof rec.apiBlockIndex === 'number' ? rec.apiBlockIndex : req.blocks.length;
@@ -469,6 +470,10 @@
       req.contextTokens = req.usage.input + req.usage.cacheRead + req.usage.cacheWrite;
       addUsage(turns[req.turnIndex].usage, req.usage);
       addUsage(agents.get(req.agent).usage, req.usage);
+      // A response whose records all have stop_reason null never got its final record written, so its
+      // output_tokens is a partial running count. Only subagent transcripts are judged: in the main
+      // transcript that shape is the live, unfinished last response (anthropics/claude-code#93620).
+      req.usageFinal = !(req.agent !== 'main' && !req.stopReason && !req.isApiError && req.model !== '<synthetic>' && !isEmptyUsage(req.usage));
     }
     for (const turn of turns) if (turn.end == null) turn.end = meta.end;
     // Response timing. Assistant record timestamps are written when a block finishes streaming,
@@ -528,10 +533,26 @@
       toolTimeMs: toolCalls.filter((c) => c.agent === 'main').reduce((s, c) => s + (c.durationMs || 0), 0),
       modelTimeMs: agents.get('main').modelTimeMs || 0,
       cacheHitRatio: (usage.cacheRead + usage.cacheWrite + usage.input) ? usage.cacheRead / (usage.cacheRead + usage.cacheWrite + usage.input) : null,
-      attachments,
+      attachments, usagePartial: usagePartial(requests),
     };
 
     return { version: VERSION, meta, requests, toolCalls, turns, agents: agentList, events, problems, totals };
+  }
+
+  // Subagent responses with no final usage record: how many, what was seen, and an estimate of the gap from the
+  // session's own complete subagent tool_use responses (median; needs at least five to go on).
+  function usagePartial(requests) {
+    const sub = requests.filter((r) => r.agent !== 'main' && r.model !== '<synthetic>' && !r.isApiError && !isEmptyUsage(r.usage));
+    const partial = sub.filter((r) => r.usageFinal === false);
+    const out = { responses: partial.length, of: sub.length, outputSeen: partial.reduce((n, r) => n + r.usage.output, 0), versions: Array.from(new Set(partial.map((r) => r.version).filter(Boolean))).sort(), agents: new Set(partial.map((r) => r.agent)).size, estimate: null };
+    if (!partial.length) return out;
+    const basis = sub.filter((r) => r.usageFinal && r.stopReason === 'tool_use').map((r) => r.usage.output).sort((a, b) => a - b);
+    if (basis.length >= 5) {
+      const mid = basis.length >> 1;
+      const median = basis.length % 2 ? basis[mid] : (basis[mid - 1] + basis[mid]) / 2;
+      out.estimate = { basis: basis.length, median, missingOutput: partial.reduce((n, r) => n + Math.max(0, median - r.usage.output), 0) };
+    }
+    return out;
   }
 
   function pushModel(meta, m) { if (m && !meta.models.includes(m)) meta.models.push(m); }
@@ -819,6 +840,21 @@
       if (e.kind === 'compact') push({ id: 'compaction', severity: 'info', title: 'Context was compacted', detail: e.detail, evidence: { at: e.at } });
     }
 
+    // missing-final-usage: the transcript under-counts subagent output (Claude Code bug, not the agent's doing)
+    const P = trace.totals.usagePartial;
+    if (P && P.responses > 0) {
+      const c = estimateCost(trace, o.rates);
+      const est = P.estimate
+        ? ` From the median of ${P.estimate.basis} complete subagent tool-use responses in this session (${fmtInt(P.estimate.median)} output tokens each), about ${fmtInt(P.estimate.missingOutput)} output tokens${c.missing != null ? ` (~${usd(c.missing)})` : ''} are not counted.`
+        : ' Too few complete subagent responses in this session (fewer than 5) to estimate the gap.';
+      push({
+        id: 'missing-final-usage', severity: 'info',
+        title: `Cost is a floor: ${P.responses} of ${P.of} subagent responses never recorded their final output tokens`,
+        detail: `These responses were written to the subagent transcript with stop_reason null on every record and only a partial running output_tokens count (${fmtInt(P.outputSeen)} tokens across all of them), so their real output is not on disk.${est} Claude Code ${P.versions.join(', ') || '(version not recorded)'}; known transcript issue anthropics/claude-code#93620.`,
+        evidence: { requestIds: trace.requests.filter((r) => r.usageFinal === false).slice(0, 20).map((r) => r.id) }, metric: P.responses,
+      });
+    }
+
     // thinking-heavy
     const u = trace.totals.usage;
     if (u.output >= o.thinkingHeavyMinOutput && u.thinking / u.output > o.thinkingHeavyShare) push({
@@ -902,7 +938,17 @@
       byAgent[r.agent] = (byAgent[r.agent] || 0) + c;
     }
     const complete = known === trace.requests.length;
+    // Floor: some subagent responses never recorded their final output (see usagePartial). A run-reported cost
+    // is the real bill and stays as it is.
+    const P = (trace.totals && trace.totals.usagePartial) || { responses: 0, estimate: null };
+    const lowerBound = P.responses > 0 && trace.meta.reportedCost == null;
+    let missing = null;
+    if (lowerBound && P.estimate) {
+      missing = 0;
+      for (const r of trace.requests) { if (r.usageFinal !== false) continue; const rate = rateFor(r.model, rates); if (rate) missing += Math.max(0, P.estimate.median - r.usage.output) * rate.out / 1e6; }
+    }
     return {
+      lowerBound, partialResponses: P.responses, missing,
       total: known ? total : null, complete, byRequest, byModel, byAgent, unknownModels: Array.from(unknownModels),
       reported: trace.meta.reportedCost, source: trace.meta.reportedCost != null ? 'reported' : (known ? 'estimated' : 'unknown'),
     };
@@ -930,6 +976,7 @@
     'compaction': 'Context was compacted; state that matters later (decisions, file paths, test status) should be written to a file or note before it is summarised away.',
     'thinking-heavy': 'Most output tokens were thinking; fine for hard problems, but for routine tool loops a lower effort setting is cheaper and just as good.',
     'subagent-share': 'Most spend was in subagents; give them narrower briefs and ask for short structured returns so the parent pays for less.',
+    'missing-final-usage': "Not the agent's doing: Claude Code did not write these subagent responses' final usage to disk. Treat the transcript cost as a floor and check it against Claude Code's own total (/cost or the status line) before budgeting from it.",
     'long-turn': 'A very long autonomous turn; check in with a short progress summary at natural checkpoints so wasted work is caught earlier.',
     'permission-denied': 'Before a call the user may not want (installs, network, deleting, publishing), say what it will do and ask; for calls they always allow, suggest a permissions allow rule so the prompt goes away.',
     'duplicate-subagent-read': 'When several subagents need the same file, put the relevant excerpt in their briefs or have one agent summarise it once, instead of every agent reading it into its own context.',
@@ -1036,7 +1083,9 @@
     out.push(`# Glassbox report — ${oneLine(R(m.title || opts.title || 'session'), 90)}`, '');
     out.push(`- session: ${m.sessionId || '—'} · model: ${m.models.join(', ') || '—'}${m.start ? ' · started: ' + new Date(m.start).toISOString() : ''}`);
     out.push(`- wall ${fmtDur(T.wallMs)} (active ${fmtDur(T.activeMs)}) · ${T.turns} turn${T.turns === 1 ? '' : 's'} · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
-    out.push(`- tokens: ${fmtInt(u.input + u.cacheRead + u.cacheWrite)} context served (${pctStr(T.cacheHitRatio)} cached) · peak prompt ${fmtInt(Math.max(0, ...trace.requests.map((r) => r.contextTokens)))} · ${fmtInt(u.output)} output (${fmtInt(u.thinking)} thinking) · est. cost ${usd(total)}${cost && cost.source === 'reported' ? ' (reported)' : ''}`, '');
+    out.push(`- tokens: ${fmtInt(u.input + u.cacheRead + u.cacheWrite)} context served (${pctStr(T.cacheHitRatio)} cached) · peak prompt ${fmtInt(Math.max(0, ...trace.requests.map((r) => r.contextTokens)))} · ${fmtInt(u.output)} output (${fmtInt(u.thinking)} thinking) · est. cost ${cost && cost.lowerBound ? 'at least ' : ''}${usd(total)}${cost && cost.source === 'reported' ? ' (reported)' : ''}`);
+    if (cost && cost.lowerBound) out.push(`- cost is a floor: ${cost.partialResponses} subagent response${cost.partialResponses === 1 ? '' : 's'} never recorded their final output tokens (anthropics/claude-code#93620)${cost.missing != null ? `; estimated ~${fmtInt(T.usagePartial.estimate.missingOutput)} output tokens, ~${usd(cost.missing)} more` : ''}.`);
+    out.push('');
     if (!findings.length) out.push('## Findings', '', 'Nothing flagged — a clean session, or a very short one.', '');
     else {
       out.push(`## Findings (${findings.length})`, '');

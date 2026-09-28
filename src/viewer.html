@@ -475,8 +475,8 @@ kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;b
     const t = S.trace, T = t.totals, u = T.usage, cost = S.cost;
     const ctx = u.input + u.cacheRead + u.cacheWrite;
     const errs = S.findings.filter((f) => f.severity === 'error').length, warns = S.findings.filter((f) => f.severity === 'warn').length, infos = S.findings.filter((f) => f.severity === 'info').length;
-    const costV = cost.reported != null ? fmtUSD(cost.reported) : cost.total != null ? fmtUSD(cost.total) : '—';
-    const costS = cost.reported != null ? 'reported by the run' : cost.total != null ? (cost.complete ? 'estimated from rate card' : 'partial — unknown model') : (cost.unknownModels.length ? 'unknown model: set a rate' : 'no usage data');
+    const costV = cost.reported != null ? fmtUSD(cost.reported) : cost.total != null ? (cost.lowerBound ? '≥ ' : '') + fmtUSD(cost.total) : '—';
+    const costS = cost.reported != null ? 'reported by the run' : cost.total != null ? (cost.lowerBound ? `a floor — ${cost.partialResponses} subagent response${cost.partialResponses === 1 ? '' : 's'} missing final usage${cost.missing != null ? ` · ~${fmtUSD(cost.missing)} more` : ''}` : cost.complete ? 'estimated from rate card' : 'partial — unknown model') : (cost.unknownModels.length ? 'unknown model: set a rate' : 'no usage data');
     const tiles = [
       ['Wall time', fmtDur(T.wallMs), T.humanIdleMs ? `${fmtDur(T.activeMs)} active · ${fmtDur(T.humanIdleMs)} waiting on you` : (t.meta.hasTimestamps ? 'no human idle' : 'no timestamps in file')],
       ['Turns', fmtInt(T.turns), `${fmtInt(T.requests)} API requests`],

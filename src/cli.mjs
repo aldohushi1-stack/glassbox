@@ -186,7 +186,7 @@ export function checkReport({ trace, findings, cost, claims }, opts = {}) {
   const redact = !!opts.redact;
   const legend = opts.legend || null;
   const keyed = (p) => legend ? legend.keyFor(p) : p;
-  const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source, start: m.start != null ? new Date(m.start).toISOString() : null, end: m.end != null ? new Date(m.end).toISOString() : null };
+  const summary = { session: m.sessionId, title: m.title ? (redact ? '«' + m.title.length + ' chars»' : m.title) : null, model: m.models, wallMs: T.wallMs, activeMs: T.activeMs, turns: T.turns, requests: T.requests, toolCalls: T.toolCalls, toolErrors: T.toolErrors, orphans: T.orphans, usage: T.usage, cacheHitRatio: T.cacheHitRatio, cost: cost.reported != null ? cost.reported : cost.total, costSource: cost.source, costLowerBound: !!cost.lowerBound, usagePartial: { responses: T.usagePartial.responses, of: T.usagePartial.of, outputSeen: T.usagePartial.outputSeen, versions: T.usagePartial.versions, estimatedMissingOutput: T.usagePartial.estimate ? T.usagePartial.estimate.missingOutput : null, estimatedMissingCost: cost.missing }, start: m.start != null ? new Date(m.start).toISOString() : null, end: m.end != null ? new Date(m.end).toISOString() : null };
   // Per-file use, keyed when a legend is given; with --redact and no legend the paths would leak, so it is omitted.
   if (legend || !redact) summary.files = core.fileStats(trace).map((r) => ({ key: legend ? legend.keyFor(r.path) : r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agents, chars: r.chars }));
   if (claims) summary.claims = claims.summary; // said vs did, in one line of numbers (additive; schema stays 2)
@@ -204,7 +204,7 @@ export function checkReport({ trace, findings, cost, claims }, opts = {}) {
   const lines = [];
   lines.push(`Glassbox · ${m.sessionId ? m.sessionId.slice(0, 8) : 'session'} · ${m.models.join(', ') || 'unknown model'}`);
   lines.push(`  wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
-  lines.push(`  context served ${fi(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} tokens (${T.cacheHitRatio != null ? Math.round(T.cacheHitRatio * 100) + '% cached' : 'no usage'}) · output ${fi(T.usage.output)} (${fi(T.usage.thinking)} thinking) · est. cost ${usd(summary.cost)}`);
+  lines.push(`  context served ${fi(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} tokens (${T.cacheHitRatio != null ? Math.round(T.cacheHitRatio * 100) + '% cached' : 'no usage'}) · output ${fi(T.usage.output)} (${fi(T.usage.thinking)} thinking) · est. cost ${summary.costLowerBound ? '≥ ' : ''}${usd(summary.cost)}${summary.costLowerBound ? ' (floor)' : ''}`);
   lines.push('');
   if (!findings.length) lines.push('  no findings');
   for (const g of collapseFindings(findings)) lines.push('  ' + findingLine(g));

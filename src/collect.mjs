@@ -101,6 +101,9 @@ export function collect(sources, opts = {}) {
     findings: sum(sessions, (s) => s.findings.length), errors: sum(sessions, (s) => s.findings.filter((f) => f.severity === 'error').length), warns: sum(sessions, (s) => s.findings.filter((f) => f.severity === 'warn').length),
     failed: sessions.filter((s) => s.failed).length,
     estimated: sessions.some((s) => s.summary.costSource !== 'reported'),
+    // Sessions whose transcript cost is a floor (subagent responses with no final usage, anthropics/claude-code#93620).
+    lowerBoundSessions: sessions.filter((s) => s.summary.costLowerBound).length,
+    partialResponses: sum(sessions, (s) => s.summary.usagePartial && s.summary.usagePartial.responses),
   };
   const top = topN(opts.top || 5).map((s) => ({ source: s.source, session: s.summary.session, cost: s.summary.cost || 0, share: cost ? (s.summary.cost || 0) / cost : 0, wallMs: s.summary.wallMs, turns: s.summary.turns, requests: s.summary.requests, findings: s.findings.length, worst: s.findings.slice().sort((a, b) => SEV[a.severity] - SEV[b.severity])[0] || null, model: s.summary.model }));
   return {
@@ -121,7 +124,8 @@ export function collectMarkdown(r) {
   L.push(`_${T.sources} source${T.sources === 1 ? '' : 's'} · ${T.sessions} session${T.sessions === 1 ? '' : 's'}${r.since ? ` since ${r.since.slice(0, 10)}` : ''} · generated ${r.generated.slice(0, 16).replace('T', ' ')} UTC by Glassbox ${r.glassbox}. Counts, keys and findings only — no session text._`, '');
   L.push(`## Totals`, '');
   L.push(`| | |`, `|---|---|`);
-  L.push(`| Cost${T.estimated ? ' (estimated from the rate card)' : ''} | **${usd(T.cost)}** |`);
+  L.push(`| Cost${T.estimated ? ' (estimated from the rate card)' : ''} | ${T.lowerBoundSessions ? 'at least ' : ''}**${usd(T.cost)}** |`);
+  if (T.lowerBoundSessions) L.push(`| Cost floor | ${T.lowerBoundSessions} session${T.lowerBoundSessions === 1 ? '' : 's'} a floor — ${fi(T.partialResponses)} subagent response${T.partialResponses === 1 ? '' : 's'} never recorded final usage (anthropics/claude-code#93620) |`);
   L.push(`| Wall / active time | ${fmt(T.wallMs)} / ${fmt(T.activeMs)} |`);
   L.push(`| Requests / tool calls / tool errors | ${fi(T.requests)} / ${fi(T.toolCalls)} / ${fi(T.toolErrors)} |`);
   L.push(`| Findings (error / warn) | ${fi(T.findings)} (${fi(T.errors)} / ${fi(T.warns)}) |`);
@@ -159,7 +163,7 @@ export function collectText(r) {
   const T = r.totals, fmt = core.fmtDur, fi = core.fmtInt;
   const L = [];
   L.push(`Glassbox fleet · ${T.sources} source${T.sources === 1 ? '' : 's'} · ${T.sessions} session${T.sessions === 1 ? '' : 's'}${r.since ? ` since ${r.since.slice(0, 10)}` : ''}`);
-  L.push(`  cost ${usd(T.cost)}${T.estimated ? ' (est.)' : ''} · wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${fi(T.requests)} requests · ${fi(T.toolCalls)} tool calls (${fi(T.toolErrors)} failed)`);
+  L.push(`  cost ${T.lowerBoundSessions ? '≥ ' : ''}${usd(T.cost)}${T.estimated ? ' (est.)' : ''}${T.lowerBoundSessions ? ` (${T.lowerBoundSessions} session${T.lowerBoundSessions === 1 ? '' : 's'} a floor)` : ''} · wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${fi(T.requests)} requests · ${fi(T.toolCalls)} tool calls (${fi(T.toolErrors)} failed)`);
   L.push(`  ${fi(T.findings)} findings (${fi(T.errors)} error, ${fi(T.warns)} warn) · ${fi(T.failed)} session${T.failed === 1 ? '' : 's'} failing`);
   if (T.sessions) L.push(`  ${r.concentration.halfOfSpendSessions} session${r.concentration.halfOfSpendSessions === 1 ? '' : 's'} = half the spend; top ${r.concentration.top.length} = ${pct(r.concentration.topShare)}`);
   L.push('');
