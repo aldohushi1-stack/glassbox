@@ -9,12 +9,13 @@ export function session(opts = {}) {
   const agentId = opts.agentId || null;
   let t = opts.start || Date.parse('2026-09-05T10:00:00.000Z');
   const model = opts.model || 'claude-sonnet-4-5-20250929';
+  const version = opts.version || '2.1.261';
   const records = [];
   let parent = null;
   let context = opts.context || 20000;
 
   const base = (extra) => {
-    const r = Object.assign({ parentUuid: parent, isSidechain: !!agentId, userType: 'external', cwd: opts.cwd || '/work', sessionId, version: '2.1.261', gitBranch: 'main', uuid: uid('u'), timestamp: new Date(t).toISOString() }, extra);
+    const r = Object.assign({ parentUuid: parent, isSidechain: !!agentId, userType: 'external', cwd: opts.cwd || '/work', sessionId, version, gitBranch: 'main', uuid: uid('u'), timestamp: new Date(t).toISOString() }, extra);
     if (agentId) r.agentId = agentId;
     parent = r.uuid;
     records.push(r);
@@ -47,7 +48,9 @@ export function session(opts = {}) {
         cache_creation: { ephemeral_5m_input_tokens: u.w5m != null ? u.w5m : 0, ephemeral_1h_input_tokens: u.w1h != null ? u.w1h : (u.cacheWrite != null ? u.cacheWrite : 500) },
       };
       context = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens + output;
-      const stop = u.stopReason || (blocks.some((b) => b.tool) ? 'tool_use' : 'end_turn');
+      // u.noFinal: the response's final record never reached the file (every record stop_reason null,
+      // output_tokens a partial running count) — what subagent transcripts do since ~2.1.278 (#93620).
+      const stop = u.noFinal ? null : (u.stopReason || (blocks.some((b) => b.tool) ? 'tool_use' : 'end_turn'));
       const ids = [];
       blocks.forEach((b, i) => {
         let block;
