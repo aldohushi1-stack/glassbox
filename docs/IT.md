@@ -1,6 +1,6 @@
 # Glassbox for IT
 
-_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.10.1. If anything here stops being true, that is a bug — open an issue._
+_What it reads, what it writes, what it runs, what it sends. Written for the person who has to approve it, checked against the source of glassbox-trace 0.11.0. If anything here stops being true, that is a bug — open an issue._
 
 Glassbox is a viewer and a checker for the transcript files Claude Code already writes to every developer's machine. It has no server, no account, no telemetry and no runtime dependencies. Everything below runs as the user, on the user's machine.
 
@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 15 files, ~340 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.10.1` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 17 files, ~370 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.11.0` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -18,7 +18,7 @@ For a managed fleet the simplest shape is: the HTML file on an internal share (n
 
 **The viewer makes no network requests.** Fonts, scripts and the demo session are inside the file. This is enforced by the test suite: `test/offline.test.mjs` fails the build if the file references anything that is not a `data:` URL, and the browser test logs every request the page makes and fails if any is not `file:`, `data:` or `blob:`. (Versions up to 0.6.1 loaded one stylesheet from `fonts.googleapis.com`; that is gone.)
 
-**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `fence`, `adhere`, `claims`, `hook` and `watch` open no sockets to anything outside the machine.
+**The CLI makes no network requests.** `list`, `open`, `check`, `compare`, `reveal`, `collect`, `clean`, `fence`, `adhere`, `claims`, `recall`, `memory`, `hook` and `watch` open no sockets to anything outside the machine.
 
 `glassbox watch` starts an HTTP server bound to `127.0.0.1` on a random free port (or `--port N`) for the lifetime of the command, to stream the transcript to the browser tab it opens. It is not reachable from other machines and stops with Ctrl+C.
 
@@ -31,6 +31,8 @@ The only network activity is installation: npm fetching the package (`npx` does 
 - `~/.claude/settings.json` — only by `hook install` / `hook uninstall`, and by the plugin hook to see whether a CLI hook is already installed.
 - `--rates FILE` / `GLASSBOX_RATES` (a rate card), `--legend FILE` (a legend), `--key FILE` (a fence key), when given.
 - `glassbox fence` with no target also reads `~/.claude/history.jsonl`, `paste-cache/`, `file-history/`, `debug/` and `shell-snapshots/` (§6b).
+- `glassbox recall` reads the transcripts of one project (the folder Claude Code keeps for it) and `<project>/.glassbox/memory.json`; `glassbox memory` reads `memory.json` and `last-session.md`; the SessionStart hook with `--context` reads both (§6e).
+- `glassbox memory audit` reads the instruction files Claude Code loads at startup — the managed policy `CLAUDE.md`, `~/.claude/CLAUDE.md` and `~/.claude/rules/`, `CLAUDE.md` / `CLAUDE.local.md` in the project and every directory above it, `.claude/CLAUDE.md`, `.claude/rules/`, `AGENTS.md`, the files they `@import` — plus the auto-memory folder `~/.claude/projects/<project>/memory/`, the `autoMemory*` keys of `~/.claude/settings.json` and the project's `package.json` (§6e).
 - In the browser, **Open folder…** uses the File System Access API (Chrome/Edge): the user picks a folder, the browser asks permission, and the page reads `.jsonl` files under it. The permission is per site and per folder, revocable in the browser.
 
 These transcripts contain everything the agent saw: prompts, file contents, command output. Glassbox does not change that fact; it reads what is already on disk.
@@ -46,7 +48,9 @@ These transcripts contain everything the agent saw: prompts, file contents, comm
 | `glassbox fence --shred` | the scanned files, in place (via `<file>.glassbox-shred~` + rename) | the same files with each secret replaced by `[FENCED:<rule>:<fingerprint>]` | permanent, no backup |
 | `glassbox hook install` | `~/.claude/settings.json` (+ `settings.json.glassbox-backup`) | a `Stop` hook entry, plus `SessionStart` with `--context` and `PreToolUse` with `--guard` | until `hook uninstall` |
 | Stop hook with `--feedback` / plugin option `feedback` | `<temp>/glassbox-hook/<session-id>.json` | ids and titles of findings already handed back (counts and rule names; a title can name a tool or, for `duplicate-subagent-read`, a file path) | not deleted automatically |
-| Stop hook with `--context` / plugin option `context` | `<project>/.glassbox/last-session.md` and `<project>/.glassbox/.gitignore` | the findings report for that session (≤ 6,000 chars; quotes tool inputs and outputs the way `check --format md` does) and, with feedback on, the agent's one-line reply | deleted by the hook after a clean session; `.gitignore` keeps it out of git |
+| Stop hook with `--context` / plugin option `context` | `<project>/.glassbox/last-session.md` and `<project>/.glassbox/.gitignore` | the findings report for that session (≤ 6,000 chars; quotes tool inputs and outputs the way `check --format md` does) and, with feedback on, the agent's one-line reply; secrets a `fence` detector recognises are masked; owner-only (0600) when created | deleted by the hook after a clean session; `.gitignore` keeps it out of git |
+| Stop and SessionStart hooks with `--context` | `<project>/.glassbox/memory.json` (via `memory.json.<pid>.tmp` + rename) | a digest of each of the project's last 50 sessions — up to five prompts (200 chars each), the agent's last words in three turns (280 chars each), files written, checks / pushes / publishes run and how they ended, commit shas and subjects, finding ids — plus lessons (rule, tool or file, title, one example call) and which lessons each session started with; secrets a `fence` detector recognises are masked; owner-only (0600) | until `glassbox memory clear`; sessions beyond the last 50 drop out; `.gitignore` keeps it out of git |
+| `glassbox memory forget` / `clear` | `memory.json` rewritten / `memory.json` and `last-session.md` deleted | — | — |
 | viewer **Export report** / **Export redacted** | a download the user saves | Markdown findings / structure-only `.jsonl` | user's choice |
 
 Nothing is written anywhere else. There is no config file, no cache and no state outside the rows above.
@@ -63,18 +67,18 @@ Claude Code runs hooks as the user, with the hook's JSON on stdin and a JSON rep
 
 **Stop** (every time Claude Code finishes a turn). Reads the transcript named in the hook input, runs the rules, and returns a one-screen summary (turns, tool calls, context peak, cost, top findings) that Claude Code shows in the terminal. Timeout 60 s. Always exits 0 — it never blocks a session because it failed. With **feedback** on (off by default), when a finding at or above the threshold has not been shown before in that session, the hook returns `decision: "block"` once with the findings as the reason; Claude reads them, answers in a sentence what it would do differently, then stops. That extra turn costs tokens (one short reply) and happens at most once per new finding per session.
 
-**SessionStart** (does something only with `--context` / plugin option `context`; off by default — the CLI installs it only with `--context`, the plugin always registers it and it adds nothing to the session while the option is off). If `<project>/.glassbox/last-session.md` exists, its text is returned as `additionalContext`, so the next session in that project starts knowing what went wrong last time. Timeout 15 s (plugin) or 60 s (CLI).
+**SessionStart** (does something only with `--context` / plugin option `context`; off by default — the CLI installs it only with `--context`, the plugin always registers it and it adds nothing to the session while the option is off). On `startup`, `clear` and `compact` (not `resume` or `fork`) it returns a note as `additionalContext`, so the next session in that project starts knowing what went wrong and what was done: the lessons still recurring (findings counted across the last sessions, with their "next time" line), a line per recent session (prompt, files written, checks run, commits), and the previous session's notes — at most 8,000 characters, under Claude Code's 10,000-character cap. On `startup` and `clear` it records in `memory.json` which lessons the session was told. `glassbox memory` prints the exact note. Timeout 15 s (plugin) or 60 s (CLI).
 
 Two things to know about **context** before turning it on for a team:
 
-1. It puts a file in the project directory whose contents are fed to the next session's model. The file is written by the hook from the transcript, and it is git-ignored, but anyone who can write to that directory can change what the next session is told. Treat `.glassbox/` like any other file that shapes agent behaviour (`CLAUDE.md`, `.claude/settings.json`).
-2. The notes quote from the session (tool inputs and outputs, up to 6,000 chars). On a shared project directory that is data at rest.
+1. It puts files in the project directory whose contents are fed to the next session's model. They are written by the hook from the transcripts, and git-ignored, but anyone who can write to that directory can change what the next session is told. Treat `.glassbox/` like any other file that shapes agent behaviour (`CLAUDE.md`, `.claude/settings.json`); `glassbox memory` shows what the next session will get.
+2. The notes quote from the sessions (prompts, the agent's last words, commands, file paths, tool inputs and outputs). Recognisable secrets are masked and the files are owner-only, but on a shared project directory that is still data at rest. `glassbox memory clear` removes it.
 
 **PreToolUse — the loop guard** (CLI only, installed with `hook install --guard`; off by default; not in the plugin). Runs before every tool call, for every tool. It reads the last 4 MB of the session's transcript (for a subagent's call, the subagent's own transcript) and looks only at the current turn. If the call about to run is the same as one that has already failed twice in a row — same tool, same input, ignoring `description`, `timeout` and `run_in_background` — with nothing in between but reads, it returns `permissionDecision: "deny"` with a reason that quotes the first line of the last error (≤ 300 chars); Claude Code doesn't run that call and the model gets the reason instead. In every other case it prints nothing, which leaves Claude Code's normal permission flow in charge. It never returns `allow` and never changes a tool's input. A success, an edit, any other non-read call, a new human prompt, or the same call rejected or interrupted by a person resets the count. It writes nothing and opens no sockets; on any error it prints nothing and exits 0. Timeout 10 s. Replayed over 4,121 tool calls from 33 real sessions, it denied none.
 
 Because it starts `node` before every tool call, `hook install --guard` writes a direct command, `node "<install dir>/bin/glassbox.mjs" hook … --guard`, for every hook it installs, and refuses to run from an npx cache, where each call would cost seconds. It is not in the plugin: a plugin's hooks run for every user of the plugin, whether or not they want the guard.
 
-**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.10.1`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
+**How the CLI hook is invoked.** `glassbox hook install` writes the command `npx -y glassbox-trace hook …` into `settings.json`, so each run resolves the package through npm (cached after the first). To pin: `npm i -g glassbox-trace@0.11.0`, then `glassbox hook install --command glassbox …`, or use the plugin, whose hooks run `node ${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs` — the bundled copy, no npx. With `--guard` the command is the direct `node "…/bin/glassbox.mjs"` form above, so nothing goes through npx. If a CLI hook is present, the plugin's hooks see it and do nothing, so nothing runs twice.
 
 Glassbox never approves or alters a tool call. The only PreToolUse hook is the opt-in guard above, and its only decision is to deny.
 
@@ -98,6 +102,10 @@ The transcripts Claude Code writes are plain text, never expire, and contain eve
 
 `glassbox claims` reads one session's transcript (subagents included) and lists every sentence in which the agent told the human what it had done — tests pass, committed, published, verified, nothing changed, file written — with the tool result in that transcript that backs it, or the gap. It reads nothing else and writes nothing unless `--out` is given. The same ledger runs inside `check` as three rules (`contradicted-claim`, `unverified-claim`, `stale-claim`), so a Stop hook with `--feedback` hands an unbacked sentence back to the agent in the same session. The sentences are the agent's own words and appear in the report unless `--redact` is passed, in which case they become `«N chars»` (and any sha, version or number quoted from them is blanked in the notes); tool names, turn numbers, verdicts and a run's own counts remain. A verdict is about the sentence, never the code, and it cannot see checks made outside the transcript. Network: none. See docs/CLAIMS.md.
 
+## 6e. Memory — `glassbox recall`, `glassbox memory`
+
+`glassbox recall [words]` searches one project's past sessions — the transcripts still under `~/.claude/projects` and, for sessions whose transcripts Claude Code has since deleted, the digests in `<project>/.glassbox/memory.json` — and prints the matching prompts, files, checks, commits and the agent's last words. `glassbox memory` prints what the SessionStart hook would hand the next session and the lessons behind it; `memory forget` and `memory clear` edit and delete that file. `glassbox memory audit` lists the instruction files Claude Code loads at startup (§3) with an estimated token cost (characters ÷ 4) and flags dead imports, paths and package scripts, duplicate lines, conflicting rules, files over 200 lines and `MEMORY.md` lines past the 200-line / 25 KB cut-off. None of them call a model or the network; only `forget` and `clear` write, and only in `.glassbox/`. See docs/MEMORY.md.
+
 ## 7. What leaves the machine when you share a report
 
 Nothing leaves unless a person sends it. The formats built for sending are:
@@ -119,7 +127,7 @@ Costs are estimates from a rate card of Anthropic list prices (README, "Token an
 - CLI hook: `glassbox hook uninstall` (removes every entry it added, the guard's PreToolUse entry included; `settings.json.glassbox-backup` is left for you to delete).
 - Plugin: `/plugin uninstall glassbox@glassbox-trace`.
 - Package: `npm uninstall -g glassbox-trace`; `npx` caches live under npm's cache directory (`npm cache clean --force` clears them).
-- Files: `glassbox clean` removes `<temp>/glassbox-*.html` and `<temp>/glassbox-hook/`; any `.glassbox/` directory in a project, any legend, report or `--out` file you created are yours to delete.
+- Files: `glassbox clean` removes `<temp>/glassbox-*.html` and `<temp>/glassbox-hook/`; `glassbox memory clear` removes a project's `.glassbox/memory.json` and `last-session.md`; any `.glassbox/` directory in a project, any legend, report or `--out` file you created are yours to delete.
 
 Nothing else was changed on the machine.
 

@@ -5,7 +5,7 @@ The repository root is both a plugin marketplace (`.claude-plugin/marketplace.js
 - **A Stop hook.** After every Claude turn you get a one-screen Glassbox summary: turns, tool calls, failures, context peak, estimated cost, and the top findings at or above the threshold (default `warn`).
 - **Opt-in feedback.** With the `feedback` option on, the hook also hands the findings (evidence and "next time" advice) back to Claude, which says in a sentence or two what it would do differently, then stops. Off by default.
 - **`/glassbox:check [session-id|file.jsonl] [--fail-on …] [--redact]`**: checks this session (or another) and acts on the findings.
-- **The `glassbox` skill** (`/glassbox:glassbox`, and Claude loads it on its own when relevant) for checking, opening the timeline viewer, and comparing two sessions.
+- **The `glassbox` skill** (`/glassbox:glassbox`, and Claude loads it on its own when relevant) for checking, searching past sessions (`recall`), opening the timeline viewer, and comparing two sessions.
 
 Everything runs from the plugin's own copy of the CLI (`node ${CLAUDE_PLUGIN_ROOT}/bin/glassbox.mjs`). There's no npm install or `npx` download, and nothing leaves your machine. You need Node 18 or newer on `PATH`.
 
@@ -36,7 +36,7 @@ You set these in the dialog shown when the plugin is enabled. You can also pass 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `feedback` | `false` | Hand the findings back to the agent when any are at or above `fail_on`. Each finding is handed back once per session (later turns only get new ones), and never while Claude is already continuing from a stop hook (`stop_hook_active`). |
-| `context` | `false` | Keep the findings in `<project>/.glassbox/last-session.md` and start the next session in that project with them as context (SessionStart hook: new sessions, `/clear` and compaction, not resumes). The folder gets a `.gitignore` so the notes are never committed; a clean session deletes the file. With `feedback` on, the agent's "what I'd do differently" reply is added to it. |
+| `context` | `false` | Keep a memory of the project in `<project>/.glassbox/`: `memory.json` (a digest of each of the last 50 sessions and the findings that keep coming back, as lessons) and `last-session.md` (the last session's findings; with `feedback` on, the agent's "what I'd do differently" reply). The next session in that project starts with a note built from them — the lessons still recurring, a line per recent session, the previous session's notes (SessionStart hook: new sessions, `/clear` and compaction, not resumes). The folder gets a `.gitignore`; secrets a `fence` detector recognises are masked; `glassbox memory` shows the note. See [MEMORY.md](MEMORY.md). |
 | `fail_on` | `warn` | Lowest severity listed in the summary and handed back: `error`, `warn` or `info`. |
 
 Claude Code only reads plugin options from user or managed settings, never from a project's `.claude/settings.json`. To turn an option on or off for one project, set an environment variable in that project's settings instead. These variables win over the plugin options:
@@ -64,6 +64,7 @@ The plugin sees a Glassbox hook in `settings.json` and steps aside, so nothing r
 
 - `/glassbox:check` checks this session and walks through the findings.
 - Ask "what went wrong in this session?", "why was that so expensive?" or "compare my last two sessions". Claude uses the `glassbox` skill for these.
+- Ask "didn't we already fix this?" or "what did the last session do?". Claude runs `glassbox recall` over this project's past sessions (no `context` option needed); `glassbox memory` shows what the next session will be told when it is on.
 - To open the viewer yourself, run `npx glassbox-trace open`, or ask Claude to open it.
 
 ## Uninstall or turn off
