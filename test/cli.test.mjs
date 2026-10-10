@@ -268,7 +268,9 @@ test('hook --context: Stop keeps notes in <project>/.glassbox, SessionStart hand
   // next session in the project starts with the notes; resumes and the plain hook don't inject
   const s1 = hookResponse({ hook_event_name: 'SessionStart', source: 'startup', cwd: project, session_id: 'next' }, opts);
   assert.equal(s1.hookSpecificOutput.hookEventName, 'SessionStart');
-  assert.match(s1.hookSpecificOutput.additionalContext, /previous session in this project[\s\S]*retry-loop[\s\S]*read the test error/);
+  // 0.11: the findings come back as lessons (counted across sessions); the previous session keeps the agent's own answer
+  assert.match(s1.hookSpecificOutput.additionalContext, /Recurring in this project[\s\S]*retry-loop[\s\S]*previous session in this project[\s\S]*read the test error/);
+  assert.doesNotMatch(s1.hookSpecificOutput.additionalContext, /### 1\. /, 'the report is not repeated under the lessons');
   assert.equal(hookResponse({ hook_event_name: 'SessionStart', source: 'resume', cwd: project }, opts).hookSpecificOutput, undefined);
   assert.equal(hookResponse({ hook_event_name: 'SessionStart', source: 'startup', cwd: project }, { failOn: 'warn' }).hookSpecificOutput, undefined, 'without --context nothing is injected');
   // a clean session removes stale advice

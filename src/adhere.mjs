@@ -94,6 +94,17 @@ export function parseRules(text, file) {
   return { rules, unchecked };
 }
 
+// Sessions of a project, newest first: the folder name Claude Code would use (every character that is not a letter
+// or a digit becomes '-', so "my.app_v2" is "my-app-v2"; older builds only replaced separators). Failing that, a
+// folder whose name ends with it — the same project reached through a symlinked parent (/tmp → /private/tmp). Never a
+// substring: /home/aldo/app is not /home/aldo/app-v2, and a folder name can't tell app/v2 from app-v2.
+export function projectSessions(project, home) {
+  const enc = [encodeProject(project), String(project).replace(/[^A-Za-z0-9]/g, '-')].map((e) => e.toLowerCase());
+  const all = findSessions({ home }), name = (s) => path.basename(s.projectDir).toLowerCase();
+  const list = all.filter((s) => enc.includes(name(s)));
+  return list.length ? list : all.filter((s) => enc.some((e) => name(s).endsWith(e)));
+}
+
 export function findInstructionFiles(project, home) {
   const out = [];
   const add = (p, label) => { if (fs.existsSync(p) && fs.statSync(p).isFile()) out.push({ file: p, label }); };
@@ -145,7 +156,7 @@ function segmentTools(cmd) {
   return segments(cmd).map((seg) => { const toks = seg.split(/\s+/); let t = toks[0].replace(/^.*[\\/]/, '').toLowerCase(); if (/^python3?$/.test(t) && toks[1] === '-m' && toks[2]) t = toks[2].toLowerCase(); if (t === 'pip3') t = 'pip'; return t; });
 }
 const hasSeg = (cmd, re) => segments(cmd).some((seg) => re.test(seg));
-function commitMessage(cmd) {
+export function commitMessage(cmd) {
   cmd = String(cmd);
   const hd = cmd.match(/<<-?\s*['"]?(\w+)['"]?\n([\s\S]*?)\n\1/); if (hd) return hd[2].split('\n')[0].trim();
   const q = cmd.match(/(?:^|\s)(?:-m|--message)(?:=|\s+)(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|(\S+))/); if (q) return (q[1] != null ? q[1] : q[2] != null ? q[2] : q[3]).split('\n')[0].trim();
@@ -165,7 +176,7 @@ const pathHits = (rulePath, filePath, project) => {
 const OPTV = String.raw`(?:"[^"]*"|'[^']*'|\S)+`;
 const GIT = String.raw`^git\s+(?:(?:-c\s+${OPTV}|-C\s+${OPTV}|--no-pager|--git-dir=${OPTV}|--work-tree=${OPTV})\s+)*`;
 const git = (sub) => new RegExp(GIT + sub + '\\b');
-const actionRe = { commit: git('commit'), push: git('push'), delete: new RegExp('^(?:rm|rmdir|del|Remove-Item)\\b|' + GIT + 'rm\\b'), install: /^(?:npm|pnpm|yarn|bun|pip3?|uv|poetry|cargo|gem|brew|apt(?:-get)?|choco|winget)\s+(?:install|add|i)\b/, deploy: /^(?:vercel|netlify|fly\s+deploy|wrangler\s+(?:publish|deploy)|gcloud\s+run\s+deploy|serverless\s+deploy|eb\s+deploy)\b|^\S+\s+deploy\b/i, merge: git('merge') };
+export const actionRe = { commit: git('commit'), push: git('push'), delete: new RegExp('^(?:rm|rmdir|del|Remove-Item)\\b|' + GIT + 'rm\\b'), install: /^(?:npm|pnpm|yarn|bun|pip3?|uv|poetry|cargo|gem|brew|apt(?:-get)?|choco|winget)\s+(?:install|add|i)\b/, deploy: /^(?:vercel|netlify|fly\s+deploy|wrangler\s+(?:publish|deploy)|gcloud\s+run\s+deploy|serverless\s+deploy|eb\s+deploy)\b|^\S+\s+deploy\b/i, merge: git('merge') };
 const askedRe = { commit: /\bcommit/i, push: /\bpush/i, delete: /\b(?:delete|remove|rm\b|clean up|get rid)/i, install: /\binstall|\badd (?:the )?(?:package|dependency|dep)/i, create: /\b(?:create|make|add|write|new)\b/i, deploy: /\bdeploy|ship|release/i, merge: /\bmerge/i };
 
 // Judge every rule against one session. Returns per-rule { occasions:[{obeyed, session, turn, prompt, detail, at}] }.
@@ -230,10 +241,7 @@ export function adhere(opts = {}) {
   if (!files.length) throw new Error(`adhere: no CLAUDE.md found for ${project}\n  Looked for CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md there and ~/.claude/CLAUDE.md.\n  Point at one with --claude-md FILE, or at the project with --project DIR.`);
   const rules = [], unchecked = [], fileRows = [];
   for (const f of files) { if (!fs.existsSync(f.file)) throw new Error(`adhere: ${f.file} not found`); const r = parseRules(readTextFile(f.file), f.label); rules.push(...r.rules); unchecked.push(...r.unchecked); fileRows.push({ file: f.file, label: f.label, rules: r.rules.length, unchecked: r.unchecked.length }); }
-  // Sessions of this project: the folder name Claude Code would use; else a decoded-path substring match.
-  const enc = encodeProject(project).toLowerCase();
-  let list = findSessions({ home }).filter((s) => path.basename(s.projectDir).toLowerCase() === enc);
-  if (!list.length) list = findSessions({ home, project: project.replace(/\\/g, '/') });
+  let list = projectSessions(project, home);
   if (opts.since != null) list = list.filter((s) => s.mtime >= opts.since);
   const perRule = rules.map(() => []); const sessions = [];
   for (const s of list) { const j = judgeSession(rules, s, project); j.perRule.forEach((o, i) => perRule[i].push(...o)); sessions.push(j.session); }

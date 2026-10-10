@@ -167,6 +167,25 @@ export function scanText(text, opts = {}) {
   return hits.concat(fileReads).sort((a, b) => a.start - b.start || SEV[a.severity] - SEV[b.severity]);
 }
 
+// Text Glassbox keeps for later (memory notes, session digests): every value a detector recognises becomes
+// [FENCED:<rule>], with no fingerprint — the note is for the next session to read, not for matching keys.
+export function maskSecrets(text) {
+  const s = String(text == null ? '' : text); const spans = [];
+  for (const d of DETECTORS) {
+    d.re.lastIndex = 0; let m;
+    while ((m = d.re.exec(s))) {
+      const value = d.value ? d.value(m) : m[0];
+      const start = d.value ? m.index + m[0].length - value.length : m.index, end = start + value.length;
+      if ((d.ok && !d.ok(value)) || spans.some(([a, b]) => start < b && end > a)) continue;
+      spans.push([start, end, d.id]);
+    }
+  }
+  if (!spans.length) return s;
+  spans.sort((a, b) => a[0] - b[0]);
+  let out = '', at = 0; for (const [a, b, id] of spans) { out += s.slice(at, a) + `[FENCED:${id}]`; at = b; }
+  return out + s.slice(at);
+}
+
 // Same value in the same place collapses to one finding with a count. Values are kept on the object (for shred)
 // but never serialised: `toJSON` drops them.
 function rows(hits) {

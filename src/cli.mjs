@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { readTextFile } from './textfile.mjs';
 import { guardResponse } from './guard.mjs';
 import { judgeClaims, claimFindings, claimsText, claimsMarkdown } from './claims.mjs';
+import { NOTES_FILE, ensureMemoryDir, recordSession, memoryNote, noteTold, maskedTrace, recall, recallText, recallMarkdown, memoryReport, memoryText, memoryMarkdown, forget, clearMemory } from './memory.mjs';
+import { maskSecrets } from './fence.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 // fileURLToPath, not URL.pathname: on Windows the latter gives "/C:/…" which path.resolve turns into "\C:\…".
@@ -228,23 +230,29 @@ export function sessionFromTranscriptPath(p) {
   return { id: path.basename(file).replace(/\.jsonl$/, ''), file, project: null, projectDir: path.dirname(file), size: fs.existsSync(file) ? fs.statSync(file).size : 0, mtime: fs.existsSync(file) ? fs.statSync(file).mtimeMs : 0 };
 }
 
-// Persisted feedback (--context): the Stop hook leaves <project>/.glassbox/last-session.md behind and
-// the SessionStart hook hands it to the next session, so feedback reaches the session that can use it.
-export const NOTES_FILE = path.join('.glassbox', 'last-session.md');
+// Persisted feedback (--context): the Stop hook leaves <project>/.glassbox/last-session.md behind and folds the
+// session into <project>/.glassbox/memory.json (src/memory.mjs); the SessionStart hook hands the next session
+// the lessons still recurring, a line per recent session and the last session's notes, so feedback reaches the
+// session that can use it. Anything a fence detector recognises as a secret is masked before it is written.
+export { NOTES_FILE };
 const NOTES_MAX = 6000;
 function notesPath(cwd) { return cwd && fs.existsSync(cwd) && fs.statSync(cwd).isDirectory() ? path.join(cwd, NOTES_FILE) : null; }
 function writeNotes(cwd, text) {
   const file = notesPath(cwd); if (!file) return null;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const ignore = path.join(path.dirname(file), '.gitignore'); if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, '# written by glassbox hook --context; local notes, never committed\n*\n');
-  fs.writeFileSync(file, text.length > NOTES_MAX ? text.slice(0, NOTES_MAX) + '\n\n… (truncated; run `glassbox check --format md` for the full report)\n' : text);
+  ensureMemoryDir(cwd);
+  text = maskSecrets(text);
+  fs.writeFileSync(file, text.length > NOTES_MAX ? text.slice(0, NOTES_MAX) + '\n\n… (truncated; run `glassbox check --format md` for the full report)\n' : text, { mode: 0o600 });
+  try { fs.chmodSync(file, 0o600); } catch (e) { } // it quotes the session; a file left by 0.10 was 0644
   return file;
 }
 export function sessionStartResponse(input) {
-  const file = notesPath(input && input.cwd);
-  if (!file || !fs.existsSync(file) || (input.source && !['startup', 'clear', 'compact'].includes(input.source))) return { suppressOutput: true };
-  const text = fs.readFileSync(file, 'utf8');
-  return { suppressOutput: true, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: `Notes from Glassbox on the previous session in this project (.glassbox/last-session.md). Keep them in mind; don't redo that work.\n\n${text}` } };
+  const cwd = input && input.cwd;
+  if (!notesPath(cwd) || (input.source && !['startup', 'clear', 'compact'].includes(input.source))) return { suppressOutput: true };
+  const note = memoryNote(cwd, { exclude: input.session_id });
+  if (!note) return { suppressOutput: true };
+  // Told counts at the start only: compaction hands the same note over again mid-session. The count is a nicety; the note is the job.
+  if (input.source !== 'compact') { try { noteTold(cwd, input.session_id, note.told); } catch (e) { } }
+  return { suppressOutput: true, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: note.text } };
 }
 
 // Findings already handed back in this session, keyed by rule + title, kept in the temp dir.
@@ -267,7 +275,7 @@ export function hookResponse(input, opts = {}) {
   // Second Stop after a feedback block: record what the agent said it would do differently, then let it stop.
   if (opts.context && input && input.hook_event_name === 'Stop' && input.stop_hook_active) {
     const file = notesPath(input.cwd);
-    if (file && fs.existsSync(file) && input.last_assistant_message && fs.readFileSync(file, 'utf8').includes(`session ${String(input.session_id || '').slice(0, 8)}`)) fs.appendFileSync(file, `\n## What the agent said it would do differently\n\n${String(input.last_assistant_message).trim().slice(0, 1500)}\n`);
+    if (file && fs.existsSync(file) && input.last_assistant_message && fs.readFileSync(file, 'utf8').includes(`session ${String(input.session_id || '').slice(0, 8)}`)) fs.appendFileSync(file, `\n## What the agent said it would do differently\n\n${maskSecrets(String(input.last_assistant_message).trim()).slice(0, 1500)}\n`);
     return { suppressOutput: true };
   }
   if (!input || !input.transcript_path || !fs.existsSync(input.transcript_path)) return { systemMessage: 'Glassbox: no transcript_path in hook input.', suppressOutput: true };
@@ -286,9 +294,11 @@ export function hookResponse(input, opts = {}) {
     const file = notesPath(input.cwd);
     if (top.length) {
       const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
-      const body = core.reportMarkdown(res.trace, top.slice(0, 8), null, { maxEvidence: 2, instruction: false, title: 'last session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '');
+      const body = core.reportMarkdown(maskedTrace(res.trace), top.slice(0, 8).map((f) => Object.assign({}, f, { title: maskSecrets(f.title), detail: maskSecrets(f.detail) })), null, { maxEvidence: 2, instruction: false, title: 'last session' }).replace(/^# [^\n]*\n\n/, '').replace(/\n## Tools[\s\S]*?(?=\n_Generated)/, '\n').replace(/\n_Generated[^\n]*\n?$/, '');
       writeNotes(input.cwd, `# Glassbox: last session in this project\n\n${when} UTC · session ${String(input.session_id || s.id).slice(0, 8)} · ${head.replace(/^Glassbox · /, '')}\n\n${body.trim()}\n`);
     } else if (file && fs.existsSync(file)) fs.unlinkSync(file); // a clean session: don't keep old advice around
+    // The memory ledger: this session's digest and lessons. A failure here must not cost the summary.
+    try { recordSession(input.cwd, res, { sessionId: input.session_id || s.id, failOn }); } catch (e) { out.systemMessage += `\nGlassbox memory: ${e.message}`; }
   }
   // Feedback loop: only on Stop, never while continuing from our own block (stop_hook_active), and each
   // finding only once per session. stop_hook_active resets every turn, so without the delivered set a
@@ -351,7 +361,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key', 'limit'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -382,7 +392,8 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
   glassbox hook install [--feedback] [--context] [--guard] [--fail-on warn]
                                  add a Claude Code Stop hook so every session ends with a Glassbox summary;
                                  --feedback also hands the findings back to the agent once, so it can learn from them;
-                                 --context keeps them in <project>/.glassbox/last-session.md and gives them to the next session;
+                                 --context keeps a memory in <project>/.glassbox/ (lessons that keep coming back, a digest
+                                 per session, the last session's notes) and gives the next session there what it needs;
                                  --guard blocks a tool call that already failed twice in a row, unchanged, and says why
   glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
   glassbox collect DIR [--since 30d] [--format text|md|json] [--out FILE] [--top N]
@@ -403,6 +414,16 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  credential-file reads — with a masked preview and a fingerprint, never the value.
                                  no target = every session under the home; exit 1 when anything at/above --fail-on was found
                                  --shred overwrites each value in place with [FENCED:<rule>:<fingerprint>] (no backup)
+  glassbox recall [WORDS…] [--project DIR] [--since 30d] [--limit N] [--format text|md|json] [--out FILE]
+                                 search this project's past sessions: what was asked, written, run, committed and said,
+                                 from the transcripts still on disk and .glassbox/memory.json; no words = the latest ones
+  glassbox memory [--project DIR] [--format text|md|json]
+                                 what the next session in this project will be told (hook --context) and the lessons behind it
+  glassbox memory forget KEY|RULE · glassbox memory clear
+                                 drop a lesson (it starts over if it fires again) · delete the project's memory
+  glassbox memory audit [--project DIR] [--format text|md|json] [--out FILE] [--fail-on error|warn|info|none]
+                                 everything loaded before the first prompt (CLAUDE.md files, rules, @imports, auto memory,
+                                 Glassbox's own note) with its token cost, dead imports and paths, duplicates and conflicting rules
   glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
@@ -601,6 +622,41 @@ export async function main(argv, io = {}) {
       if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.summary.rules} rules, ${rep.summary.sessions} sessions, ${rep.summary.rate == null ? 'no occasions' : Math.round(rep.summary.rate * 100) + '% obeyed'})`); }
       else out(text.replace(/\n$/, ''));
       return failUnder != null && rep.summary.rate != null && rep.summary.rate * 100 < failUnder ? 1 : 0;
+    }
+    const writeOut = (text, summary) => { if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${summary})`); } else out(text.replace(/\n$/, '')); };
+    if (cmd === 'recall') {
+      // Search a project's past sessions. Each argument is a word, or a phrase when the shell kept it quoted.
+      const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
+      let limit = 10; if (args.flags.limit !== undefined) { limit = Number(args.flags.limit); if (!Number.isInteger(limit) || limit < 1) throw new Error(`--limit must be a whole number above 0 (got "${args.flags.limit}")`); }
+      const query = args._.slice(1).map((a) => /\s/.test(a) ? `"${a.replace(/"/g, '')}"` : a).join(' ');
+      const fmtOut = outputFormat(args.flags);
+      const rep = recall({ home, project: args.flags.project, query, since, limit });
+      writeOut(fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? recallMarkdown(rep) : recallText(rep), `${rep.total} of ${rep.searched.sessions} sessions`);
+      return 0;
+    }
+    if (cmd === 'memory') {
+      const sub = args._[1] || 'show';
+      const project = path.resolve(args.flags.project || process.cwd());
+      const fmtOut = outputFormat(args.flags);
+      if (sub === 'audit') {
+        const { auditMemory, auditText, auditMarkdown, auditFailed } = await import('./memory-audit.mjs');
+        const failOn = String(args.flags['fail-on'] || 'error');
+        const rep = auditMemory({ home, project });
+        const failed = auditFailed(rep, failOn);
+        writeOut(fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? auditMarkdown(rep) : auditText(rep), `${rep.summary.startupFiles} files at startup, ≈ ${core.fmtInt(rep.summary.startupTokens)} tokens, ${rep.findings.length} findings`);
+        return failed ? 1 : 0;
+      }
+      if (sub === 'forget') {
+        const what = args._.slice(2).join(' ');
+        const keys = forget(project, what);
+        out(keys.length ? `Forgot ${keys.length} lesson${keys.length === 1 ? '' : 's'} in ${project}:\n  ${keys.join('\n  ')}` : `No lesson matches "${what}" in ${project} — glassbox memory lists them`);
+        return keys.length ? 0 : 1;
+      }
+      if (sub === 'clear') { const removed = clearMemory(project); out(removed.length ? `Removed:\n  ${removed.join('\n  ')}` : `No Glassbox memory in ${project}`); return 0; }
+      if (sub !== 'show') throw new Error(`memory: unknown subcommand "${sub}" (show, forget, clear, audit)`);
+      const rep = memoryReport({ project });
+      writeOut(fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? memoryMarkdown(rep) : memoryText(rep), `${rep.sessions} sessions, ${rep.summary.active} active lessons`);
+      return 0;
     }
     err('Unknown command: ' + cmd + '\n'); out(HELP); return 2;
   } catch (e) { err('glassbox: ' + e.message); return 2; }

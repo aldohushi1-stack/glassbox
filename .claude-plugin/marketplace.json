@@ -9,7 +9,7 @@
     {
       "name": "glassbox",
       "source": "./",
-      "description": "Ends every turn with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings), optionally hands the findings back to the agent, and adds /glassbox:check plus a skill for checking, viewing and comparing sessions.",
+      "description": "Ends every turn with a one-screen Glassbox summary (turns, tool calls, context peak, cost, top findings), optionally hands the findings back to the agent and keeps a memory the next session starts with, and adds /glassbox:check plus a skill for checking, searching, viewing and comparing sessions.",
       "author": {
         "name": "Aldo Hushi",
         "url": "https://github.com/aldohushi1-stack"

@@ -1,8 +1,8 @@
 {
   "name": "glassbox",
   "displayName": "Glassbox",
-  "version": "0.10.1",
-  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), opt-in feedback of the findings to the agent, and skills to check the current session, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
+  "version": "0.11.0",
+  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), opt-in feedback of the findings to the agent, an opt-in memory the next session starts with (lessons that keep coming back, a line per recent session), and skills to check the current session, search past sessions, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
   "author": {
     "name": "Aldo Hushi",
     "url": "https://github.com/aldohushi1-stack"
@@ -10,7 +10,7 @@
   "homepage": "https://github.com/aldohushi1-stack/glassbox#readme",
   "repository": "https://github.com/aldohushi1-stack/glassbox",
   "license": "MIT",
-  "keywords": ["observability", "transcript", "session-review", "tokens", "cost", "hooks", "diagnostics"],
+  "keywords": ["observability", "transcript", "session-review", "tokens", "cost", "hooks", "diagnostics", "memory"],
   "userConfig": {
     "feedback": {
       "type": "boolean",
@@ -20,8 +20,8 @@
     },
     "context": {
       "type": "boolean",
-      "title": "Carry findings into the next session",
-      "description": "Off by default. When on, the Stop hook writes the findings to <project>/.glassbox/last-session.md (with a .gitignore so it is never committed; deleted after a clean session), and the next session in that project starts with them as context.",
+      "title": "Keep a memory of the project for the next session",
+      "description": "Off by default. When on, the Stop hook keeps <project>/.glassbox/memory.json (a digest of each of the last 50 sessions and the findings that keep coming back, secrets masked, owner-only) and last-session.md (git-ignored), and the next session in that project starts with a note: the lessons still recurring, a line per recent session, and what the agent said it would do differently. `glassbox memory` shows the note; `glassbox recall` searches past sessions.",
       "default": false
     },
     "fail_on": {

@@ -76,3 +76,22 @@ test('Stop hook: silent when `glassbox hook install` already added one to settin
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout, '');
 });
+
+test('plugin context option: Stop keeps .glassbox/memory.json, SessionStart hands the next session its note; off, nothing is written', () => {
+  const run = (event, input, env) => {
+    const h = readJson('hooks/hooks.json').hooks[event][0].hooks[0];
+    const sub = (s) => s.replaceAll('${CLAUDE_PLUGIN_ROOT}', ROOT);
+    return spawnSync(process.execPath, h.args.map(sub), { input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, CLAUDE_PLUGIN_ROOT: ROOT, GLASSBOX_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-plugin-')), GLASSBOX_STATE_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-')), CLAUDE_PLUGIN_OPTION_FEEDBACK: '', CLAUDE_PLUGIN_OPTION_FAIL_ON: '', CLAUDE_PLUGIN_OPTION_CONTEXT: '', GLASSBOX_FEEDBACK: '', GLASSBOX_FAIL_ON: '', GLASSBOX_CONTEXT: '', ...env } });
+  };
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-plugin-proj-'));
+  const on = { CLAUDE_PLUGIN_OPTION_CONTEXT: 'true' };
+  assert.equal(run('Stop', stop({ cwd: project }), on).status, 0);
+  assert.ok(fs.existsSync(path.join(project, '.glassbox', 'memory.json')));
+  const r = run('SessionStart', { hook_event_name: 'SessionStart', source: 'startup', session_id: 'next', cwd: project }, on);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /^Notes from Glassbox on this project[\s\S]*## Recurring in this project[\s\S]*context-bloat[\s\S]*## Recent sessions/);
+  const off = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-plugin-proj-'));
+  assert.equal(run('Stop', stop({ cwd: off }), {}).status, 0);
+  assert.equal(fs.existsSync(path.join(off, '.glassbox')), false);
+  assert.equal(JSON.parse(run('SessionStart', { hook_event_name: 'SessionStart', source: 'startup', cwd: project }, {}).stdout).hookSpecificOutput, undefined);
+});

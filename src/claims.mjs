@@ -89,14 +89,14 @@ const numbersIn = (s) => Array.from(new Set((s.match(NUM_RE) || []).map((n) => n
 const SHELL = (c) => c.name === 'Bash' || c.name === 'PowerShell' || /device_bash$/.test(c.name || '');
 const cmdOf = (c) => { const i = c.input || {}; return typeof i.command === 'string' ? i.command : typeof i.script === 'string' ? i.script : ''; };
 const inputText = (c) => { try { return JSON.stringify(c.input || {}); } catch (e) { return ''; } };
-const TEST_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|e2e|audit|lint|build|typecheck)\b|\bnode\s+--test\b|\bnode\s+(?:[\w./-]*\/)?test\/[\w.-]+\.m?js\b|\bpytest\b|\bpython3?\s+-m\s+(?:pytest|unittest)\b|\bcargo\s+test\b|\bgo\s+test\b|\bvitest\b|\bjest\b|\bmocha\b|\bplaywright\s+test\b|\btsc\b|\beslint\b|\bruff\b|\bmake\s+(?:test|check)\b|\bclaude\s+plugin\s+validate\b|\bdotnet\s+test\b|\bphpunit\b|\brspec\b|\bphp\s+-l\b|\bnode\s+(?:--check|-c)\b|\bpython3?\s+-m\s+py_compile\b|\bflake8\b|\bpylint\b|\bmypy\b|\bshellcheck\b|\bprettier\s+--check\b|\bbiome\s+(?:check|lint)\b|\bpython3?\s+(?:[\w./-]*\/)?(?:test_[\w-]+|[\w-]+_test|tests?)\.py\b|\bnode\s+(?:[\w./-]*\/)?[\w-]*test[\w-]*\.[cm]?js\b/i;
+export const TEST_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|e2e|audit|lint|build|typecheck)\b|\bnode\s+--test\b|\bnode\s+(?:[\w./-]*\/)?test\/[\w.-]+\.m?js\b|\bpytest\b|\bpython3?\s+-m\s+(?:pytest|unittest)\b|\bcargo\s+test\b|\bgo\s+test\b|\bvitest\b|\bjest\b|\bmocha\b|\bplaywright\s+test\b|\btsc\b|\beslint\b|\bruff\b|\bmake\s+(?:test|check)\b|\bclaude\s+plugin\s+validate\b|\bdotnet\s+test\b|\bphpunit\b|\brspec\b|\bphp\s+-l\b|\bnode\s+(?:--check|-c)\b|\bpython3?\s+-m\s+py_compile\b|\bflake8\b|\bpylint\b|\bmypy\b|\bshellcheck\b|\bprettier\s+--check\b|\bbiome\s+(?:check|lint)\b|\bpython3?\s+(?:[\w./-]*\/)?(?:test_[\w-]+|[\w-]+_test|tests?)\.py\b|\bnode\s+(?:[\w./-]*\/)?[\w-]*test[\w-]*\.[cm]?js\b/i;
 const CI_RESULT = /completed[:\s]+success|conclusion["']?\s*[:=]\s*["']?success|completed\s+successfully|\bci\s+#?\d+[^.\n]{0,40}\b(?:green|success)|"status":\s*"completed"[^}]{0,80}"conclusion":\s*"success"|publish\s+run[^\n]{0,40}success/i;
 const CI_FAIL = /conclusion["']?\s*[:=]\s*["']?(?:failure|cancelled)|completed[:\s]+failure|\bfailed\b[^\n]{0,20}\bci\b/i;
 const FAIL_MARK = /\bnot ok\b|# fail [1-9]|\b[1-9]\d* fail(?:ed|ing|ures?)?\b|\bFAIL(?:ED)?\b|AssertionError|Error:|\bTypeError|\bReferenceError|\bSyntaxError|Tests:\s+\d+\s+failed|✗|✖|\bexit(?:ed|\s*code)?\s*[=:]?\s*[1-9]\d*\b|Cannot find module|MODULE_NOT_FOUND/;
 // A test-like run's identity: the runner and file it names, so a failing e2e run does not contradict "58 of 58 pass"
 // said about the unit run beside it.
 const testKey = (c) => { const m = cmdOf(c).match(TEST_CMD); return m ? m[0].toLowerCase().replace(/\s+/g, ' ') : (c.name + ':' + (c.resultText || '').slice(0, 40)); };
-function runFailed(c) {
+export function runFailed(c) {
   const r = c.resultText || ''; const k = testCounts(r);
   return !!(c.isError || (k ? k.fail > 0 : FAIL_MARK.test(r)) || (CI_FAIL.test(r) && !CI_RESULT.test(r)));
 }
@@ -114,7 +114,7 @@ const SOURCE_FILE = /(?:^|[\\/])(?:src|lib|test|tests|spec|specs|app|pkg|cmd|int
 
 // A result that reads like a test run whatever the command was: a summary line, PASS/FAIL rows, a lint's verdict.
 const looksLikeRun = (r) => { r = String(r || ''); return !!testCounts(r) || /audit passed|browser test passed|Validation passed|No syntax errors detected|^\s*(?:PASS|FAIL)\b.*\n\s*(?:PASS|FAIL)\b/m.test(r); };
-function testCounts(text) {
+export function testCounts(text) {
   const t = String(text || '');
   let m;
   if ((m = t.match(/# pass (\d+)[\s\S]*?# fail (\d+)/))) return { pass: +m[1], fail: +m[2], total: +m[1] + +m[2] };
