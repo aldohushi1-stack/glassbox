@@ -285,7 +285,7 @@ Your context is private — by construction, not by promise.
 - **What is already on disk.** `glassbox fence` finds credentials that reached a transcript (known key formats, secrets named by context, credential-file reads), reports them masked and fingerprinted, and `--shred` overwrites them in place. See above.
 - **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.
 
-Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © Aldo Hushi
+Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox) · MIT © [Aldo Hushi](https://aldo.ltd), Adelaide · npm: [glassbox-trace](https://www.npmjs.com/package/glassbox-trace) · [Claude Code cost audit](https://aldo.ltd/audit/)
 
 ## Security
 
