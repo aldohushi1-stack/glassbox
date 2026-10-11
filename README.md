@@ -8,6 +8,8 @@ Drop a session `.jsonl` onto one HTML file. Get a timeline of every model call a
 
 **Check an agent run like a test.** `glassbox check --fail-on warn` exits 1 when a session looped, kept failing, or ran up context — so a `claude -p` job in CI can fail the build the way a test would ([docs/CI.md](docs/CI.md)).
 
+**Want a person to read it?** The [Claude Code cost audit](https://aldo.ltd/audit/) is Glassbox read by its author: where your team's spend went, the fixes, and a re-run 30 days later. Counts only, nothing sensitive sent. Why one session's $21.83 was really $322.36: [subagents are in separate files](https://aldo.ltd/blog/claude-code-subagent-cost/).
+
 ![Glassbox showing the trace of the session that built it](dist/screenshot-dark.png)
 
 The demo built into the file is the trace of the session that built Glassbox, sanitised.
