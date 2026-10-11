@@ -1,4 +1,4 @@
-# Glassbox
+# Glassbox for Claude Code
 
 [![ci](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml/badge.svg)](https://github.com/aldohushi1-stack/glassbox/actions/workflows/ci.yml)
 
