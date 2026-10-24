@@ -20,11 +20,12 @@ export function userFacingTexts(trace) {
   const callsByReq = new Map();
   for (const c of trace.toolCalls) { if (!callsByReq.has(c.requestId)) callsByReq.set(c.requestId, []); callsByReq.get(c.requestId).push(c); }
   trace.requests.forEach((r, i) => {
-    for (const b of r.blocks) if (b.type === 'text' && b.text && b.text.trim()) out.push({ request: r, index: i, agent: r.agent, via: 'text', text: b.text });
+    for (const b of r.blocks) if (b.type === 'text' && b.text && b.text.trim()) out.push({ request: r, index: i, agent: r.agent, via: 'text', text: b.text, blockIndex: b.index });
     for (const c of callsByReq.get(r.id) || []) {
       const inp = c.input || {};
-      if (c.name === 'SendUserMessage' && typeof inp.message === 'string') out.push({ request: r, index: i, agent: r.agent, via: 'SendUserMessage', text: inp.message, call: c });
-      if (c.name === 'SendUserFile' && typeof inp.caption === 'string') out.push({ request: r, index: i, agent: r.agent, via: 'SendUserFile', text: inp.caption, call: c });
+      const blockIndex = (r.blocks.find((b) => b.id === c.id) || {}).index;
+      if (c.name === 'SendUserMessage' && typeof inp.message === 'string') out.push({ request: r, index: i, agent: r.agent, via: 'SendUserMessage', text: inp.message, call: c, blockIndex });
+      if (c.name === 'SendUserFile' && typeof inp.caption === 'string') out.push({ request: r, index: i, agent: r.agent, via: 'SendUserFile', text: inp.caption, call: c, blockIndex });
     }
   });
   return out;
@@ -46,7 +47,7 @@ const DESCRIBES_RE = /\b(?:it|this|that|the\s+(?:guard|hook|rule|command|viewer|
 
 const KINDS = [
   ['test', /\b(?:tests?|suites?|specs?|e2e|audit|ci|checks?|lint(?:er)?|build|typecheck|type-check|validation|coverage)\b[^.]{0,80}?\b(?:pass(?:es|ed|ing)?|green|succeed(?:s|ed)?|ok|clean|no\s+failures|validates?|valid|passed)\b|\b(?:all|\d[\d,]*)\s*(?:of\s*\d[\d,]*\s*)?(?:tests?\s+)?(?:still\s+)?(?:pass(?:es|ed|ing)?|green)\b|\b\d[\d,]*\s*(?:\/\s*\d[\d,]*\s*)?(?:tests?|specs?)\s*(?:still\s+)?(?:pass|passing|passed|green|ok)\b|\b(?:plugin|manifest|schema|json-ld)\s+validates?\b|\b(?:ci|workflow|run\s+#?\d+|publish\s+#?\d+)\s+(?:is\s+|was\s+)?(?:green|succeeded|passed|completed)\b|\bexit(?:ed| code)?\s*0\b/i],
-  ['ship', /^(?:both|all|everything|it|they)\s+(?:saved|written|uploaded|committed|pushed|deployed|published|live)\b|\b(?:all|both)\s+\d+\s+(?:saved|uploaded|live)\b|\ball\s+trimmed\s+and\s+live\b|\blive\s+and\s+(?:rendering|serving)\b|(?<!\b(?:the|a|an|its|my|your|this|our|that|one|each|these|those|two|three|four|five|six|last|previously)\s)\b(?:pushed(?!\s+back)|committed|commit(?:ted)?\s+(?:it\s+)?as\b|published|deployed|uploaded|merged|released|republished|shipped|posted)\b(?!\s+(?:blog|post|page|version|package|site|copy|report|article|files?|templates?|branch|folder|build|commits?)\b)|\b(?:is\s+(?:now\s+)?(?:live|released|on\s+npm|on\s+github|up(?!\s*(?:\d|\$|by\b|to\b|from\b|and\s+running\b)))|went\s+live|now\s+live|are\s+live|on\s+npm\b|in\s+production|is\s+on\s+main\b|(?:is|are|now|already|sits?)\s+(?:up\s+)?on\s+the\s+server)\b/i],
+  ['ship', /^(?:both|all|everything|it|they)\s+(?:saved|written|uploaded|committed|pushed|deployed|published|live)\b|\b(?:all|both)\s+\d+\s+(?:saved|uploaded|live)\b|\ball\s+trimmed\s+and\s+live\b|\blive\s+and\s+(?:rendering|serving)\b|(?<!\b(?:the|a|an|its|my|your|this|our|that|one|each|these|those|two|three|four|five|six|last|previously)\s)\b(?:pushed(?!\s+back)|committed|commit(?:ted)?\s+(?:it\s+)?as\b|published|deployed|uploaded|merged|released|republished|shipped|posted)\b(?!\s+(?:blog|post|page|version|package|site|copy|report|article|files?|templates?|branch|folder|build|commits?)\b)(?!\s+(?:lists?|data|guidance|rules|papers?|research|figures|prices|rates|numbers|sources?|terms|standards?|schedules?|polic(?:y|ies)|ranges)\b(?!\s+(?:to|into|onto|on|in|at)\b))|\b(?:is\s+(?:now\s+)?(?:live|released|on\s+npm|on\s+github|up(?!\s*(?:\d|\$|by\b|to\b|from\b|and\s+running\b)))|went\s+live|now\s+live|are\s+live|on\s+npm\b|in\s+production|is\s+on\s+main\b|(?:is|are|now|already|sits?)\s+(?:up\s+)?on\s+the\s+server)\b/i],
   ['state', /\b(?:nothing\s+(?:changed|was\s+changed|else\s+changed|left\s+uncommitted|was\s+left)|didn't\s+(?:disturb|touch|change)|(?:wasn't|weren't|not)\s+touched|untouched|unchanged|as\s+you\s+left\s+it|byte-identical|exactly\s+as\s+(?:you|I|we)\s+left|same\s+\d+\s+(?:staged|files)|no\s+(?:changes|diff|difference))\b/i],
   ['verify', /\b(?:all|both)\s+\d+\s+(?:done|ok|checked)\b|\b(?:verified|confirmed|double-checked|checked(?:\s+(?:that|it|the|all|every|against))?|validated|I\s+(?:ran|re-ran|tested|opened|loaded|looked|compared|hashed|checked)|renders\b|rendered\s+(?:fine|correctly|ok|as\s+expected)|loads\s+(?:fine|correctly|ok)|loaded\s+(?:fine|correctly|ok)|works?\s+(?:as\s+expected|fine|correctly|now|end-to-end)|working\s+(?:as\s+expected|fine|correctly|now)|round-?trips?|resolves?(?:d)?|matches?(?:\s+exactly)?|byte-exact|identical|(?:is|was|are|were|looks?|looked)\s+(?:fine|ok|good|correct|right)\b|has\s+(?:a\s+)?working\b|went\s+through\b|rendered(?=\s*[,.;]|\s+(?:fine|correctly|ok|properly|as\s+expected))|(?:took|measured|clocked|was|is|it's)\s+\d[\d.,]*\s*(?:ms|s|secs?|seconds?|minutes?|MB|KB|GB|bytes)\b|all\s+(?:green|\d+\s+done|\d+\s+ok)|\d+\s*\/\s*\d+,?\s*(?:zero|no)\s+errors?|tested\s+(?:it|this|that|locally|end\s+to\s+end)|no\s+errors?|zero\s+errors?|clean\b)\b/i],
   ['fix', /(?<!\b(?:the|a|its|my|your|this|our|that|one|each)\s)\bfixed\b(?!\s+(?:cost|price|fee|quote|rate|width|height|size|number|amount|set|point|term|period|version|one|copy|app))|\bfix\s+is\s+in\b|\b(?:resolved|patched|corrected|repaired)\b|\bno\s+longer\s+(?!needed|necessary|required|relevant|used|in\s+use|available|exists?|supported|part|the\s+case)\w+|\bnow\s+(?:works|handles|passes|renders|resolves|loads|decodes|parses|starts)\b|\bbug\s+(?:is\s+)?(?:fixed|gone)\b/i],
@@ -92,7 +93,7 @@ const inputText = (c) => { try { return JSON.stringify(c.input || {}); } catch (
 export const TEST_CMD = /\b(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|check|e2e|audit|lint|build|typecheck)\b|\bnode\s+--test\b|\bnode\s+(?:[\w./-]*\/)?test\/[\w.-]+\.m?js\b|\bpytest\b|\bpython3?\s+-m\s+(?:pytest|unittest)\b|\bcargo\s+test\b|\bgo\s+test\b|\bvitest\b|\bjest\b|\bmocha\b|\bplaywright\s+test\b|\btsc\b|\beslint\b|\bruff\b|\bmake\s+(?:test|check)\b|\bclaude\s+plugin\s+validate\b|\bdotnet\s+test\b|\bphpunit\b|\brspec\b|\bphp\s+-l\b|\bnode\s+(?:--check|-c)\b|\bpython3?\s+-m\s+py_compile\b|\bflake8\b|\bpylint\b|\bmypy\b|\bshellcheck\b|\bprettier\s+--check\b|\bbiome\s+(?:check|lint)\b|\bpython3?\s+(?:[\w./-]*\/)?(?:test_[\w-]+|[\w-]+_test|tests?)\.py\b|\bnode\s+(?:[\w./-]*\/)?[\w-]*test[\w-]*\.[cm]?js\b/i;
 const CI_RESULT = /completed[:\s]+success|conclusion["']?\s*[:=]\s*["']?success|completed\s+successfully|\bci\s+#?\d+[^.\n]{0,40}\b(?:green|success)|"status":\s*"completed"[^}]{0,80}"conclusion":\s*"success"|publish\s+run[^\n]{0,40}success/i;
 const CI_FAIL = /conclusion["']?\s*[:=]\s*["']?(?:failure|cancelled)|completed[:\s]+failure|\bfailed\b[^\n]{0,20}\bci\b/i;
-const FAIL_MARK = /\bnot ok\b|# fail [1-9]|\b[1-9]\d* fail(?:ed|ing|ures?)?\b|\bFAIL(?:ED)?\b|AssertionError|Error:|\bTypeError|\bReferenceError|\bSyntaxError|Tests:\s+\d+\s+failed|✗|✖|\bexit(?:ed|\s*code)?\s*[=:]?\s*[1-9]\d*\b|Cannot find module|MODULE_NOT_FOUND/;
+const FAIL_MARK = /\bnot ok\b|# fail [1-9]|\b[1-9]\d* fail(?:ed|ing|ures?)?\b|\bFAIL(?:ED)?\b|AssertionError|Error:|\bTypeError|\bReferenceError|\bSyntaxError|Tests:\s+\d+\s+failed|✗|✖|\bexit(?:ed|\s*code)?\s*[=:]?\s*[1-9]\d*\b|Cannot find module|MODULE_NOT_FOUND|\bERROR\s+(?:collecting\b|[\w./-]+\.py\b)|Interrupted:\s*\d+\s+errors?/;
 // A test-like run's identity: the runner and file it names, so a failing e2e run does not contradict "58 of 58 pass"
 // said about the unit run beside it.
 const testKey = (c) => { const m = cmdOf(c).match(TEST_CMD); return m ? m[0].toLowerCase().replace(/\s+/g, ' ') : (c.name + ':' + (c.resultText || '').slice(0, 40)); };
@@ -124,7 +125,33 @@ export function testCounts(text) {
   if ((m = t.match(/(\d+) passing(?:\s*\n\s*(\d+) failing)?/))) return { pass: +m[1], fail: +(m[2] || 0), total: +m[1] + +(m[2] || 0) };
   return null;
 }
-const claimedCount = (s) => { const m = s.match(/\b(?:all\s+)?(\d[\d,]*)\s*(?:of\s*\d[\d,]*\s*)?(?:tests?|specs?)?\s*(?:still\s+)?(?:pass|green)|\b(\d[\d,]*)\s*\/\s*(\d[\d,]*)/i); return m ? +(m[1] || m[3] || m[2]).replace(/,/g, '') : null; };
+// "175 of Bob's fast tests pass" names the count too: up to three words between "of" and "tests".
+const claimedCount = (s) => { const m = s.match(/\b(?:all\s+)?(\d[\d,]*)\s*(?:of\s*\d[\d,]*\s*)?(?:tests?|specs?)?\s*(?:still\s+)?(?:pass|green)|\b(\d[\d,]*)\s*\/\s*(\d[\d,]*)|\b(\d[\d,]*)\s+of\s+(?:[\w'’-]+\s+){1,3}(?:tests?|specs?)\s+(?:still\s+)?(?:pass|green)/i); return m ? +(m[1] || m[3] || m[2] || m[4]).replace(/,/g, '') : null; };
+// A sentence that speaks for the whole suite: with any failure in the run it is wrong, whatever else it says.
+const WHOLE_SUITE_RE = /\b(?:all|every\s+(?:test|spec|one)|fully|entire(?:ly)?|whole\s+suite|everything|nothing\s+fail\w*|no\s+fail\w*|zero\s+fail\w*|none\s+(?:of\s+them\s+)?fail\w*|not\s+(?:a\s+single|one)\b|without\s+(?:a\s+)?fail\w*|green|(?:is|are|ran|runs|came\s+back)\s+clean)\b/i;
+const SMALL = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+// Does the text name exactly `n` failures? "The 3 failures are…", "three failing", "fails: 3".
+// The count may carry thousands separators ("1,200"); only test words may sit between it and the failure word, and
+// a sentence that says the failures are fixed or gone is not owning up to them.
+const OWNED_GONE_RE = /\b(?:fixed|gone|resolved|cleared|no\s+longer|now\s+pass\w*|went\s+away)\b/i;
+function namesFailures(text, n) {
+  const forms = [String(n), n.toLocaleString('en-US')].concat(SMALL[n] ? [SMALL[n]] : []);
+  const num = `(?:${Array.from(new Set(forms)).map((f) => f.replace(/,/g, ',?')).join('|')})`;
+  const re = new RegExp(`(?<!\\b(?:not|no|zero|none)\\s)\\b${num}\\s+(?:(?:other|remaining|older|old|existing|known|pre-existing|flaky|unrelated|tests?|specs?|cases?)\\s+){0,2}(?:fail(?:s|ed|ing|ures?)?)\\b|\\bfail(?:s|ed|ing|ures?)?\\s*[:=]\\s*${num}\\b`, 'i');
+  return sentences(text).some((x) => re.test(x) && !OWNED_GONE_RE.test(x));
+}
+// A run with failures, and a sentence that gives its pass count. Returns null when the rule does not apply, true when
+// the failures are named in the sentence or the two after it in the same message, false when they are left out.
+function failuresDisclosed(claim, run, want) {
+  const k = testCounts(run.resultText);
+  if (!k || !k.fail || want == null || WHOLE_SUITE_RE.test(claim.text)) return null;
+  // "40/43 tests pass" names the total as well as the pass count.
+  const passNamed = k.pass === want || (k.total === want && new RegExp(`\\b${k.pass}\\s*(?:/|of)\\s*${k.total}\\b`).test(claim.text.replace(/(\d),(\d{3})/g, '$1$2')));
+  if (!passNamed) return null;
+  const msg = claim._item ? sentences(claim._item.text) : [claim.text];
+  const i = msg.indexOf(claim.text);
+  return namesFailures((i >= 0 ? msg.slice(i, i + 3) : [claim.text]).join(' '), k.fail);
+}
 
 // The window: this agent's calls in the same turn before the sentence (the last `cap` of them), plus the rest
 // of the turn after it (a claim sometimes precedes its own check). A claim that opens a turn refers to the
@@ -135,8 +162,15 @@ function windowFor(trace, item, byReq, cap = 80) {
   let opensTurn = true;
   for (let i = 0; i < item.index; i++) { const r = reqs[i]; if (r.agent === item.agent && r.turnIndex === item.request.turnIndex) { opensTurn = false; before.push(...(byReq.get(r.id) || [])); } }
   if (opensTurn) { const prev = []; for (let i = item.index - 1; i >= 0 && prev.length < 20; i--) { const r = reqs[i]; if (r.agent !== item.agent || r.turnIndex === item.request.turnIndex) continue; prev.unshift(...(byReq.get(r.id) || [])); } before.unshift(...prev.slice(-20)); }
-  before.push(...(byReq.get(item.request.id) || []));
-  for (let i = item.index + 1; i < reqs.length && after.length < 12; i++) { const r = reqs[i]; if (r.agent !== item.agent || r.turnIndex !== item.request.turnIndex) break; after.push(...(byReq.get(r.id) || [])); }
+  // The sentence's own response: calls before its block came before it; calls after it (the usual "Done. Running the
+  // tests to confirm." then a tool call) come after it.
+  const own = byReq.get(item.request.id) || [];
+  const at = new Map((item.request.blocks || []).map((b) => [b.id, b.index]));
+  const later = (c) => item.blockIndex != null && at.has(c.id) && at.get(c.id) > item.blockIndex;
+  before.push(...own.filter((c) => !later(c)));
+  after.push(...own.filter(later));
+  const ownAfter = after.length;
+  for (let i = item.index + 1; i < reqs.length && after.length - ownAfter < 12; i++) { const r = reqs[i]; if (r.agent !== item.agent || r.turnIndex !== item.request.turnIndex) break; after.push(...(byReq.get(r.id) || [])); }
   return { before: before.slice(-cap), after };
 }
 // Calls that can never be a receipt: the agent talking to the human (the sentence itself often travels in one),
@@ -153,7 +187,21 @@ function judgeOne(trace, claim, win) {
   const s = claim.text;
   const ev = (calls, note, verdict) => ({ verdict, evidence: calls.map((c) => c.id), note });
   if (claim.kind === 'test') {
-    const runs = all.filter((c) => (SHELL(c) && (TEST_CMD.test(cmdOf(c)) || looksLikeRun(c.resultText))) || ((SHELL(c) || c.name === 'WebFetch' || /javascript|browser_batch|get_page_text|read_page/.test(c.name) || c.name === 'Read') && CI_RESULT.test(c.resultText || '')));
+    // A run is judged as of the sentence: runs before it when there are any; the rest of the turn only when the claim
+    // came before its own check. A later run belongs to later work (new tests written red, say). A collect-only
+    // listing (`pytest --co`) runs nothing.
+    // A run started in the background ("started") has no result yet.
+    const background = (c) => (c.input && c.input.run_in_background === true) || /(?:^|[^&])&\s*\)?\s*$/.test(cmdOf(c).replace(/\s*#[^\n'"]*$/, '').trim());
+    // A collect-only step (`pytest --co`) lists tests without running them; a real run beside it still counts.
+    const runCmd = (c) => cmdOf(c).replace(/[^;&|\n]*--co(?:llect-only)?\b[^;&|\n]*/g, ' ');
+    const isRun = (c) => !background(c) && ((SHELL(c) && (TEST_CMD.test(runCmd(c)) || (looksLikeRun(c.resultText) && runCmd(c) === cmdOf(c)))) || ((SHELL(c) || c.name === 'WebFetch' || /javascript|browser_batch|get_page_text|read_page/.test(c.name) || c.name === 'Read') && CI_RESULT.test(c.resultText || '')));
+    // After the sentence, only the check that confirms it counts: runs before the next edit. Runs after an edit
+    // belong to the next piece of work.
+    // What ends the confirming check: a write to code or tests (by extension: a changelog does not count), or any shell
+    // edit, even one that runs the tests in the same command (a heredoc that writes a test file and runs it is new work).
+    const codeEdit = (c) => (WRITE_TOOLS.has(c.name) && /\.(?:mjs|cjs|js|jsx|ts|tsx|py|rb|go|rs|java|kt|cs|php|c|cc|cpp|h|hpp|swift|sh|ps1)$/i.test(String((c.input && (c.input.file_path || c.input.notebook_path)) || ''))) || (SHELL(c) && SHELL_EDIT_RE.test(cmdOf(c)));
+    const confirming = []; for (const c of win.after) { if (codeEdit(c)) break; confirming.push(c); }
+    const runs = win.before.concat(confirming).filter(usable).filter(isRun);
     if (!runs.length) {
       // A count quoted from a file or note the agent read is sourced, not measured — listed, not flagged.
       const want = claimedCount(s);
@@ -179,7 +227,14 @@ function judgeOne(trace, claim, win) {
       if (match.length) { const m = match[match.length - 1]; if (!pool.some((c) => c.start != null && m.start != null && c.start > m.start && testKey(c) === testKey(m) && runFailed(c))) last = m; }
     }
     const ci = runs.filter((c) => CI_RESULT.test(c.resultText || ''));
-    if (runFailed(last)) return ev([last], 'the latest run in the window did not pass', 'contradicted');
+    let disclosed = false;
+    if (runFailed(last)) {
+      // "1,043 tests pass. The 3 failures are the same ones as before." is true; "1,043 tests pass." alone is not.
+      const d = failuresDisclosed(claim, last, want);
+      if (d === null) return ev([last], 'the latest run in the window did not pass', 'contradicted');
+      if (!d) { const k = testCounts(last.resultText); return ev([last], `${k.pass} passed as the sentence says, but ${k.fail} failed and the message does not say so`, 'contradicted'); }
+      disclosed = true;
+    }
     const counts = testCounts(last.resultText);
     if (want != null && counts && counts.pass !== want && counts.total !== want) {
       if (ci.length && ci[ci.length - 1] !== last) return ev([last, ci[ci.length - 1]], `the run says ${counts.pass} passed, the sentence says ${want}; CI reports success`, 'verified');
@@ -187,7 +242,7 @@ function judgeOne(trace, claim, win) {
     }
     const lw = lastWriteAt(win.before.filter((c) => c.start != null && last.start != null && c.start > last.start));
     if (lw > -Infinity && !ci.some((c) => c.start != null && c.start > lw)) return ev([last], 'the run predates a later edit to source or tests, and nothing re-ran', 'stale');
-    return ev([last], counts ? `${counts.pass} passed, ${counts.fail} failed` : (CI_RESULT.test(last.resultText || '') ? 'CI success' : 'run ok'), 'verified');
+    return ev([last], counts ? `${counts.pass} passed, ${counts.fail} failed${disclosed ? '; the failures are named in the same message' : ''}` : (CI_RESULT.test(last.resultText || '') ? 'CI success' : 'run ok'), 'verified');
   }
   if (claim.kind === 'ship') {
     const shas = (s.match(SHA_RE) || []).filter((h) => /\d/.test(h) && /[a-f]/.test(h));
@@ -210,9 +265,20 @@ function judgeOne(trace, claim, win) {
       if (src.length) return ev(src.slice(-1), 'the version comes from something the agent read, not from a ship step', 'sourced');
     }
     if (!hits.length) return ev([], shas.length ? `no result carries ${shas[0]}` : versions.length ? `no result carries ${versions[0]}` : 'no push, publish, upload or commit result in the window', 'unverified');
-    const ok = hits.filter((c) => !c.isError && !/\b(?:fatal|rejected|denied|Authentication failed|ERR!)\b/i.test(c.resultText || ''));
+    // `"rejected":[]` is a device write's way of saying nothing was rejected.
+    // A device write with nothing in "written" saved nothing.
+    const ok = hits.filter((c) => !c.isError && !/"written"\s*:\s*\[\s*\]/.test(c.resultText || '') && !/\b(?:fatal|rejected|denied|Authentication failed|ERR!)\b/i.test(String(c.resultText || '').replace(/"rejected"\s*:\s*\[\s*\]/g, '')));
     // "Committed as c9b4747, but the push was refused": the failure is in the sentence, so it is not a contradiction.
-    if (!ok.length) return SHIP_DECLINED_RE.test(s) ? ev(hits.slice(-1), 'the ship step failed, as the sentence says', 'verified') : ev(hits.slice(-1), 'the ship step in the window failed', 'contradicted');
+    if (!ok.length && SHIP_DECLINED_RE.test(s)) return ev(hits.slice(-1), 'the ship step failed, as the sentence says', 'verified');
+    if (!ok.length) {
+      // A failed click (upload, push) the agent tried again with the same tool: the retry's result may not say what
+      // happened, so the failure is no longer the last word. No receipt either way.
+      const failed = hits[hits.length - 1];
+      const shipVerb = (c) => (cmdOf(c).match(SHIP_CMD) || [''])[0].toLowerCase();
+      const retry = win.before.filter(usable).filter((c) => c.name === failed.name && c !== failed && !c.isError && c.start != null && failed.start != null && c.start > failed.start && (!SHELL(c) || (shipVerb(c) && shipVerb(c) === shipVerb(failed))));
+      if (retry.length) return ev([failed, retry[retry.length - 1]], 'the ship step failed and was retried with the same tool; the retry\'s result does not show the ship', 'unverified');
+      return ev(hits.slice(-1), 'the ship step in the window failed', 'contradicted');
+    }
     return ev(ok.slice(-1), 'ship result in the window', 'verified');
   }
   if (claim.kind === 'write') {
