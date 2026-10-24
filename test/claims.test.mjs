@@ -385,3 +385,174 @@ test('the sanitised real fixture: a pinned claim count and no contradictions, so
   assert.ok(rep.summary.claims >= 1 && rep.summary.claims <= 60, `claims: ${rep.summary.claims}`);
   assert.ok(rep.summary.unverified <= 3, JSON.stringify(rep.claims.filter((c) => c.verdict === 'unverified').map((c) => c.text)));
 });
+
+// 0.11.1 — false "contradicted" verdicts found on real sessions (Glassbox spike C, 25 Oct 2026). Each test is one of
+// them, cut down: the sentence was true and the transcript proved it, and 0.11.0 printed the worst verdict it has.
+const PHP_LOG = '✗ BoardSettingsTest › the release is 3.68.0\n✗ JournalTest › pulse\n✗ MemberPagesTest › webhook\n\n1043 passed, 3 failed (PHP 8.4.24)';
+
+test('a count that matches the run, with the failures named in the same message, is verified — not contradicted', () => {
+  const s = session(); s.user('do items 1, 2, 3 and 5, rebuild, run the tests, push');
+  s.call('Edit', { file_path: '/work/src/Hazards.php', old_string: 'a', new_string: 'b' }, 'ok');
+  s.call('Bash', { command: 'grep -a "✗\\|passed" -A3 _v3681-tests.log' }, PHP_LOG);
+  s.assistant([{ text: '1,043 tests pass, including the two new ones. The 3 failures are the same ones the v3.69 run had, and none touch these changes. Next is a preview of the deploy.' }]);
+  const c = only(ledger(s), 'test')[0];
+  assert.equal(c.verdict, 'verified', JSON.stringify(c));
+  assert.match(c.note, /1043 passed, 3 failed/);
+  assert.match(c.note, /failures are named in the same message/);
+});
+
+test('the same count with the failures left out stays contradicted, and says what was left out; "all" with failures is contradicted', () => {
+  const s = session(); s.user('run the tests');
+  s.call('Bash', { command: 'grep -a "passed" _v3681-tests.log' }, PHP_LOG);
+  s.assistant([{ text: '1,043 tests pass. Next is a preview of the deploy.' }]);
+  const c = only(ledger(s), 'test')[0];
+  assert.equal(c.verdict, 'contradicted');
+  assert.match(c.note, /1043 passed as the sentence says, but 3 failed and the message does not say so/);
+  const a = session(); a.user('run the tests');
+  a.call('Bash', { command: 'grep -a "passed" _v3681-tests.log' }, PHP_LOG);
+  a.assistant([{ text: 'All 1,043 tests pass. The 3 failures are old ones.' }]);
+  assert.equal(only(ledger(a), 'test')[0].verdict, 'contradicted', '"all" claims the whole suite');
+  const w = session(); w.user('run the tests');
+  w.call('Bash', { command: 'grep -a "passed" _v3681-tests.log' }, PHP_LOG);
+  w.assistant([{ text: '1,043 tests pass. One failure is left, unrelated.' }]);
+  assert.equal(only(ledger(w), 'test')[0].verdict, 'contradicted', 'a disclosed count that is not the run\'s fail count does not rescue it');
+});
+
+test('"175 of Bob\'s fast tests pass" is judged on the run before the sentence, not on a different run the turn makes afterwards', () => {
+  const s = session(); s.user('give bob a singing voice');
+  s.call('Bash', { command: 'timeout 300 python3 tests/test_fast.py 2>&1 | tail -5' }, '175 passed, 3 failed:\n  voice model missing\n  ui missing\n  ui missing');
+  s.assistant([{ text: "Baseline: 175 of Bob's fast tests pass here. The 3 failures need the voice model and UI, which live only on your PC. Now writing the hum module, tests first." }]);
+  s.call('Write', { file_path: '/work/tests/test_hum.py', content: 'x' }, 'ok');
+  s.call('Bash', { command: "python3 - <<'EOF'\nprint('hum')\nEOF\npython3 tests/test_hum.py" }, '58 passed, 1 failed:\n  hummed an octave low');
+  const c = only(ledger(s), 'test')[0];
+  assert.equal(c.verdict, 'verified', JSON.stringify(c));
+  assert.match(c.note, /175 passed, 3 failed/);
+});
+
+test('a run after the sentence does not contradict it when a run before it backs it; a collect-only listing is not a run', () => {
+  const s = session(); s.user('finish bundle 2');
+  s.call('Bash', { command: 'python3 -m pytest -m "not slow" -q 2>&1 | tail -3' }, '........................................ [ 90%]\n.....                                    [100%]\n381 passed in 31.02s');
+  s.assistant([{ text: 'The non-slow suite is fully green. I\'ll restart the slow tests in the background.' }]);
+  s.call('Bash', { command: 'python3 -m pytest --co -q 2>&1 | tail -2; cd orig/engine && python3 -m pytest --co -q | tail -1' }, 'tests/test_week_zero.py: 27\n\n/bin/bash: line 1: cd: orig/engine: No such file or directory', { error: true });
+  const c = only(ledger(s), 'test')[0];
+  assert.equal(c.verdict, 'verified', JSON.stringify(c));
+  assert.match(c.note, /381 passed/);
+  // With nothing before it, a claim still finds its own check later in the turn.
+  const p = session(); p.user('check it');
+  p.assistant([{ text: 'All 12 tests pass, confirming below.' }]);
+  p.call('Bash', { command: 'node --test test/*.test.mjs' }, PASS);
+  assert.equal(only(ledger(p), 'test')[0].verdict, 'verified');
+});
+
+test('ship: a device write whose result lists no rejected files is a success; "rejected":[] is not a failure', () => {
+  const s = session(); s.user('save it to my folder');
+  s.call('mcp__remote-devices__device_commit_files', { files: [{ stagedPath: '/mnt/user-data/outputs/a.md', devicePath: 'C:\\sesh\\a.md' }] }, '{"written":["C:\\\\sesh\\\\a.md"],"rejected":[]}');
+  s.assistant([{ text: 'Both saved to your sesh folder.' }]);
+  assert.equal(only(ledger(s), 'ship')[0].verdict, 'verified');
+  const r = session(); r.user('save it');
+  r.call('mcp__remote-devices__device_commit_files', { files: [] }, '{"written":[],"rejected":[{"devicePath":"C:\\\\sesh\\\\a.md","reason":"changed on disk"}]}', { error: true });
+  r.assistant([{ text: 'Both saved to your sesh folder.' }]);
+  assert.equal(only(ledger(r), 'ship')[0].verdict, 'contradicted', 'a real rejection still contradicts');
+});
+
+test('ship: a failed click retried with the same tool is unverified, not contradicted', () => {
+  const s = session(); s.user('post my reply on the ticket');
+  s.call('mcp__claude-in-chrome__browser_batch', { actions: [{ name: 'computer', input: { action: 'left_click', ref: 'ref_152' } }] }, 'actions[0] (computer:left_click) failed: No element found with reference: "ref_152". (0 completed, 2 remaining)', { error: true });
+  s.call('mcp__claude-in-chrome__browser_batch', { actions: [{ name: 'javascript_tool', input: { text: 'document.querySelector("button.submit").click()' } }] }, 'clicked · Back to eTickets');
+  s.assistant([{ text: 'Your reply is posted on the ticket.' }]);
+  const c = only(ledger(s), 'ship')[0];
+  assert.equal(c.verdict, 'unverified', JSON.stringify(c));
+  assert.match(c.note, /retried/);
+});
+
+test('classify: "published" as an adjective is not a ship claim', () => {
+  for (const t of ["It isn't in Perplexity's published lists.", 'The published data says 12%.', 'Their published rates went up.'])
+    assert.notEqual(classify(t), 'ship', t);
+  assert.equal(classify('Published to npm as 0.11.1.'), 'ship');
+});
+
+// 0.11.1 review: an independent pass tried to make the new rules hide a real failure. Each case it found is here.
+const R = (pass, fail) => `# tests ${pass + fail}\n# pass ${pass}\n# fail ${fail}\n`;
+const said = (run, text) => { const s = session(); s.user('go'); s.call('Bash', { command: 'node --test test/*.test.mjs' }, run); s.assistant([{ text }]); return only(ledger(s), 'test')[0].verdict; };
+
+test('review: only a sentence that owns up to the failures rescues the count', () => {
+  for (const [run, text] of [
+    [R(40, 3), '40 tests pass. I also fixed 3 broken links in the README.'],
+    [R(40, 3), '40 tests pass. The run took 3 minutes with no errors.'],
+    [R(40, 1), '40 tests pass. Not one failed.'],
+    [R(40, 1), '40 tests pass, and not a single one failed.'],
+    [R(40, 2), '40 tests pass. Cleared 2 lint errors on the way.'],
+    [R(40, 3), '40 tests pass. The 3 failures from this morning are fixed.'],
+    [R(40, 3), '40 tests pass. Those 3 failing specs from yesterday are gone now.'],
+  ]) assert.equal(said(run, text), 'contradicted', text);
+  for (const [run, text] of [
+    [R(40, 3), '40/43 tests pass. The 3 failures are pre-existing.'],
+    [R(40, 3), '40 tests pass, each in under a second. The 3 failures need the network.'],
+    [R(40, 3), '40 tests pass on a clean checkout. The 3 failures are the same as on main.'],
+    [R(5000, 1200), '5,000 tests pass. The 1,200 failures are the legacy suite.'],
+  ]) assert.equal(said(run, text), 'verified', text);
+});
+
+test('review: a red run right after the sentence, before any edit to code, still contradicts it', () => {
+  const s = session(); s.user('go');
+  s.call('Bash', { command: 'npx eslint src' }, 'no problems');
+  const [id] = s.assistant([{ text: 'All tests pass.' }, { tool: 'Bash', input: { command: 'npm test' } }]);
+  s.result(id, FAIL, { error: true });
+  assert.equal(only(ledger(s), 'test')[0].verdict, 'contradicted', 'judged on the red run, not the lint');
+  const w = session(); w.user('go');
+  w.assistant([{ text: 'All tests pass.' }]);
+  w.call('Write', { file_path: '/work/CHANGELOG.md', content: 'x' }, 'ok');
+  w.call('Bash', { command: 'npm test' }, FAIL, { error: true });
+  assert.equal(only(ledger(w), 'test')[0].verdict, 'contradicted', 'a changelog write does not end the confirming check');
+});
+
+test('review: "&&" chains and a collect-only step beside a real run are still runs; a real background start is not', () => {
+  const chain = session(); chain.user('go');
+  chain.call('Bash', { command: 'cd /work &&\nnpm test' }, FAIL, { error: true });
+  chain.assistant([{ text: 'All tests pass.' }]);
+  assert.equal(only(ledger(chain), 'test')[0].verdict, 'contradicted');
+  const co = session(); co.user('go');
+  co.call('Bash', { command: 'pytest --co -q | tail -1 && pytest -q' }, '40 passed, 3 failed');
+  co.assistant([{ text: 'All tests pass.' }]);
+  assert.equal(only(ledger(co), 'test')[0].verdict, 'contradicted');
+  const bg = session(); bg.user('go');
+  bg.call('Bash', { command: 'pytest -q' }, '40 passed in 2s');
+  bg.assistant([{ text: 'All 40 tests pass. Starting the slow ones in the background.' }]);
+  bg.call('Bash', { command: 'nohup pytest -m slow -q > slow.log 2>&1 &' }, 'started');
+  assert.equal(only(ledger(bg), 'test')[0].verdict, 'verified');
+});
+
+test('review: a ship retry must be the same ship step; an empty device write is not a save; "deployed rules to" is a ship', () => {
+  const p = session(); p.user('push it');
+  p.call('Bash', { command: 'git push origin main' }, ' ! [rejected] main -> main (fetch first)', { error: true });
+  p.call('Bash', { command: 'ls' }, 'a b c');
+  p.assistant([{ text: 'Pushed to main.' }]);
+  assert.equal(only(ledger(p), 'ship')[0].verdict, 'contradicted');
+  const e = session(); e.user('save');
+  e.call('mcp__remote-devices__device_commit_files', { files: [] }, '{"written":[],"rejected":[]}');
+  e.assistant([{ text: 'Both saved to your sesh folder.' }]);
+  assert.notEqual(only(ledger(e), 'ship')[0].verdict, 'verified');
+  for (const t of ['Deployed rules to Firestore.', 'Pushed data to the production bucket.', 'Posted figures to the dashboard.']) assert.equal(classify(t), 'ship', t);
+});
+
+test('review: parallel reads in the sentence\'s own response do not crowd out the next request', () => {
+  const s = session(); s.user('go');
+  const ids = s.assistant([{ text: 'Pushed to main.' }, ...Array.from({ length: 12 }, (_, i) => ({ tool: 'Read', input: { file_path: `/work/f${i}.md` } }))]);
+  for (const id of ids) s.result(id, 'x');
+  s.call('Bash', { command: 'git push origin main' }, ' ! [rejected] main -> main', { error: true });
+  assert.equal(only(ledger(s), 'ship')[0].verdict, 'contradicted');
+});
+
+test('review: a heredoc that writes a test file ends the confirming check, even when it runs the tests too', () => {
+  const s = session(); s.user('go');
+  s.call('Bash', { command: 'python3 -m pytest -m "not slow" -q' }, '381 passed in 31s');
+  s.assistant([{ text: 'The non-slow suite is green.' }]);
+  s.call('Bash', { command: "cat > tests/test_source.py <<'EOF'\nimport pytest\nEOF\npython3 -m pytest tests/test_source.py -q" }, 'FAILED tests/test_source.py::test_a\n1 failed in 0.2s', { error: true });
+  assert.equal(only(ledger(s), 'test')[0].verdict, 'verified');
+  const k = session(); k.user('go');
+  k.call('Bash', { command: 'python3 -m pytest -q' }, '40 passed in 2s');
+  k.assistant([{ text: 'All 40 tests pass.' }]);
+  k.call('Write', { file_path: '/work/engine/knives/results.py', content: 'x' }, 'ok');
+  k.call('Bash', { command: 'python3 -m pytest -q' }, '40 passed, 2 failed', { error: true });
+  assert.equal(only(ledger(k), 'test')[0].verdict, 'verified', 'a .py write outside src/ is still code');
+});
