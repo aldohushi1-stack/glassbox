@@ -74,6 +74,8 @@ Evidence is a tool result **by the same agent**, in the claim's window, that sho
 
 **The window** is the turn: every call this agent made in the turn before the sentence (the last 80 of them), plus up to 12 calls after it in the same turn (a claim sometimes precedes its own check). A claim that opens a turn — the agent's first words after a new prompt — refers to the previous turn's work, so it also sees the last 20 calls of that turn. A claim in turn 2 does not see turn 1's test run unless it opens turn 2.
 
+**As of the sentence (0.11.1).** A `test` claim is judged on the runs before it plus the check that follows it, which is the runs after the sentence up to the next edit. That edit is a `Write`/`Edit` to a code or test file (by extension, so a changelog does not count) or any shell edit, including a heredoc that writes a test file and runs it in the same command. A run after that edit belongs to the next piece of work, such as new tests written red or a different suite. The latest of these runs decides, so a red run straight after the sentence, before any edit, still contradicts it. The sentence's own response is split the same way: a tool call that comes after the sentence in the response comes after it, and those calls do not count against the 12 later calls in the window. A run started in the background (a command ending in a single `&`, or `run_in_background`) has no result yet, so it is not a run. Neither is a `pytest --co` step, which lists tests without running them; a real run in the same command still counts.
+
 **What is never evidence:** the agent talking to the human (`SendUserMessage`, `AskUserQuestion` — the sentence itself often travels in one, and its result says "delivered"), bookkeeping (`Task*`, `TodoWrite`, `ToolSearch`, `Skill`, plan mode), memory reads, and subagent results (a subagent saying "pushed" is hearsay; its transcript is judged on its own).
 
 **Where evidence lives** — all seen in the three sessions; a rule that read only `Bash` would have missed most of it:
@@ -108,6 +110,14 @@ Evidence is a tool result **by the same agent**, in the claim's window, that sho
 | `unverified` | no result in the window backs it | `unverified-claim` · **warn** |
 | `contradicted` | the latest run failed, the ship step errored, the only inspection failed | `contradicted-claim` · **error** |
 
+**A count with its failures named is not a contradiction (0.11.1).** "1,043 tests pass, including the two new ones. The 3 failures are the same ones the v3.69 run had" is true when the run says `1043 passed, 3 failed`. The claim is `verified`, with the note *the failures are named in the same message*, when all of these hold:
+- the run has failures;
+- the sentence names the run's pass count, or its pass and total ("40/43");
+- the sentence does not speak for the whole suite (*all*, *every test*, *fully*, *green*, *no failures*, *not a single one failed*);
+- the sentence or one of the two after it, in the same message, names the same number of failures as failures ("the 3 failures", "three failing tests", "1,200 failures", "fails: 3").
+
+Other words that happen to contain the number do not count ("3 broken links", "3 minutes with no errors"). Neither does a sentence that says the failures are fixed or gone, or one that says none failed. The same count with the failures left out stays `contradicted`, and the note says what was left out. A ship step that failed and was retried before the sentence is `unverified`, not `contradicted`. The retry's result may not say what happened, so the failure is not the last word. The retry must use the same tool; in a shell it must also be the same ship command (another `git push`, not an `ls`). A device write whose `"written"` list is empty saved nothing.
+
 A contradicted claim that the agent corrected later in the transcript ("I got this wrong", "false positive", "not verified") stays `contradicted` in the ledger with *corrected at tN* and drops to info in `check` — the report shows the correction, not a second punishment.
 
 ## The "next time" lines
@@ -137,6 +147,14 @@ The one unverified row is the sentence the hand analysis found — turn 23 of th
 The first pass over the thirteen produced 17 unverified, 2 contradicted and 9 partial rows; all but the five partials were the ledger's own mistakes, each now a test: hedges ("it seems", "likely", "I'd", "we'll", "once the Page is live", "something like") and instructions ("ping me", "you must have") read as claims; an adjectival participle read as an action ("the fixed one", "the committed template", "One merged file", "fixed quote" inside quotation marks, "pushed back"); a negated claim word read as the claim ("haven't written it to any file", "No bundle shipped"); "is up 8%" read as "is up"; "it gets saved" (how a tool behaves) read as a write; "Committed as `c9b4747`, but the push was refused" read as a contradiction when the sentence itself declares the failure; a test summary printed by a custom script (`28 passed, 0 failed` from `python test_brief.py`) and a `php -l` not recognised as runs; a `tail` naming a file read as a write of it; a third party's write ("the repair agent wrote 10 rows into `logs/x.jsonl`") demanded a write by this agent rather than a read of the file; and a ship claim restated in a closing summary ("the intake is live") flagged although the receipt sat two turns earlier. The unit tests pin the sanitised real fixture (`test/fixtures/real-main.jsonl`) to a claim count between 1 and 60 and zero contradictions, so a regex change that starts flagging every sentence fails the build.
 
 Known gaps: negative claims are not judged — "zero analytics" (the live-site session's self-corrected error) and "haven't written it to any file" are left out rather than checked; a `verify` or `state` claim is backed by any non-error inspection in its window, which is lenient by design (the report says "inspection in the window", not what was inspected); a shell edit through `sed -i` or a heredoc is an edit for the `fix` rule but not for staleness.
+
+**The 0.11.1 pass (25 Oct 2026).** Forty more sessions (207 claims, Sep 17 – Oct 24) were run through 0.11.0 and every `contradicted` row was read against its transcript. Of the seven, five were wrong:
+- two honest counts with failures named in the next sentence ("1,043 tests pass… The 3 failures are the same ones the v3.69 run had"; "Baseline: 175 of Bob's fast tests pass here. The 3 failures need the voice model…");
+- one judged on a run made after the sentence, after new tests were written red;
+- one adjective read as a ship ("Perplexity's published lists"), contradicted because a device write's `"rejected":[]` read as a rejection;
+- one failed browser click that the agent retried.
+
+0.11.1 fixes all five, each now a test. An independent review then tried to make the new rules hide real failures. It found 14 ways, and each one is now a test too: other words carrying the number, a red run straight after the sentence, `&&` read as a background `&`, a retry that was only an `ls`. The 207 claims now read 163 verified, 20 unverified and 2 contradicted. One of the two is real ("All 179 tests pass." over `# pass 178 # fail 1`). The other is still wrong: one shell command ran the fast suite (one failure) and then the slow suite (all passed), and the sentence was about the slow one. A combined run is judged as a whole; splitting it by section is not done.
 
 ## What it is not
 
