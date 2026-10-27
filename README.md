@@ -169,7 +169,7 @@ Six kinds of claim (tests pass, shipped, verified, fixed, nothing changed, file 
 
 ### Memory across sessions — `glassbox recall` and `glassbox memory`
 
-A Claude Code session starts knowing nothing about the last one, and Claude Code deletes transcripts after 30 days by default. With `--context` (or the plugin's `context` option), the Stop hook keeps `<project>/.glassbox/memory.json`: a digest of each of the project's last 50 sessions — what was asked, the files written, the checks and pushes that ran and how they ended, the commits with their shas, the agent's last words, the findings — and **lessons**: findings counted across sessions by what they are about (`retry-loop · Bash npm test`, `failed-tool · Edit`, `unverified-claim · test`). The next session starts with this note (≤ 8,000 characters, under Claude Code's 10,000 cap):
+A Claude Code session starts knowing nothing about the last one, and Claude Code deletes transcripts after 30 days by default. With `--context` (or the plugin's `context` option), the Stop hook keeps `<project>/.glassbox/memory.json`: a digest of each of the project's last 50 sessions — what was asked, the files written, the checks and pushes that ran and how they ended, the commits with their shas, the agent's last words, the findings — and **lessons**: findings counted across sessions by what they are about (`retry-loop · Bash npm test`, `failed-tool · Edit`, `unverified-claim · test`). The lessons still recurring go into the agent's own memory — one block in auto memory's `MEMORY.md` (else `CLAUDE.local.md`) that Glassbox rewrites every turn and never edits beyond its markers — so there is one set of lessons, in the place the agent already reads. With `--memory glassbox`, the next session instead starts with 0.11's note (≤ 8,000 characters, under Claude Code's 10,000 cap):
 
 ```
 ## Recurring in this project (worst first)
@@ -181,7 +181,7 @@ A Claude Code session starts knowing nothing about the last one, and Claude Code
 - 2026-10-09 14:02 · a1b2c3d4 · "fix the login redirect" — wrote src/auth.js, test/auth.test.js · ran npm test (passed, last of 3) · committed 1a2b3c4 "fix: login redirect loop" · pushed
 ```
 
-A lesson is handed on until ten sessions in a row go by without it, then it retires (and comes back if it fires again). Each session that started with a lesson is counted, so `glassbox memory` can say what nobody could before: *told in 9 sessions, came back in 1*. Everything is copied or counted from the transcripts — no model call, no tokens — and whatever a `fence` detector recognises as a secret is masked before it is written.
+A lesson is handed on until ten sessions in a row go by without it, then it retires (and comes back if it fires again). Each session that started with a lesson in its memory is counted, so `glassbox memory` can say what nobody could before: *told in 9 sessions, came back in 1*. Everything is copied or counted from the transcripts — no model call, no tokens — and whatever a `fence` detector recognises as a secret is masked before it is written.
 
 ```
 glassbox recall login redirect        sessions of this project that mention it, best match first: asked / said / wrote / ran / commit
@@ -196,6 +196,59 @@ glassbox memory audit                 everything loaded before the first prompt,
 `recall` works without the hook: it reads the project's transcripts still on disk, and the ledger supplies the sessions whose transcripts are gone. Every word must match; a word that isn't in a transcript's raw text skips parsing it. The plugin's skill tells Claude to run it before re-investigating something a past session may already have settled.
 
 **`glassbox memory audit`** lists what Claude Code loads into every session before the first prompt — managed, user, parent-directory and project `CLAUDE.md` files, `CLAUDE.local.md`, unscoped `.claude/rules/`, `@imports` (four hops, relative to the importing file), the first 200 lines or 25 KB of the auto-memory `MEMORY.md`, and Glassbox's own note — with an estimated token cost (characters ÷ 4, HTML comments stripped as Claude Code strips them), then flags what a mechanical reader can: imports that load nothing, backticked paths and `npm run` scripts that don't exist, the same line in two places, rules that pull opposite ways (`use pnpm` here, `use npm, not pnpm` there — the same parser as `adhere`), files over the 200 lines Claude Code's docs recommend, and `MEMORY.md` lines past the cut-off that never load. `--fail-on warn` for CI. Details in [docs/MEMORY.md](docs/MEMORY.md).
+
+### On a Pro or Max plan — `glassbox plan`
+
+What the plan carried, at list price: each billing month against the plan's price, the last 7 days by model, 5-hour windows rebuilt from request times (heaviest first, with the session that used most of each), and any limit hits.
+
+```
+glassbox plan                          plan from ~/.claude.json, windows over the last 7 days
+glassbox plan --since 30d --top 10
+glassbox plan --plan-price 300         what you actually pay (default: the USD list price for the tier)
+glassbox plan --format md --redact     no session titles
+```
+
+```
+Glassbox plan · Max 20x (from .claude.json) · $200/month (USD list; --plan-price for yours) · Claude Code on this machine only
+
+  billing month from Mon 12 Oct        $730.53 list   vs $200 plan   3.7×   (day 14 of 31)
+  Sat 12 Sep – Mon 12 Oct            $2,056.02 list   vs $200 plan   10.3×
+  last 7 days                          $597.21 list   Opus 5.5 97% · Fable 5.1 3% · Sonnet 5.5 1%
+
+  5-hour windows, last 7d: 19 (rebuilt from request times; usage elsewhere can shift them)
+    now   Sun 25 Oct 16:35–21:35       $6.76     76 req  top 19dfbfc1 51%
+          Sun 18 Oct 23:45–04:45     $103.72   1084 req  top fe8c79e9 58%
+
+  limit hits: none in the last 7d
+```
+
+On its own, `plan` can't tell you your share of the plan's limits. Claude Code passes the 5-hour and weekly percentages only to the status line, never to a transcript, and those limits also count claude.ai, the apps and your other machines. That's what the status line below is for. List price is what the same tokens would cost on the API. It isn't money saved. From `~/.claude.json` it reads two fields, the rate-limit tier and the subscription start, and nothing else. Without a plan (API key, Bedrock, Vertex) it shows list price only, which is then what you pay.
+
+### The plan's real limits — `glassbox statusline` and `plan --live`
+
+```
+glassbox statusline install            the 5-hour and weekly % in Claude Code's status bar
+glassbox plan --live                   exact windows, their peak %, and what each session saw move
+glassbox statusline uninstall          and your old status line is back
+```
+
+```
+Opus 5.5 · ctx 32% │ 5h 20% · 1h16m left │ week 78% · resets 14:29
+```
+
+The status line shows the plan's own numbers, the ones Claude Code receives from the API, coloured green, yellow and red at 50% and 80%. Each time they change it appends one line to `~/.claude/glassbox/limits.jsonl` (owner-only; at 4 MB it becomes `limits.1.jsonl`). If you already have a status line, `install` keeps it running in front of Glassbox's, and `uninstall` puts it back. With those readings `plan --live` adds:
+
+```
+  From the status line: 2 readings, newest just now
+    latest   5h 20% (resets 21:19) · week 78% (resets Mon 26 Oct 14:29)
+    5-hour windows (exact)
+      Sun 25 Oct 16:19–21:19  peak  20%      $18.87 local  (open)
+    weeks
+      Mon 19 Oct 14:29 – Mon 26 Oct 14:29  peak  78%     $420.08 local  (open)
+    sessions, by how much the week moved while each ran (other usage in that time counts too)
+```
+
+A window's start is its reset time minus 5 hours (or 7 days), so these are exact, unlike the rebuilt ones. A session's figure is how far the % moved between its own first and last reading. Other sessions, claude.ai and other machines in that time count too, so it means "while it ran", not "because of it". There's no forecast of when you'll hit the limit.
 
 ## What it flags
 
@@ -227,7 +280,7 @@ Identical findings print once with a `×N` count in `check`. All mechanical, no 
 - Usage is counted once per API request (assistant records sharing a `requestId`), not once per record. Subagent transcripts rewrite `output_tokens` while a response streams, so the largest value across the request's records is used. Since Claude Code ~2.1.278 many subagent responses never get their final record written at all (every record has `stop_reason: null` and a partial count — [anthropics/claude-code#93620](https://github.com/anthropics/claude-code/issues/93620)); those output tokens are not on disk anywhere, so Glassbox counts the responses, shows the cost as **≥ $X** (a floor) and estimates the gap from the median of the session's own complete subagent tool-use responses (needs five). Compare with Claude Code's own total (`/cost`, the status line) before budgeting from a floor.
 - Context size = uncached input + cache read + cache write — the prompt the model actually saw.
 - Thinking tokens are part of output tokens; shown as a share, never added twice.
-- Cost is estimated from an editable rate card (defaults from the Claude pricing page, 2026-09-05; prefix-matched so dated model ids resolve). A `stream-json` `result` record with `total_cost_usd` overrides the estimate. Unknown models show "—" rather than a wrong number.
+- Cost is estimated from an editable rate card (defaults from the Claude pricing page, 2026-10-25; prefix-matched so dated model ids resolve; Haiku 5.5's higher price for prompts over 100k tokens applies to the whole request). `check` and `plan` say when the card may be wrong: a model priced through an older version's row (Opus 5.5 by Opus 5's, as before 0.11), a model with no price, or a session that ran more than 60 days after the card's date. A `--rates` row covers its whole family, so `claude-sonnet-4` also prices `claude-sonnet-4-5-…`. A `stream-json` `result` record with `total_cost_usd` overrides the estimate. Unknown models show "—" rather than a wrong number.
 
 ## Formats
 
@@ -251,6 +304,10 @@ src/cli.mjs           CLI library (session discovery, embed, check, compare, hoo
 src/tail.mjs          live tail: byte-offset tailer + loopback SSE server for `glassbox watch`
 src/guard.mjs         the PreToolUse loop guard (`hook --guard`)
 src/jsonl.mjs         transcripts of any size: line-by-line reading past 64 MB (V8 can't hold ~512 MB in one string)
+src/plan.mjs          what a Pro/Max plan carried: billing months, 5-hour windows, limit hits (`plan`, `plan --live`)
+src/statusline.mjs    the plan's real 5-hour and weekly % in the status bar, logged for `plan --live`
+src/managed.mjs       managed-settings drop-in and the temp-folder policy (`managed`, `GLASSBOX_TEMP`)
+scripts/bundle.mjs    offline bundle: tarball, viewer, CycloneDX SBOM, SHA256SUMS (`npm run bundle`)
 src/claims.mjs        said vs did: claims out of the agent's text, judged against the tool calls (`claims`, and three `check` rules)
 scripts/build.mjs     build
 scripts/sanitize.mjs  turn a real transcript into a shareable fixture (demo or structure mode)
@@ -276,12 +333,22 @@ console.log(reportMarkdown(trace, findings, cost));          // the agent-ready 
 console.log(compare({ trace, findings, cost }, other));      // other = the same three for a second session
 ```
 
+## In a company
+
+What an IT or security team needs before Glassbox goes on developer machines. The full inventory of files read, written and run is in [docs/IT.md](docs/IT.md).
+
+- **Offline install.** `node scripts/bundle.mjs` writes `release/glassbox-trace-<version>/`: the npm tarball, the standalone viewer, a CycloneDX 1.5 SBOM, `SHA256SUMS` and `INSTALL.md`. With no runtime dependencies, `npm install --global --offline ./glassbox-trace-<version>.tgz` needs no registry. The tarball is reproducible from the same commit. `--verify <folder>` re-checks the hashes.
+- **Every user at once.** `glassbox managed --hook --statusline --temp redact` prints Claude Code managed settings for the Stop hook, the status line and the temp policy. Add `--install` to write them as `managed-settings.d/glassbox.json` next to your `managed-settings.json`, which it never edits. `--uninstall` removes it.
+- **Transcripts out of the temp folder.** `open` writes the viewer, transcript inside, to the temp folder unless you pass `--out`. `GLASSBOX_TEMP=redact` makes that a structure-only copy, and `GLASSBOX_TEMP=deny` forbids it. It's read from the environment or from the managed settings' `env`. `open --redact` does the same for one run.
+- **Export-control markings.** `glassbox fence --markings` reports marked text that reached a transcript: classification banners, ITAR and EAR legends, CUI, DoD distribution statements B–F, ECCNs. `--markings-file` adds your own, such as a company's proprietary legend. They're reported, never shredded, and `--fail-on error` makes it a gate.
+- **Bedrock and Vertex.** Bedrock and Vertex model ids are priced from the same rows. A regional endpoint adds 10% on Claude 4.5 and later, read from the Bedrock id (`us.anthropic.…`) or set with `--endpoint regional`. `--geo us` prices first-party US-only inference. Each report says in one line how it priced the session.
+
 ## Privacy
 
 Your context is private — by construction, not by promise.
 
 - **Nothing leaves.** The viewer makes no network requests at all — fonts, scripts and the demo are inside the one file, and the test suite fails if a build references anything outside it. The CLI sends nothing anywhere. `glassbox watch` binds to `127.0.0.1` only and stops with the command. The one network activity is installation: `npx` fetching the package, or the plugin marketplace fetching this repo.
-- **What it touches.** It reads `~/.claude/projects/**` and writes only what you ask for: `open` writes a self-contained HTML to your temp folder (transcript included — delete it when done, or use `--out`), `hook install` edits `~/.claude/settings.json` with a backup beside it, `--context` writes `<project>/.glassbox/last-session.md` and `memory.json` (owner-only, git-ignored, secrets masked; they quote prompts and commands), `--legend` writes the legend. The full inventory — files, processes, hooks, network, uninstall — is in [docs/IT.md](docs/IT.md), written for whoever has to approve it.
+- **What it touches.** It reads `~/.claude/projects/**` (and, for `plan` only, two fields of `~/.claude.json`: the rate-limit tier and the subscription start) and writes only what you ask for: `open` writes a self-contained HTML to your temp folder (transcript included — delete it when done, or use `--out`), `hook install` and `statusline install` edit `~/.claude/settings.json` with a backup beside it, the status line logs the plan's % to `~/.claude/glassbox/limits.jsonl`, `--context` writes `<project>/.glassbox/last-session.md` and `memory.json` (owner-only, git-ignored, secrets masked; they quote prompts and commands) and one lessons block in auto memory's `MEMORY.md` or `CLAUDE.local.md`, `--legend` writes the legend. The full inventory — files, processes, hooks, network, uninstall — is in [docs/IT.md](docs/IT.md), written for whoever has to approve it.
 - **Counts, not text.** Transcripts contain everything the agent saw; that's why share mode and `--redact` exist. Redacted output keeps tool names, numbers, timings and cost and drops every string — prompts, commands, results, titles. Where a finding would quote something it says `«240 chars»`.
 - **What is already on disk.** `glassbox fence` finds credentials that reached a transcript (known key formats, secrets named by context, credential-file reads), reports them masked and fingerprinted, and `--shred` overwrites them in place. See above.
 - **The shape, not the names.** A redacted report still needs to say "this one file was read 48 times and 6 of those failed". `check --redact --legend audit.legend.json` replaces every path with a keyed hash (`file:b94b1a35`, HMAC-SHA256 with a random salt) and writes the key → path map to the legend file, which stays on your machine. The redacted JSON carries `summary.files` (reads, writes, failures, agents, chars per key) and `evidence.files` on findings; `duplicate-subagent-read` keeps its sentence with the key in it. `glassbox reveal report.md --legend audit.legend.json` turns the keys back into paths for you. Re-using the legend keeps keys stable across runs; two machines with two legends produce different keys for the same file. Treat the legend like a password file: local, git-ignored, never attached to the same email as the report. Design notes in DESIGN.md §12.

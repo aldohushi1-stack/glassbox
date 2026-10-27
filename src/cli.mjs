@@ -105,17 +105,41 @@ export function analyse(files, rates) {
 
 // A team rate card: --rates FILE or GLASSBOX_RATES. JSON keyed by model-id prefix, USD per million tokens:
 //   { "claude-opus-5": { "in": 4, "out": 20, "read": 0.4, "w5m": 5, "w1h": 8 } }
-// Entries override or extend the built-in card; cache-write rates default to 1.25× / 2× input.
+// Entries override or extend the built-in card; cache-write rates default to 1.25× / 2× input. An optional
+// "over": { "at": 100000, "in": …, "out": …, "read": … } prices requests whose prompt is over `at` tokens.
 export function loadRates(file) {
   if (!file) return null;
   let json; try { json = JSON.parse(readTextFile(String(file))); } catch (e) { throw new Error(`--rates ${file}: ${e.code === 'ENOENT' ? 'no such file' : 'not valid JSON'}`); }
   if (!json || typeof json !== 'object' || Array.isArray(json)) throw new Error(`--rates ${file}: expected an object keyed by model id`);
   const out = Object.assign({}, core.RATES);
+  const card = (r) => ({ in: r.in, out: r.out, read: r.read, w5m: typeof r.w5m === 'number' ? r.w5m : r.in * 1.25, w1h: typeof r.w1h === 'number' ? r.w1h : r.in * 2 });
+  const valid = (r) => r && ['in', 'out', 'read'].every((k) => typeof r[k] === 'number' && r[k] >= 0);
   for (const [model, r] of Object.entries(json)) {
-    if (!r || !['in', 'out', 'read'].every((k) => typeof r[k] === 'number' && r[k] >= 0)) throw new Error(`--rates ${file}: "${model}" needs numeric in, out and read (USD per million tokens)`);
-    out[model] = { in: r.in, out: r.out, read: r.read, w5m: typeof r.w5m === 'number' ? r.w5m : r.in * 1.25, w1h: typeof r.w1h === 'number' ? r.w1h : r.in * 2 };
+    if (!valid(r)) throw new Error(`--rates ${file}: "${model}" needs numeric in, out and read (USD per million tokens)`);
+    // A user's row covers its whole family: built-in rows that are longer prefixes of it (claude-sonnet-4-5 under
+    // claude-sonnet-4) would otherwise win the longest-prefix match and quietly ignore the user's price.
+    for (const k of Object.keys(core.RATES)) if (k !== model && k.startsWith(model) && !(k in json)) delete out[k];
+    out[model] = card(r);
+    if (r.over !== undefined) {
+      if (!valid(r.over) || !(typeof r.over.at === 'number' && r.over.at > 0)) throw new Error(`--rates ${file}: "${model}".over needs a positive "at" (prompt tokens) and numeric in, out and read`);
+      out[model].over = Object.assign(card(r.over), { at: r.over.at });
+    }
   }
+  // Marked, not enumerable: the age check skips a user's card, and the endpoint in a Bedrock id doesn't add 10%
+  // on top of a row the user priced from their own cloud sheet.
+  Object.defineProperty(out, '_custom', { value: true });
+  Object.defineProperty(out, '_userKeys', { value: new Set(Object.keys(json)) });
   return out;
+}
+
+// --platform anthropic|bedrock|vertex, --endpoint global|regional, --geo us: how a cloud deployment is billed.
+export function pricingFromFlags(flags, rates) {
+  const pick = (k, allowed) => { if (flags[k] === undefined) return undefined; const v = String(flags[k]).toLowerCase(); if (!allowed.includes(v)) throw new Error(`--${k} must be ${allowed.join(', ').replace(/, ([^,]*)$/, ' or $1')} (got "${flags[k]}")`); return v; };
+  const p = { platform: pick('platform', ['anthropic', 'bedrock', 'vertex']), endpoint: pick('endpoint', ['global', 'regional']), geo: pick('geo', ['global', 'us']) };
+  if (p.geo === 'global') delete p.geo;
+  if (!p.platform && !p.endpoint && !p.geo) return rates;
+  if (p.geo && p.platform && p.platform !== 'anthropic') throw new Error('--geo us is a first-party setting (inference_geo); on Bedrock or Vertex use --endpoint regional');
+  return core.withPricing(rates, p);
 }
 
 // "90m", "1h", "2d" → milliseconds.
@@ -123,6 +147,16 @@ export function parseSince(s) {
   const m = String(s).trim().match(/^(\d+(?:\.\d+)?)\s*(m|min|h|d)$/i);
   if (!m) throw new Error(`--since must look like 30m, 1h or 2d (got "${s}")`);
   return +m[1] * ({ m: 60e3, min: 60e3, h: 3600e3, d: 86400e3 })[m[2].toLowerCase()];
+}
+
+// The structure-only copy the viewer's "Export redacted" makes: timestamps, usage and tool names kept, every prompt,
+// input, result and assistant text blanked. A line that isn't JSON is dropped rather than kept as it was.
+export function redactFiles(files) {
+  return files.map((f) => {
+    if (/\.json$/i.test(f.name)) { try { return { name: f.name, text: JSON.stringify(core.redact([JSON.parse(f.text)])[0]) }; } catch (e) { return { name: f.name, text: '{}' }; } }
+    const recs = []; for (const line of f.text.split('\n')) { if (!line.trim()) continue; try { recs.push(JSON.parse(line)); } catch (e) { } }
+    return { name: f.name, text: core.toJsonl(core.redact(recs)) };
+  });
 }
 
 const safe = (s) => s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
@@ -195,6 +229,10 @@ export function checkReport({ trace, findings, cost, claims }, opts = {}) {
   // Per-file use, keyed when a legend is given; with --redact and no legend the paths would leak, so it is omitted.
   if (legend || !redact) summary.files = core.fileStats(trace).map((r) => ({ key: legend ? legend.keyFor(r.path) : r.path, reads: r.reads, writes: r.writes, errors: r.errors, agents: r.agents, chars: r.chars }));
   if (claims) summary.claims = claims.summary; // said vs did, in one line of numbers (additive; schema stays 2)
+  // Is the rate card right for this session's models and date? opts.rates is a --rates card (null = built-in).
+  summary.rateCard = core.rateCardCheck(m.models, opts.rates || undefined, { latest: m.end, custom: !!(opts.rates && opts.rates._custom) });
+  const rateLine = core.rateCardLine(summary.rateCard);
+  summary.pricing = core.pricingNote(m.models, opts.rates || undefined);
   const findingJson = (f) => {
     const ev = f.evidence || {};
     const paths = Array.from(new Set((ev.toolCallIds || []).map((id) => { const c = trace.toolCalls.find((x) => x.id === id); return c ? core.filePathOf(c) : null; }).filter(Boolean)));
@@ -210,13 +248,15 @@ export function checkReport({ trace, findings, cost, claims }, opts = {}) {
   lines.push(`Glassbox · ${m.sessionId ? m.sessionId.slice(0, 8) : 'session'} · ${m.models.join(', ') || 'unknown model'}`);
   lines.push(`  wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${T.turns} turns · ${T.requests} requests · ${T.toolCalls} tool calls (${T.toolErrors} failed${T.orphans ? ', ' + T.orphans + ' unanswered' : ''})`);
   lines.push(`  context served ${fi(T.usage.input + T.usage.cacheRead + T.usage.cacheWrite)} tokens (${T.cacheHitRatio != null ? Math.round(T.cacheHitRatio * 100) + '% cached' : 'no usage'}) · output ${fi(T.usage.output)} (${fi(T.usage.thinking)} thinking) · est. cost ${summary.costLowerBound ? '≥ ' : ''}${usd(summary.cost)}${summary.costLowerBound ? ' (floor)' : ''}`);
+  if (summary.pricing) lines.push('  ' + summary.pricing);
+  if (rateLine) lines.push('  ' + rateLine);
   lines.push('');
   if (!findings.length) lines.push('  no findings');
   for (const g of collapseFindings(findings)) lines.push('  ' + findingLine(g));
   if (redact) lines.push('', '  (redacted: prompt text, tool inputs and result text blanked)');
   lines.push('');
   lines.push(failing.length ? `  FAIL: ${failing.length} finding${failing.length > 1 ? 's' : ''} at or above "${failOn}"` : `  OK: nothing at or above "${failOn}"`);
-  const md = core.reportMarkdown(trace, findings, cost, { redact, maxEvidence: opts.maxEvidence });
+  const md = core.reportMarkdown(trace, findings, cost, { redact, maxEvidence: opts.maxEvidence }) + [summary.pricing, rateLine].filter(Boolean).map((l) => `\n> ${l}\n`).join('');
   return { text: lines.join('\n'), json, markdown: md, failed: failing.length > 0 };
 }
 
@@ -295,7 +335,7 @@ export function hookResponse(input, opts = {}) {
   if (!input || !input.transcript_path || !fs.existsSync(input.transcript_path)) return { systemMessage: 'Glassbox: no transcript_path in hook input.', suppressOutput: true };
   const s = sessionFromTranscriptPath(input.transcript_path);
   const res = analyse(loadSessionFiles(s), opts.rates);
-  const rep = checkReport(res, { failOn });
+  const rep = checkReport(res, { failOn, rates: opts.rates });
   const T = res.trace.totals;
   const usd = (v) => v == null ? '' : ' · ' + (v < 1 ? '$' + v.toFixed(3) : '$' + v.toFixed(2));
   const top = res.findings.filter((f) => SEV[f.severity] <= SEV[failOn]);
@@ -330,6 +370,9 @@ export function hookResponse(input, opts = {}) {
   return out;
 }
 
+export function readStdinText() {
+  return new Promise((resolve) => { let buf = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { buf += d; }); process.stdin.on('end', () => resolve(buf)); if (process.stdin.isTTY) resolve(''); });
+}
 export function readStdinJson() {
   return new Promise((resolve) => { let buf = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { buf += d; }); process.stdin.on('end', () => { try { resolve(JSON.parse(buf || '{}')); } catch (e) { resolve({}); } }); if (process.stdin.isTTY) resolve({}); });
 }
@@ -343,18 +386,27 @@ export function installHook(opts = {}) {
   let settings = {};
   if (fs.existsSync(file)) { try { settings = JSON.parse(readTextFile(file)); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
-  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.context && opts.memory === 'glassbox' ? ' --memory glassbox' : ''}${opts.guard ? ' --guard' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
-  const events = opts.events || ['Stop', ...(opts.context && opts.memory === 'glassbox' ? ['SessionStart'] : []), ...(opts.guard ? ['PreToolUse'] : [])];
+  const { command: cmd, events, entries } = hookEntries(opts);
   for (const ev of events) {
     const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
     const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
-    // PreToolUse runs before every tool call, so it gets a short timeout; no matcher means all tools.
-    kept.push({ hooks: [{ type: 'command', command: cmd, timeout: ev === 'PreToolUse' ? 10 : 60 }] });
+    kept.push(entries[ev]);
     settings.hooks[ev] = kept;
   }
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
   return { file, command: cmd, events };
+}
+// The hook command and one settings entry per event, shared by `hook install` and `managed`.
+export function hookEntries(opts = {}) {
+  // --memory glassbox (0.11's SessionStart note) is the only mode that needs SessionStart; the default writes the
+  // lessons into the agent's own memory from the Stop hook (0.12, DESIGN.md §21).
+  const legacy = opts.context && opts.memory === 'glassbox';
+  const command = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${legacy ? ' --memory glassbox' : ''}${opts.guard ? ' --guard' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  const events = opts.events || ['Stop', ...(legacy ? ['SessionStart'] : []), ...(opts.guard ? ['PreToolUse'] : [])];
+  // PreToolUse runs before every tool call, so it gets a short timeout; no matcher means all tools.
+  const entries = {}; for (const ev of events) entries[ev] = { hooks: [{ type: 'command', command, timeout: ev === 'PreToolUse' ? 10 : 60 }] };
+  return { command, events, entries };
 }
 // The guard runs before every tool call, so it can't go through npx (seconds per call). Point the hook at
 // this install's own entry point instead — unless this *is* a throwaway npx cache copy.
@@ -380,7 +432,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key', 'limit', 'memory'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key', 'limit', 'memory', 'top', 'plan', 'plan-price', 'bill-day', 'platform', 'endpoint', 'geo', 'markings-file', 'temp', 'dir'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -391,7 +443,7 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
   glassbox                       open the newest session in your browser
   glassbox list [--last N] [--grep TEXT] [--project PATH]
                                  list sessions, newest first
-  glassbox open [ID|FILE] [--out FILE.html] [--no-open]
+  glassbox open [ID|FILE] [--out FILE.html] [--no-open] [--redact]
                                  build a self-contained HTML for a session (id prefix or .jsonl path)
   glassbox check [ID|FILE] [--fail-on error|warn|info] [--format text|json|md] [--redact]
                                  print findings; exit 1 when any finding is at/above --fail-on (default: error), 2 on a usage error
@@ -434,6 +486,9 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  credential-file reads — with a masked preview and a fingerprint, never the value.
                                  no target = every session under the home; exit 1 when anything at/above --fail-on was found
                                  --shred overwrites each value in place with [FENCED:<rule>:<fingerprint>] (no backup)
+                                 --markings also finds export-control markings (classification banners, ITAR / EAR
+                                 legends, CUI, DoD distribution statements B–F, ECCNs); --markings-file FILE adds your
+                                 own ({ id, pattern, flags?, severity? } per entry). Markings are never shredded
   glassbox recall [WORDS…] [--project DIR] [--since 30d] [--limit N] [--format text|md|json] [--out FILE]
                                  search this project's past sessions: what was asked, written, run, committed and said,
                                  from the transcripts still on disk and .glassbox/memory.json; no words = the latest ones
@@ -444,11 +499,33 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
   glassbox memory audit [--project DIR] [--format text|md|json] [--out FILE] [--fail-on error|warn|info|none]
                                  everything loaded before the first prompt (CLAUDE.md files, rules, @imports, auto memory,
                                  Glassbox's own note) with its token cost, dead imports and paths, duplicates and conflicting rules
+  glassbox plan [--since 7d] [--plan pro|max-5x|max-20x|none] [--plan-price N] [--bill-day D] [--top N] [--format text|md|json] [--out FILE] [--redact]
+                                 what a Pro/Max plan carried, at list price: billing months vs the plan price, the last
+                                 7 days by model, rebuilt 5-hour windows (heaviest first) and limit hits. The plan comes
+                                 from ~/.claude.json; Claude Code on this machine only, and not your share of the limits
+  glassbox plan --live           add the plan's real readings from the status line: the latest 5-hour and weekly %,
+                                 exact windows with their peak %, and how much the week moved while each session ran
+  glassbox statusline install [--no-color]
+                                 put the plan's real 5-hour and weekly % in Claude Code's status bar, and log each
+                                 change to ~/.claude/glassbox/limits.jsonl for plan --live; an existing status line
+                                 keeps running in front of it
+  glassbox statusline uninstall  remove it and put back the status line you had (a .glassbox-backup is kept)
+  glassbox managed [--hook [--feedback] [--context [--memory agent|glassbox]] [--guard]] [--statusline] [--temp allow|redact|deny] [--install | --out FILE] [--uninstall] [--command CMD]
+                                 Glassbox for every user on the machine, through Claude Code's managed settings: prints
+                                 the settings, or with --install writes its own drop-in, managed-settings.d/glassbox.json
+                                 (needs an administrator; never edits managed-settings.json). --temp sets GLASSBOX_TEMP
   glassbox hook                  (what Claude Code runs: reads the hook JSON on stdin, replies on stdout)
 
   Options   --home DIR   use DIR instead of ~/.claude (or set GLASSBOX_HOME)
-            --rates FILE a JSON rate card for check, compare and hook (or set GLASSBOX_RATES)
+            --rates FILE a JSON rate card for check, compare, plan and hook (or set GLASSBOX_RATES)
+            --platform anthropic|bedrock|vertex  --endpoint global|regional  --geo us
+                         how the requests were billed: regional endpoints add 10% on Claude 4.5 and later (Bedrock
+                         ids carry it: us.anthropic.… is regional, global.anthropic.… is not); --geo us is first-party
+                         US-only inference, +10% on Claude 4.6 and later
             --version    --help
+  Temp      open writes the transcript to the temp folder unless --out is given; GLASSBOX_TEMP=redact blanks
+            the text first, GLASSBOX_TEMP=deny forbids it (also read from env in the managed settings);
+            open --redact does the same for one run
   Browser   set GLASSBOX_BROWSER to a command to open HTML files with
 
 Nothing leaves your machine. Subagent transcripts next to the session are included automatically.`;
@@ -485,7 +562,7 @@ export async function main(argv, io = {}) {
   if (args.flags.help || cmd === 'help') { out(HELP); return 0; }
   if (args.flags.version) { out(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version); return 0; }
   try {
-    const rates = loadRates(args.flags.rates || (io.env || process.env).GLASSBOX_RATES);
+    const rates = pricingFromFlags(args.flags, loadRates(args.flags.rates || (io.env || process.env).GLASSBOX_RATES));
     if (cmd === 'list') {
       const list = findSessions({ home, last: args.flags.last ? +args.flags.last : 20, grep: args.flags.grep, project: args.flags.project });
       if (!list.length) { out(noSessionsMessage(home)); return 0; }
@@ -509,7 +586,7 @@ export async function main(argv, io = {}) {
       const since = args.flags.since ? parseSince(args.flags.since) : null;
       const list = findSessions({ home, project: args.flags.project }).filter((s) => since == null || s.mtime >= Date.now() - since);
       const fmtOut = outputFormat(args.flags);
-      const reps = list.map((s) => ({ s, rep: checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend }) }));
+      const reps = list.map((s) => ({ s, rep: checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend, rates }) }));
       saveLegend();
       const failed = reps.filter((r) => r.rep.failed).length;
       if (fmtOut === 'json') out(JSON.stringify({ glassbox: core.VERSION, schema: 2, redacted: !!args.flags.redact, legend: !!legend, failOn: args.flags['fail-on'] || 'error', failed: failed > 0, sessions: reps.map((r) => r.rep.json) }, null, 2));
@@ -523,7 +600,7 @@ export async function main(argv, io = {}) {
     }
     if (cmd === 'check') {
       const s = resolveTarget(args._[1], { home });
-      const res = checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend });
+      const res = checkReport(analyse(loadSessionFiles(s), rates), { failOn: args.flags['fail-on'], redact: !!args.flags.redact, legend, rates });
       saveLegend();
       const fmtOut = outputFormat(args.flags);
       if (fmtOut === 'json') out(JSON.stringify(res.json, null, 2)); else if (fmtOut === 'md') out(res.markdown); else out(res.text);
@@ -546,14 +623,21 @@ export async function main(argv, io = {}) {
       return 0;
     }
     if (cmd === 'open' && !args.flags.watch) {
+      // The temp folder is the one place `open` writes without being told where; GLASSBOX_TEMP (or the managed
+      // settings' env) can make that redacted-only or forbid it (src/managed.mjs).
+      const { tempPolicy } = await import('./managed.mjs');
+      const tp = args.flags.out ? null : tempPolicy(io.env || process.env, io.managedDir);
+      if (tp && tp.policy === 'deny') throw new Error(`the temp folder is closed to transcripts (GLASSBOX_TEMP=deny, from ${tp.from}): pass --out FILE to choose where the HTML goes`);
       const s = resolveTarget(args._[1], { home });
-      const files = loadSessionFiles(s);
-      const big = files.find((f) => Array.isArray(f.records));
+      const raw = loadSessionFiles(s);
+      const big = raw.find((f) => Array.isArray(f.records));
       if (big) throw new Error(`${big.name} is ${(big.bytes / 1048576).toFixed(0)} MB — too large for the browser viewer, which reads a transcript whole. glassbox check ${s.id.slice(0, 8)} reads it line by line.`);
+      const redacted = !!args.flags.redact || (tp && tp.policy === 'redact');
+      const files = redacted ? redactFiles(raw) : raw;
       const html = embed(files, { template: io.template });
       const outFile = args.flags.out ? path.resolve(args.flags.out) : path.join(os.tmpdir(), `glassbox-${s.id.slice(0, 8)}.html`);
       fs.writeFileSync(outFile, html);
-      out(`${outFile}  (${files.length} file${files.length > 1 ? 's' : ''}, ${Math.round(html.length / 1024)} KB)`);
+      out(`${outFile}  (${files.length} file${files.length > 1 ? 's' : ''}, ${Math.round(html.length / 1024)} KB${redacted ? ', redacted' : ''})`);
       if (!args.flags['no-open'] && !io.noOpen) openInBrowser(outFile);
       return 0;
     }
@@ -626,7 +710,7 @@ export async function main(argv, io = {}) {
       const since = args.flags.since ? Date.now() - parseSince(args.flags.since) : null;
       const failOn = args.flags['fail-on'] || 'error';
       const fmtOut = outputFormat(args.flags);
-      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred, keyFile: args.flags.key, sessionsOnly: !!args.flags['sessions-only'] });
+      const rep = fence({ home, target: args._[1], since, project: args.flags.project, shred: !!args.flags.shred, keyFile: args.flags.key, sessionsOnly: !!args.flags['sessions-only'], markings: !!args.flags.markings, markingsFile: args.flags['markings-file'] });
       const failed = failedAt(rep, failOn);
       const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? fenceMarkdown(rep) : fenceText(rep);
       if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.scanned.files} files, ${rep.findings.length} findings${rep.shredded ? `, ${rep.shredded.values} values shredded` : ''})`); }
@@ -678,6 +762,51 @@ export async function main(argv, io = {}) {
       if (sub !== 'show') throw new Error(`memory: unknown subcommand "${sub}" (show, forget, clear, audit)`);
       const rep = memoryReport({ project, home });
       writeOut(fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? memoryMarkdown(rep) : memoryText(rep), `${rep.sessions} sessions, ${rep.summary.active} active lessons`);
+      return 0;
+    }
+    if (cmd === 'plan') {
+      // What a Pro/Max plan carried: list price by billing month, last 7 days, rebuilt 5-hour windows, limit hits.
+      const { plan, planText, planMarkdown } = await import('./plan.mjs');
+      const num = (k) => { if (args.flags[k] === undefined) return null; const v = Number(args.flags[k]); if (!Number.isFinite(v) || v < 0) throw new Error(`--${k} must be a number (got "${args.flags[k]}")`); return v; };
+      const fmtOut = outputFormat(args.flags);
+      const rep = plan({ home, now: io.now, since: args.flags.since ? parseSince(args.flags.since) : undefined, plan: args.flags.plan !== undefined ? String(args.flags.plan) : undefined, planPrice: num('plan-price'), billDay: num('bill-day'), top: num('top') || 5, redact: !!args.flags.redact, rates, live: !!args.flags.live });
+      const text = fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? planMarkdown(rep) : planText(rep);
+      if (args.flags.out) { const f = path.resolve(args.flags.out); fs.writeFileSync(f, text); out(`${f}  (${rep.sessions} sessions, ${rep.requests} requests)`); }
+      else out(text.replace(/\n$/, ''));
+      return 0;
+    }
+    if (cmd === 'managed') {
+      // Glassbox for every user on the machine: a drop-in in Claude Code's managed-settings.d/, printed or written.
+      const mg = await import('./managed.mjs');
+      const dir = args.flags.dir ? String(args.flags.dir) : mg.managedDir(process.platform, io.env || process.env);
+      const file = args.flags.out ? path.resolve(String(args.flags.out)) : mg.dropInFile(dir);
+      if (args.flags.uninstall) { const r = mg.removeDropIn({ file }); out(r.removed ? `Removed ${r.file}` : `Nothing to remove: ${r.file} is not there`); return 0; }
+      const command = args.flags.command ? String(args.flags.command) : guardCommand(ROOT);
+      const frag = mg.managedFragment({ command, hook: !!args.flags.hook, feedback: !!args.flags.feedback, context: !!args.flags.context, memory: memoryMode(args.flags.memory), guard: !!args.flags.guard, failOn: args.flags['fail-on'], statusline: !!args.flags.statusline, noColor: !!args.flags['no-color'], temp: args.flags.temp !== undefined ? String(args.flags.temp).toLowerCase() : undefined });
+      if ((frag.hooks || frag.statusLine) && mg.userScoped(command)) err(`managed: the command points into ${os.homedir()}, which the machine's other users can't run. Install Glassbox machine-wide (npm i -g with a shared prefix) or pass --command.`);
+      if (!args.flags.install && !args.flags.out) { out(JSON.stringify(frag, null, 2)); err(`managed: printed only. To apply it for every user, save it as ${mg.dropInFile(dir)} (needs an administrator), or run this again with --install.`); return 0; }
+      let r; try { r = mg.writeDropIn(frag, { file }); } catch (e) { if (e.code === 'EACCES' || e.code === 'EPERM') throw new Error(`can't write ${file}: run this from an administrator prompt (or with sudo), or print the fragment and hand it to whoever manages the machine`); throw e; }
+      out(`Wrote ${r.file}${frag.hooks ? `\n  hooks: ${Object.keys(frag.hooks).join(', ')}` : ''}${frag.statusLine ? `\n  statusLine: ${frag.statusLine.command}` : ''}${frag.env ? `\n  env: GLASSBOX_TEMP=${frag.env.GLASSBOX_TEMP}` : ''}\nClaude Code reads it at start for every user on this machine. Remove with: glassbox managed --uninstall`);
+      return 0;
+    }
+    if (cmd === 'statusline') {
+      // What Claude Code runs on every status refresh (JSON on stdin), or install / uninstall in settings.json.
+      const sl = await import('./statusline.mjs');
+      const sub = args._[1];
+      if (sub === 'install') {
+        const r = sl.installStatusLine({ home, command: args.flags.command || guardCommand(ROOT), noColor: !!args.flags['no-color'] });
+        out(`Installed the Glassbox status line in ${r.file}\n  ${r.command}\n${r.kept ? `Your previous status line keeps running in front of it: ${r.kept}\n` : ''}Readings go to ${sl.limitsFile(home)}; \`glassbox plan --live\` reads them. Restart Claude Code to pick it up.`);
+        return 0;
+      }
+      if (sub === 'uninstall') { const r = sl.uninstallStatusLine({ home }); out(r.removed ? `Removed the Glassbox status line from ${r.file}${r.restored ? `; restored ${r.restored}` : ''}` : `No Glassbox status line in ${r.file}`); return 0; }
+      // Never fail loudly: a status bar that shows an error on every refresh is worse than a short one.
+      let line;
+      try {
+        const raw = io.stdin !== undefined ? (typeof io.stdin === 'string' ? io.stdin : JSON.stringify(io.stdin)) : await readStdinText();
+        let input = {}; try { input = JSON.parse(raw || '{}'); } catch (e) { }
+        line = sl.statusline(input, { home, now: io.now, raw, color: !(args.flags['no-color'] || (io.env || process.env).NO_COLOR) });
+      } catch (e) { line = 'glassbox: ' + e.message; }
+      out(line);
       return 0;
     }
     err('Unknown command: ' + cmd + '\n'); out(HELP); return 2;

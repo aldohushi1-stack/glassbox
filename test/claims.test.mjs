@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { session, file } from './gen.mjs';
 import { main, analyse, checkReport, hookResponse } from '../src/cli.mjs';
 import { judgeClaims, extractClaims, classify, sentences, claimFindings, claimsText, claimsMarkdown, focus } from '../src/claims.mjs';
@@ -378,7 +379,7 @@ test('CLI: glassbox claims on a file, formats, --out, --redact, --fail-on and ex
 });
 
 test('the sanitised real fixture: a pinned claim count and no contradictions, so a regex that flags every sentence fails the build', () => {
-  const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); // not URL.pathname: "/C:/…" on Windows
   const files = [{ name: 'real-main.jsonl', text: fs.readFileSync(path.join(root, 'test/fixtures/real-main.jsonl'), 'utf8') }, { name: 'x/subagents/agent-real.jsonl', text: fs.readFileSync(path.join(root, 'test/fixtures/real-subagent.jsonl'), 'utf8') }];
   const rep = judgeClaims(core.parseTrace(files));
   assert.equal(rep.summary.contradicted, 0, JSON.stringify(rep.claims.filter((c) => c.verdict === 'contradicted')));
@@ -555,4 +556,120 @@ test('review: a heredoc that writes a test file ends the confirming check, even 
   k.call('Write', { file_path: '/work/engine/knives/results.py', content: 'x' }, 'ok');
   k.call('Bash', { command: 'python3 -m pytest -q' }, '40 passed, 2 failed', { error: true });
   assert.equal(only(ledger(k), 'test')[0].verdict, 'verified', 'a .py write outside src/ is still code');
+});
+
+// ---- the local second calibration (Claude Code, 26 Oct 2026, 145 sessions) ----
+test('calibration 2 (fix 1): a sentence that states the failures, or whose next sentence does, agrees with the run or is declared', () => {
+  const RED = '✗ clock › parses a leap second\n✗ clock › parses a negative offset\n410 passed, 2 failed\n';
+  const one = (text, out, error = true) => { const s = session(); s.user('run the suite'); s.call('Bash', { command: 'php tests/run.php' }, out, { error }); s.assistant([{ text }]); return ledger(s).claims[0]; };
+  let c = one('Suite: 410 of 412 pass; the two failures are the flaky clock tests.', RED);
+  assert.equal(c.verdict, 'verified', JSON.stringify(c)); assert.match(c.note, /410 passed, 2 failed, as the sentence says/);
+  c = one('Tests: 410 pass. The 2 failures are the clock tests that hit the network.', RED);
+  assert.equal(c.verdict, 'verified', JSON.stringify(c)); assert.match(c.note, /as the next sentence says/);
+  c = one('The suite ran 410 passed and 2 failed.', RED);
+  assert.equal(c.verdict, 'verified', JSON.stringify(c));
+  c = one('The whole suite passes except the clock tests, which hit the network.', RED);
+  assert.equal(c.verdict, 'declared', JSON.stringify(c)); assert.equal(claimFindings({ claims: [c] }).length, 0);
+  // The stated tally must be the run's: 410 of 412 says 2 failed, the run says 3.
+  c = one('Suite: 410 of 412 pass.', '409 passed, 3 failed\n');
+  assert.equal(c.verdict, 'contradicted', JSON.stringify(c)); assert.match(c.note, /says 2 failed, the run says 409 passed, 3 failed/);
+  // No failure admitted: still a contradiction.
+  c = one('All 412 tests pass.', RED);
+  assert.equal(c.verdict, 'contradicted');
+  // One command, two runners: the sentence names the half whose count it quotes.
+  c = one('Python: 64 pass.', '300 passed, 1 failed (PHP 8.4)\n======= 64 passed, 2 skipped in 3.10s =======\n', false);
+  assert.equal(c.verdict, 'verified', JSON.stringify(c)); assert.match(c.note, /64 passed, 0 failed/);
+  // A count the failing run doesn't carry is about another run; one named check is not contradicted by others failing.
+  c = one('All 25 map checks pass on the phone layout.', RED);
+  assert.equal(c.verdict, 'partial', JSON.stringify(c)); assert.match(c.note, /not the ones the sentence names/);
+  c = one('The leap-year check passed, and the page loads.', RED);
+  assert.equal(c.verdict, 'partial', JSON.stringify(c));
+  c = one('The leap second test passed.', RED);
+  assert.equal(c.verdict, 'contradicted', 'a FAIL row names it');
+  // "lint clean" is judged on the syntax check, not on a later suite run in the window.
+  const l = session(); l.user('lint and test');
+  l.call('Bash', { command: 'php -l src/Clock.php' }, 'No syntax errors detected in src/Clock.php');
+  l.call('Bash', { command: 'php tests/run.php' }, RED, { error: true });
+  l.assistant([{ text: 'Lint is clean on the clock module.' }]);
+  assert.equal(ledger(l).claims[0].verdict, 'verified', JSON.stringify(ledger(l).claims[0]));
+});
+
+test('calibration 2 (fix 2): a background run is the read of its output after the task notification, not the launch', () => {
+  const launch = (s) => s.call('Bash', { command: 'npm test', run_in_background: true }, 'Command running in background with ID: bq7x2k. Output is being written to: /tmp/claude/s1/tasks/bq7x2k.output');
+  const notice = '<task-notification>\n<task-id>bq7x2k</task-id>\n<status>completed</status>\n<summary>Background command "npm test" completed (exit code 0)</summary>\n</task-notification>';
+  const s = session(); s.user('run the tests in the background');
+  launch(s); s.assistant([{ text: 'Started.' }]);
+  s.user(notice);
+  const readId = s.call('Read', { file_path: '/tmp/claude/s1/tasks/bq7x2k.output' }, PASS);
+  s.assistant([{ text: 'All 12 tests pass.' }]);
+  const c = ledger(s).claims.find((x) => x.kind === 'test');
+  assert.equal(c.verdict, 'verified', JSON.stringify(c)); assert.deepEqual(c.evidence, [readId]); assert.match(c.note, /12 passed/);
+  // A claim before the result is back has no run behind it: the launch is not one, and nor is a peek at partial output.
+  const early = session(); early.user('run the tests in the background');
+  launch(early);
+  early.call('Bash', { command: 'tail -3 /tmp/claude/s1/tasks/bq7x2k.output' }, '# Subtest: parses');
+  early.assistant([{ text: 'All 12 tests pass.' }]);
+  assert.equal(ledger(early).claims[0].verdict, 'unverified', JSON.stringify(ledger(early).claims[0]));
+  // The output says it failed: the claim is contradicted.
+  const red = session(); red.user('run the tests in the background');
+  launch(red); red.user(notice.replace('completed</status>', 'failed</status>').replace('exit code 0', 'exit code 1'));
+  red.call('Bash', { command: 'cat /tmp/claude/s1/tasks/bq7x2k.output' }, FAIL);
+  red.assistant([{ text: 'All 12 tests pass.' }]);
+  assert.equal(ledger(red).claims[0].verdict, 'contradicted');
+});
+
+test('calibration 2 (fix 3): runner formats beyond node:test, jest and mocha', () => {
+  const one = (call, text) => { const s = session(); s.user('check it'); s.call(...call); s.assistant([{ text }]); return ledger(s).claims[0]; };
+  const JOBS = 'gh run view 4242 --json jobs --jq ".jobs[] | \\"\\(.name): \\(.conclusion)\\""';
+  const cases = [
+    [['Bash', { command: 'python -m unittest discover' }, '.......\n----------------------------------------------------------------------\nRan 7 tests in 0.812s\n\nOK\n'], 'All 7 tests pass.', 'verified', /7 passed, 0 failed/],
+    [['Bash', { command: 'python -m unittest discover' }, 'FAIL: test_round\n----------------------------------------------------------------------\nRan 7 tests in 0.812s\n\nFAILED (failures=1)\n'], 'All 7 tests pass.', 'contradicted'],
+    [['Bash', { command: JOBS }, 'ubuntu-latest / Node 20: success\nmacos-latest / Node 20: success\nwindows-latest / Node 20: success\n'], 'CI passed on all 3 jobs.', 'verified', /3 passed, 0 failed/],
+    [['Bash', { command: JOBS }, 'ubuntu-latest / Node 20: success\nwindows-latest / Node 20: failure\n'], 'CI passed on both jobs.', 'contradicted'],
+    [['Bash', { command: 'cat /work/ci-jobs.txt' }, '1\tsuccess  ubuntu-latest / Node 22\n2\tsuccess  macos-latest / Node 22\n'], 'Both CI jobs passed.', 'verified'],
+    [['Bash', { command: 'gh pr checks 7' }, 'lint\tpass\t9s\thttps://example.test/1\ntest\tpass\t41s\thttps://example.test/2\n'], 'Both PR checks pass.', 'verified', /2 passed/],
+    [['Bash', { command: 'node harness/run-board.mjs' }, 'PASS board renders\nPASS no console errors\nRESULT PASS\n'], 'The board checks pass.', 'verified'],
+    [['Bash', { command: 'node harness/run-board.mjs' }, 'PASS board renders\nPASS tap opens the card\n\n21/21 checks pass\n'], 'All 21 checks pass.', 'verified', /21 passed/],
+    [['Bash', { command: 'node harness/run-board.mjs' }, 'ok:42\n0 failures\n'], 'All 42 checks pass.', 'verified', /42 passed/],
+    [['Bash', { command: 'node harness/drive.mjs' }, 'warm-up done\nALL 23 PASSED\n'], 'The drive suite passes 23/23.', 'verified', /23 passed/],
+    [['Bash', { command: 'node tools/shot.mjs page.html out.png' }, '{ "mode": "cut", "selfTest": { "passed": 128, "total": 128, "fails": [] } }'], 'The self-test passes 128/128.', 'verified', /128 passed/],
+    [['Bash', { command: 'python -m kit.selftest' },'pass round trip\n12 of 12 tests passed.\n'], 'The self-test passes 12 of 12.', 'verified', /12 passed/],
+    [['Bash', { command: 'gh run view 40211234567 --json jobs --jq ".jobs[].conclusion"' }, 'success  ubuntu-latest / Node 22\nsuccess  windows-latest / Node 22\n'], 'CI run 40211234567 passed on both jobs.', 'verified'],
+    [['mcp__Claude_Browser__javascript_tool', { action: 'javascript_exec', text: 'window.__health()' }, '{"errors": [], "allPass": true}'], 'The page self-tests all pass.', 'verified'],
+    [['Bash', { command: 'node test-map.mjs' }, 'PASS zoom keeps the pin\nPASS flat map carries on\n\nall passed\n'], 'All the map checks pass.', 'verified'],
+  ];
+  for (const [call, text, verdict, note] of cases) {
+    const c = one(call, text);
+    assert.equal(c && c.verdict, verdict, `${text} → ${JSON.stringify(c)}`);
+    if (note) assert.match(c.note, note, text);
+  }
+});
+
+test('calibration 2 (fix 4): a red run the agent planted after the claim, or describes in it, does not contradict it', () => {
+  const s = session(); s.user('add the check');
+  s.call('Bash', { command: 'node --test test/scheduler.test.mjs' }, '# tests 33\n# pass 33\n# fail 0\n');
+  s.assistant([{ text: 'All 33 pass. Next, one run against the old code, to show the check would have caught the regression.' }]);
+  s.call('Bash', { command: 'git stash && node --test test/scheduler.test.mjs; git stash pop' }, 'not ok 14 - the slot stays free\n# tests 33\n# pass 32\n# fail 1\n', { error: true });
+  s.assistant([{ text: 'Restored.' }]);
+  const c = ledger(s).claims[0];
+  assert.equal(c.verdict, 'verified', JSON.stringify(c)); assert.match(c.note, /33 passed/);
+  // The sentence itself describes the red run.
+  const d = session(); d.user('prove the test');
+  d.call('Bash', { command: 'node --test test/scheduler.test.mjs' }, 'not ok 3 - clamps the window\n# pass 29\n# fail 2\n', { error: true });
+  d.assistant([{ text: 'The two new tests fail against the old code and pass with the fix.' }]);
+  assert.match(ledger(d).claims[0].note, /deliberate/); assert.equal(ledger(d).claims[0].verdict, 'verified');
+  // The red run can ride in the claim's own message, right after its text.
+  const m = session(); m.user('add the check');
+  m.call('Bash', { command: 'node --test test/scheduler.test.mjs' }, '# tests 33\n# pass 33\n# fail 0\n');
+  m.assistant([{ text: 'All 33 pass. Now the same file against the old scheduler code, to prove the test catches the bug:' }, { tool: 'Bash', input: { command: 'git stash && node --test test/scheduler.test.mjs' }, id: 'toolu_redrun' }]);
+  m.result('toolu_redrun', 'not ok 14 - the slot stays free\n# pass 32\n# fail 1\n', { error: true });
+  m.assistant([{ text: 'Restored.' }]);
+  assert.equal(ledger(m).claims[0].verdict, 'verified', JSON.stringify(ledger(m).claims[0]));
+  // Without that word from the agent, a later failing run of the same command is still the latest word.
+  const u = session(); u.user('add the check');
+  u.call('Bash', { command: 'node --test test/scheduler.test.mjs' }, '# tests 33\n# pass 33\n# fail 0\n');
+  u.assistant([{ text: 'All 33 pass.' }]);
+  u.call('Bash', { command: 'node --test test/scheduler.test.mjs' }, 'not ok 14 - the slot stays free\n# tests 33\n# pass 32\n# fail 1\n', { error: true });
+  u.assistant([{ text: 'Hm.' }]);
+  assert.equal(ledger(u).claims[0].verdict, 'contradicted');
 });

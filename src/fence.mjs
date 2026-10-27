@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import { findSessions, subagentFiles, resolveTarget, claudeHome } from './cli.mjs';
 import { constants as BUF } from 'node:buffer';
 import { streamBytes } from './jsonl.mjs';
+import { readTextFile } from './textfile.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 
@@ -98,6 +99,43 @@ export const DETECTORS = [
   { id: 'jwt', severity: 'warn', re: R(String.raw`eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b`), what: 'a JWT' },
   { id: 'generic-secret', severity: 'warn', re: R(String.raw`(?:(?:api[_-]?key|secret[_-]?key|client[_-]?secret|access[_-]?token|auth[_-]?token|refresh[_-]?token|secret|token|passwd|password|pwd)\b(?:\\?["']?\s*[:=]\s*\\?["']?)|bearer\s+)([A-Za-z0-9_\-/+=.]{16,})`, 'gi'), value: (m) => m[1], ok: (v) => !PLACEHOLDER.test(v) && /[0-9]/.test(v) && /[A-Za-z]/.test(v) && entropy(v) >= 3.5, what: 'a secret named by its context' },
 ];
+
+// Export-control and classification markings: opt-in with --markings, because a conversation *about* ITAR is not a
+// spill. Each pattern is the marking as it is printed on a document (banner, legend, distribution statement), not
+// the word in prose. A marking is not a secret, so the preview is the marking itself; and it is never shredded:
+// removing the marking would leave the controlled text in the transcript, unmarked.
+// Each starts with B (defined above): in a transcript a marking at the start of a line follows a JSON "\n",
+// where \b would see the n as a word character and miss it.
+export const MARKINGS = [
+  { id: 'classification-banner', severity: 'error', re: R(String.raw`(?:(?:TOP SECRET|SECRET|CONFIDENTIAL)\/\/[A-Z][A-Z0-9/ ,-]{1,40}|NOFORN\b)`), what: 'a classification banner' },
+  { id: 'itar-marking', severity: 'error', re: R(String.raw`ITAR[- ](?:CONTROLLED|RESTRICTED)\b`), what: 'an ITAR marking' },
+  { id: 'itar-marking', severity: 'error', re: /subject to the International Traffic in Arms Regulations|export is restricted by the Arms Export Control Act/gi, what: 'the ITAR / AECA export legend' },
+  { id: 'cui-marking', severity: 'error', re: R(String.raw`(?:CUI\/\/[A-Z][A-Z0-9/-]*|CONTROLLED UNCLASSIFIED INFORMATION\b)`), what: 'a CUI marking' },
+  { id: 'distribution-statement', severity: 'error', re: R(String.raw`DISTRIBUTION STATEMENT [B-F]\b`), what: 'a DoD distribution statement (B–F)' },
+  { id: 'export-controlled', severity: 'warn', re: R(String.raw`EXPORT[- ]CONTROLLED\b`), what: 'an export-controlled marking' },
+  { id: 'export-controlled', severity: 'warn', re: /subject to the Export Administration Regulations/gi, what: 'the EAR export legend' },
+  { id: 'eccn', severity: 'warn', re: R(String.raw`ECCN[:\s#]{0,3}[0-9][A-E][0-9]{3}(?:\.[a-z0-9.]{1,8})?\b`, 'gi'), what: 'an export classification number' },
+  { id: 'ear99', severity: 'info', re: R(String.raw`EAR99\b`), what: 'an EAR99 classification' },
+];
+export const MARKING_ADVICE = 'Text marked as controlled reached the model and this disk. Treat it as a possible spill and follow your export-compliance procedure. --shred leaves markings alone: removing one would leave the controlled text unmarked.';
+export const isMarking = (rule, list = MARKINGS) => list.some((d) => d.id === rule);
+
+// A company's own markings: --markings-file FILE, a JSON list of { id, pattern, flags?, severity? }.
+export function loadMarkings(file) {
+  let json; try { json = JSON.parse(readTextFile(String(file))); } catch (e) { throw new Error(`--markings-file ${file}: ${e.code === 'ENOENT' ? 'no such file' : 'not valid JSON'}`); }
+  if (!Array.isArray(json)) throw new Error(`--markings-file ${file}: expected a list of { "id": …, "pattern": … }`);
+  const taken = new Set([...DETECTORS.map((d) => d.id), ...MARKINGS.map((d) => d.id), 'credential-file-read']);
+  return json.map((m, i) => {
+    if (!m || typeof m.id !== 'string' || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(m.id)) throw new Error(`--markings-file ${file}: entry ${i + 1} needs an "id" of lower-case letters, digits and dashes`);
+    if (taken.has(m.id)) throw new Error(`--markings-file ${file}: "${m.id}" is already a built-in rule; pick another id`);
+    if (typeof m.pattern !== 'string' || !m.pattern) throw new Error(`--markings-file ${file}: "${m.id}" needs a "pattern"`);
+    const sev = m.severity || 'warn'; if (!(sev in SEV)) throw new Error(`--markings-file ${file}: "${m.id}" severity must be error, warn or info`);
+    let re; try { re = new RegExp(m.pattern, String(m.flags || '').replace(/g/g, '') + 'g'); } catch (e) { throw new Error(`--markings-file ${file}: "${m.id}" pattern is not a valid regular expression (${e.message})`); }
+    taken.add(m.id);
+    return { id: m.id, severity: sev, re, what: m.what || `the "${m.id}" marking` };
+  });
+}
+
 export const ADVICE = {
   'private-key': 'Generate a new key pair and remove the old public key everywhere it is authorised; then shred.',
   'aws-access-key': 'Deactivate the key in IAM and issue a new one; check CloudTrail for use; then shred.',
@@ -155,15 +193,18 @@ export function scanText(text, opts = {}) {
   const hits = [];
   const spans = []; // [start, end] of accepted hits, for overlap suppression
   const overlaps = (a, b) => spans.some(([x, y]) => a < y && b > x);
-  for (const d of DETECTORS) {
+  const marks = opts.markings || [];
+  for (const d of DETECTORS.concat(marks)) {
+    const marking = marks.includes(d);
     d.re.lastIndex = 0; let m;
     while ((m = d.re.exec(text))) {
+      if (!m[0]) { d.re.lastIndex++; continue; } // a custom pattern that can match nothing must not spin
       const value = d.value ? d.value(m) : m[0];
       const start = d.value ? m.index + m[0].length - value.length : m.index, end = start + value.length;
       if (d.ok && !d.ok(value)) continue;
       if (overlaps(start, end)) continue;
       spans.push([start, end]);
-      hits.push({ rule: d.id, severity: d.severity, start, end, value, preview: mask(value), fingerprint: fp(value), line: lineAt(starts, start) });
+      hits.push({ rule: d.id, severity: d.severity, start, end, value, preview: marking ? value.replace(/\\[nrt]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) : mask(value), fingerprint: fp(value), line: lineAt(starts, start), marking });
     }
   }
   hits.sort((a, b) => a.start - b.start);
@@ -211,9 +252,10 @@ function rows(hits) {
   const map = new Map();
   for (const h of hits) {
     const k = [h.rule, h.fingerprint, h.where, h.tool || '', h.path || ''].join('|');
-    if (map.has(k)) { const r = map.get(k); r.count++; if (h.value != null) r.spans.push([h.start, h.end]); continue; } // a credential-file read has no value to shred
-    map.set(k, Object.defineProperties({ rule: h.rule, severity: h.severity, where: h.where, tool: h.tool, path: h.path, line: h.line, preview: h.preview, fingerprint: h.fingerprint, count: 1 }, {
-      value: { value: h.value, enumerable: false }, spans: { value: h.value == null ? [] : [[h.start, h.end]], enumerable: false },
+    if (map.has(k)) { const r = map.get(k); r.count++; if (h.value != null && !h.marking) r.spans.push([h.start, h.end]); continue; } // a credential-file read has no value, a marking is never shredded
+    map.set(k, Object.defineProperties(Object.assign({ rule: h.rule, severity: h.severity, where: h.where, tool: h.tool, path: h.path, line: h.line, preview: h.preview, fingerprint: h.fingerprint, count: 1 }, h.marking ? { marking: true } : {}), {
+      // a marking has no spans, so shred never touches it
+      value: { value: h.value, enumerable: false }, spans: { value: h.value == null || h.marking ? [] : [[h.start, h.end]], enumerable: false },
     }));
   }
   return [...map.values()];
@@ -247,7 +289,7 @@ export function forEachSegment(file, segBytes, fn) {
 function scanFileSegmented(file, meta) {
   const state = {}, hits = []; let lines = 0;
   forEachSegment(file, meta.segmentBytes || SEGMENT_BYTES, (text, off) => {
-    for (const h of scanText(text, { key: meta.key, where: meta.where, state, lineOffset: off })) hits.push(h);
+    for (const h of scanText(text, { key: meta.key, where: meta.where, markings: meta.markings, state, lineOffset: off })) hits.push(h);
     lines = off + text.split('\n').length;
   });
   const findings = rows(meta.store ? hits.filter((h) => h.rule !== 'credential-file-read') : hits).map((r) => Object.assign(r, {
@@ -260,7 +302,7 @@ export function scanFile(file, meta = {}) {
   const buf = fs.readFileSync(file);
   if (meta.store && isBinary(buf)) return { file, bytes: buf.length, skipped: 'binary file', findings: [] };
   const text = buf.toString('utf8');
-  const hits = scanText(text, { key: meta.key, where: meta.where });
+  const hits = scanText(text, { key: meta.key, where: meta.where, markings: meta.markings });
   const findings = rows(meta.store ? hits.filter((h) => h.rule !== 'credential-file-read') : hits).map((r) => Object.assign(r, {
     file, session: meta.store ? meta.session || undefined : meta.session || path.basename(file).replace(/\.jsonl$/, ''), project: meta.project || undefined, store: meta.store || undefined }));
   return { file, bytes: buf.length, lines: text.split('\n').length, findings, text, raw: buf };
@@ -296,7 +338,8 @@ export function shredFile(file, findings, opts = {}) {
 // rule and fingerprint were reported, check the segment the way the small path checks the file, and write it to the
 // temp file; rename only when every segment passed. Same guarantees as the small path, one segment in memory.
 function shredFileSegmented(file, findings, replacer, opts) {
-  const want = new Map(); for (const f of findings) if (f.rule !== 'credential-file-read') want.set(f.rule + '|' + f.fingerprint, f);
+  // Markings are never shredded (removing one would leave controlled text unmarked), so they are not wanted here.
+  const want = new Map(); for (const f of findings) if (f.rule !== 'credential-file-read' && !f.marking) want.set(f.rule + '|' + f.fingerprint, f);
   if (!want.size) return { written: false, values: 0, reason: 'nothing to shred' };
   const json = opts.json != null ? opts.json : /\.jsonl$/i.test(file);
   const tmp = file + '.glassbox-shred~'; const mode = fs.statSync(file).mode & 0o777;
@@ -363,11 +406,13 @@ export function fence(opts = {}) {
   const home = opts.home || claudeHome();
   const keyFile = opts.keyFile ? path.resolve(opts.keyFile) : defaultKeyFile(home);
   const key = opts.keyFile ? loadKey(keyFile) : ensureKey(keyFile);
+  // --markings: the built-in export-control set; --markings-file adds a company's own (and implies --markings).
+  const markings = opts.markings || opts.markingsFile ? MARKINGS.concat(opts.markingsFile ? loadMarkings(opts.markingsFile) : []) : [];
   const files = [], findings = [], skipped = []; let bytes = 0; const sessions = new Set();
   const shredded = { files: 0, values: 0, refused: [] };
   for (const t of tg.list) {
     if (t.store && fs.statSync(t.file).size > STORE_MAX_BYTES) { skipped.push({ file: t.file, reason: `larger than ${STORE_MAX_BYTES / 1048576} MB` }); continue; }
-    let r; try { r = scanFile(t.file, { session: t.session, project: t.project, store: t.store, where: t.where, key }); } catch (e) { shredded.refused.push({ file: t.file, reason: e.message }); continue; }
+    let r; try { r = scanFile(t.file, { session: t.session, project: t.project, store: t.store, where: t.where, key, markings }); } catch (e) { shredded.refused.push({ file: t.file, reason: e.message }); continue; }
     if (r.skipped) { skipped.push({ file: t.file, reason: r.skipped }); continue; }
     files.push({ file: t.file, session: t.session || undefined, store: t.store, bytes: r.bytes, findings: r.findings.length, streamed: r.streamed || undefined });
     bytes += r.bytes; if (!t.store) sessions.add(t.session);
@@ -380,12 +425,15 @@ export function fence(opts = {}) {
   const bySeverity = { error: 0, warn: 0, info: 0 }; for (const f of findings) bySeverity[f.severity]++;
   const byRule = {}; for (const f of findings) byRule[f.rule] = (byRule[f.rule] || 0) + f.count;
   const secretMap = new Map();
-  for (const f of findings) { if (f.rule === 'credential-file-read') continue; const k = f.fingerprint; if (!secretMap.has(k)) secretMap.set(k, { fingerprint: k, rule: f.rule, severity: f.severity, preview: f.preview, sessions: new Set(), files: new Set(), occurrences: 0, advice: ADVICE[f.rule] }); const s = secretMap.get(k); if (f.session && !f.store) s.sessions.add(f.session); s.files.add(f.file); s.occurrences += f.count; }
-  const secrets = [...secretMap.values()].map((s) => Object.assign(s, { sessions: s.sessions.size, files: s.files.size })).sort((a, b) => SEV[a.severity] - SEV[b.severity] || b.sessions - a.sessions || b.occurrences - a.occurrences);
+  const markMap = new Map();
+  for (const f of findings) { if (f.rule === 'credential-file-read') continue; const map = f.marking ? markMap : secretMap; const k = f.marking ? f.rule + '|' + f.preview : f.fingerprint; if (!map.has(k)) map.set(k, { fingerprint: f.fingerprint, rule: f.rule, severity: f.severity, preview: f.preview, sessions: new Set(), files: new Set(), occurrences: 0, advice: f.marking ? MARKING_ADVICE : ADVICE[f.rule] }); const s = map.get(k); if (f.session && !f.store) s.sessions.add(f.session); s.files.add(f.file); s.occurrences += f.count; }
+  const spread = (m) => [...m.values()].map((s) => Object.assign(s, { sessions: s.sessions.size, files: s.files.size })).sort((a, b) => SEV[a.severity] - SEV[b.severity] || b.sessions - a.sessions || b.occurrences - a.occurrences);
+  const secrets = spread(secretMap), marked = spread(markMap);
   const rep = { glassbox: core.VERSION, kind: 'fence', schema: 2, generated: new Date().toISOString(), mode: tg.mode, home: tg.home, dir: tg.dir, since: opts.since ? new Date(opts.since).toISOString() : undefined,
     fingerprint: { alg: 'hmac-sha256', chars: 8, key: keyFile },
     scanned: { files: files.length, sessions: sessions.size, bytes, stores: storeCounts, storesNote: tg.storesNote, skipped },
-    summary: { bySeverity, byRule, filesWithFindings: files.filter((f) => f.findings).length, distinctSecrets: secrets.length, secrets },
+    summary: { bySeverity, byRule, filesWithFindings: files.filter((f) => f.findings).length, distinctSecrets: secrets.length, secrets, markings: markings.length ? marked : undefined },
+    markings: markings.length ? { rules: [...new Set(markings.map((d) => d.id))], custom: opts.markingsFile ? path.resolve(opts.markingsFile) : undefined } : undefined,
     findings, files };
   if (opts.shred) rep.shredded = shredded;
   return rep;
@@ -405,17 +453,25 @@ export function fenceText(rep) {
   const nStore = rep.scanned.stores ? Object.values(rep.scanned.stores).reduce((a, b) => a + b, 0) : 0;
   L.push(`Glassbox fence · ${what}${nStore ? ` + ${storeLine(rep.scanned.stores)}` : ''} · ${fmtBytes(rep.scanned.bytes)}${rep.since ? ` · since ${rep.since.slice(0, 10)}` : ''}`);
   if (rep.scanned.storesNote) L.push(`  (${rep.scanned.storesNote})`);
-  if (!rep.findings.length) { L.push('  nothing found — no known credential formats, no secrets named by context, no credential-file reads'); }
+  if (rep.markings) L.push(`  export-control markings: on (${rep.markings.rules.length} rules${rep.markings.custom ? `, including ${rep.markings.custom}` : ''})`);
+  if (!rep.findings.length) { L.push(`  nothing found — no known credential formats, no secrets named by context, no credential-file reads${rep.markings ? ', no export-control markings' : ''}`); }
   else {
-    L.push(`  ${s.error} error · ${s.warn} warn · ${s.info} info · ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files`, '');
+    L.push(`  ${s.error} error · ${s.warn} warn · ${s.info} info · ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'}${rep.summary.markings ? ` · ${rep.summary.markings.length} marking${rep.summary.markings.length === 1 ? '' : 's'}` : ''} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files`, '');
     let last = null;
     for (const f of rep.findings) {
       if (f.file !== last) { L.push(`  ${f.file}${f.session && !f.file.includes(f.session) ? `  (session ${f.session.slice(0, 8)})` : ''}`); last = f.file; }
-      L.push(`    ${f.severity.toUpperCase().padEnd(5)} ${f.rule.padEnd(21)} line ${String(f.line).padStart(6)}  ${f.preview}${f.count > 1 ? `  ×${f.count}` : ''}  — ${place(f)}`);
+      L.push(`    ${f.severity.toUpperCase().padEnd(5)} ${f.rule.padEnd(22)} line ${String(f.line).padStart(6)}  ${f.preview}${f.count > 1 ? `  ×${f.count}` : ''}  — ${place(f)}`);
     }
-    L.push('', '  Secrets, by how far they spread:');
-    for (const x of rep.summary.secrets.slice(0, 20)) L.push(`    ${x.severity.toUpperCase().padEnd(5)} ${x.rule.padEnd(21)} ${x.fingerprint}  ${x.preview}  in ${x.sessions} session${x.sessions === 1 ? '' : 's'}, ${x.occurrences} place${x.occurrences === 1 ? '' : 's'}`);
-    L.push('', '  A secret that reached a transcript reached a disk: rotate it, then run again with --shred to overwrite it in place.');
+    if (rep.summary.secrets.length) {
+      L.push('', '  Secrets, by how far they spread:');
+      for (const x of rep.summary.secrets.slice(0, 20)) L.push(`    ${x.severity.toUpperCase().padEnd(5)} ${x.rule.padEnd(22)} ${x.fingerprint}  ${x.preview}  in ${x.sessions} session${x.sessions === 1 ? '' : 's'}, ${x.occurrences} place${x.occurrences === 1 ? '' : 's'}`);
+      L.push('', '  A secret that reached a transcript reached a disk: rotate it, then run again with --shred to overwrite it in place.');
+    }
+    if (rep.summary.markings && rep.summary.markings.length) {
+      L.push('', '  Export-control markings, by how far they spread:');
+      for (const x of rep.summary.markings.slice(0, 20)) L.push(`    ${x.severity.toUpperCase().padEnd(5)} ${x.rule.padEnd(22)} "${x.preview}"  in ${x.sessions} session${x.sessions === 1 ? '' : 's'}, ${x.occurrences} place${x.occurrences === 1 ? '' : 's'}`);
+      L.push('', '  ' + MARKING_ADVICE);
+    }
   }
   if (rep.scanned.skipped && rep.scanned.skipped.length) L.push(`  skipped ${rep.scanned.skipped.length} file${rep.scanned.skipped.length === 1 ? '' : 's'} (binary or too large)`);
   L.push(`  fingerprints: HMAC-SHA256 under ${rep.fingerprint.key} (keep that file on this machine)`);
@@ -427,11 +483,20 @@ export function fenceMarkdown(rep) {
   const L = [`# Glassbox fence — ${rep.generated.slice(0, 10)}`, '', `Scanned ${rep.scanned.files} file${rep.scanned.files === 1 ? '' : 's'} (${rep.scanned.sessions} session${rep.scanned.sessions === 1 ? '' : 's'}${rep.scanned.stores && Object.keys(rep.scanned.stores).length ? ` + ${storeLine(rep.scanned.stores)}` : ''}, ${fmtBytes(rep.scanned.bytes)})${rep.since ? ` written since ${rep.since.slice(0, 10)}` : ''}. Previews are masked and fingerprints are the first 8 hex of HMAC-SHA256 under a key kept on this machine; this report holds no secret values.`, ''];
   if (rep.scanned.storesNote) L.push(`_${rep.scanned.storesNote}._`, '');
   const s = rep.summary.bySeverity;
-  if (!rep.findings.length) { L.push('**Nothing found.** No known credential formats, no secrets named by context, no credential-file reads.'); return L.join('\n') + '\n'; }
-  L.push(`**${s.error} error · ${s.warn} warn · ${s.info} info** — ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files.`, '');
-  L.push('## Secrets, by how far they spread', '', '| severity | rule | fingerprint | preview | sessions | places | do |', '|---|---|---|---|---:|---:|---|');
-  for (const x of rep.summary.secrets) L.push(`| ${x.severity} | \`${x.rule}\` | \`${x.fingerprint}\` | ${x.preview} | ${x.sessions} | ${x.occurrences} | ${x.advice} |`);
-  L.push('', '## Where, file by file', '');
+  if (rep.markings) L.push(`Export-control markings were checked (${rep.markings.rules.map((r) => `\`${r}\``).join(', ')}).`, '');
+  if (!rep.findings.length) { L.push(`**Nothing found.** No known credential formats, no secrets named by context, no credential-file reads${rep.markings ? ', no export-control markings' : ''}.`); return L.join('\n') + '\n'; }
+  L.push(`**${s.error} error · ${s.warn} warn · ${s.info} info** — ${rep.summary.distinctSecrets} distinct secret${rep.summary.distinctSecrets === 1 ? '' : 's'}${rep.summary.markings ? `, ${rep.summary.markings.length} marking${rep.summary.markings.length === 1 ? '' : 's'}` : ''} in ${rep.summary.filesWithFindings} of ${rep.scanned.files} files.`, '');
+  if (rep.summary.secrets.length) {
+    L.push('## Secrets, by how far they spread', '', '| severity | rule | fingerprint | preview | sessions | places | do |', '|---|---|---|---|---:|---:|---|');
+    for (const x of rep.summary.secrets) L.push(`| ${x.severity} | \`${x.rule}\` | \`${x.fingerprint}\` | ${x.preview} | ${x.sessions} | ${x.occurrences} | ${x.advice} |`);
+    L.push('');
+  }
+  if (rep.summary.markings && rep.summary.markings.length) {
+    L.push('## Export-control markings, by how far they spread', '', '| severity | rule | marking | sessions | places |', '|---|---|---|---:|---:|');
+    for (const x of rep.summary.markings) L.push(`| ${x.severity} | \`${x.rule}\` | ${x.preview.replace(/\|/g, '\\|')} | ${x.sessions} | ${x.occurrences} |`);
+    L.push('', MARKING_ADVICE, '');
+  }
+  L.push('## Where, file by file', '');
   const byFile = new Map(); for (const f of rep.findings) { if (!byFile.has(f.file)) byFile.set(f.file, []); byFile.get(f.file).push(f); }
   for (const [file, list] of byFile) {
     L.push(`### ${file}`, '', list[0].store ? `${STORE_WORDS[list[0].store] || list[0].store}${list[0].session ? ` · session \`${list[0].session}\`` : ''}` : `session \`${list[0].session}\`${list[0].project ? ` · project ${list[0].project}` : ''}`, '', '| rule | severity | line | preview | where |', '|---|---|---:|---|---|');

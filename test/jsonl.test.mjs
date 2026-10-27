@@ -113,7 +113,9 @@ test('readTranscript keeps meta.json files as text, and `open` refuses a streame
   assert.equal(typeof meta.text, 'string');
   const { home } = plantedHome();
   const lines = [];
-  const code = await withStreamBytes(1024, () => main(['open', 'b16b', '--no-open'], { home, stdout: (s) => lines.push(s), stderr: (s) => lines.push(s), noOpen: true }));
+  // main is async: keep the threshold in place until it has finished, not just until it first awaits.
+  const prev = process.env.GLASSBOX_STREAM_BYTES; process.env.GLASSBOX_STREAM_BYTES = '1024';
+  let code; try { code = await main(['open', 'b16b', '--no-open'], { home, stdout: (s) => lines.push(s), stderr: (s) => lines.push(s), noOpen: true }); } finally { if (prev === undefined) delete process.env.GLASSBOX_STREAM_BYTES; else process.env.GLASSBOX_STREAM_BYTES = prev; }
   assert.equal(code, 2);
   assert.match(lines.join('\n'), /too large for the browser viewer.*glassbox check/s);
 });
@@ -228,4 +230,27 @@ test('a JSON array file with a long run of leading whitespace is still read as a
   fs.writeFileSync(f, ' '.repeat(200) + '\n' + JSON.stringify([{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }]));
   const r = withStreamBytes(64, () => readTranscript(f, 'arr.json'));
   assert.equal(core.parseTrace([r]).meta.files[0].records, 2);
+});
+
+// Merge with the local enterprise pack: export-control markings must behave the same on a big (segmented) file.
+test('fence --markings on a big transcript: markings found like a whole scan, and --shred never touches them', async () => {
+  const { MARKINGS } = await import('../src/fence.mjs');
+  const dir = tmp(); const file = path.join(dir, 'mk.jsonl');
+  const tok = J('ghp_', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8');
+  const s = session({ sessionId: 'mkmk0001-0000' }); s.user('summarise the spec');
+  s.call('Read', { file_path: '/w/spec.txt' }, 'ITAR-CONTROLLED\nDISTRIBUTION STATEMENT D\n' + 'body '.repeat(400));
+  for (let i = 0; i < 20; i++) s.call('Read', { file_path: `/w/f${i}` }, 'filler '.repeat(300));
+  s.call('Bash', { command: 'cat .npmrc' }, `//registry.npmjs.org/:_authToken=${tok}`);
+  fs.writeFileSync(file, s.text());
+  const key = Buffer.alloc(32, 3);
+  const pick = (f) => ({ rule: f.rule, line: f.line, where: f.where, marking: !!f.marking, count: f.count });
+  const whole = withStreamBytes(1 << 30, () => scanFile(file, { key, markings: MARKINGS }));
+  const seg = withStreamBytes(1024, () => scanFile(file, { key, markings: MARKINGS, segmentBytes: 2048 }));
+  assert.ok(whole.findings.some((f) => f.marking), 'the whole scan finds the markings');
+  assert.deepEqual(seg.findings.map(pick), whole.findings.map(pick));
+  const r = withStreamBytes(1024, () => shredFile(file, seg.findings, { key, segmentBytes: 2048, markings: MARKINGS }));
+  assert.ok(r.written);
+  const after = fs.readFileSync(file, 'utf8');
+  assert.ok(!after.includes(tok), 'the token is shredded');
+  assert.ok(after.includes('ITAR-CONTROLLED') && after.includes('DISTRIBUTION STATEMENT D'), 'markings are left in place');
 });

@@ -8,3 +8,9 @@ dist/audit.json
 # Promo videos and their build inputs (voice takes, TTS model) stay local, never on GitHub
 promo/
 promo-*/
+
+# Real Claude Code / Cowork transcripts kept for studies: private, never on GitHub
+sessions/
+
+# Offline install bundles (scripts/bundle.mjs)
+release/

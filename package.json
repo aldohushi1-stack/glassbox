@@ -10,7 +10,8 @@
     "e2e": "node test/browser.e2e.mjs",
     "check": "npm test && npm run build && npm run e2e",
     "audit": "node test/audit.mjs",
-    "prepublishOnly": "npm test && npm run build"
+    "prepublishOnly": "npm test && npm run build",
+    "bundle": "node scripts/bundle.mjs"
   },
   "license": "MIT",
   "author": "Aldo Hushi",

@@ -9,7 +9,7 @@ Glassbox is a viewer and a checker for the transcript files Claude Code already 
 | | what lands on the machine | how it gets there | how it runs |
 |---|---|---|---|
 | **The HTML file** | one file, `glassbox.html` (595 KB; fonts, code and demo inside) | download from GitHub Releases / npm, or copy from an internal share | double-click; runs in the browser from `file://` |
-| **The CLI** | npm package `glassbox-trace`: 17 files, ~370 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.11.0` (fetches once, pinned) | `node` ≥ 18 |
+| **The CLI** | npm package `glassbox-trace`: 21 files, ~400 KB packed, **zero dependencies** (`package.json` has no `dependencies` field); published with npm provenance from the GitHub Actions workflow in this repo | `npx glassbox-trace` (fetches on each run unless cached) or `npm i -g glassbox-trace@0.12.0` (fetches once, pinned) | `node` ≥ 18 |
 | **The Claude Code plugin** | a clone of this repository under Claude Code's plugin directory | `/plugin marketplace add aldohushi1-stack/glassbox` then `/plugin install glassbox@glassbox-trace` | `node` running the bundled copy; **no npx, no network after install** |
 
 For a managed fleet the simplest shape is: the HTML file on an internal share (nothing to install, nothing to update automatically) plus, where the CLI is wanted, a global install of a pinned version.
@@ -30,6 +30,8 @@ The only network activity is installation: npm fetching the package (`npx` does 
 - A `.jsonl` file or folder the user names on the command line or drops onto the page.
 - `~/.claude/settings.json` — only by `hook install` / `hook uninstall`, and by the plugin hook to see whether a CLI hook is already installed.
 - `--rates FILE` / `GLASSBOX_RATES` (a rate card), `--legend FILE` (a legend), `--key FILE` (a fence key), when given.
+- `glassbox statusline` (0.12), installed only with `glassbox statusline install`, is run by Claude Code on every status refresh. It reads the JSON Claude Code sends on stdin and appends one line to `~/.claude/glassbox/limits.jsonl` (directory 0700, file 0600; rotated to `limits.1.jsonl` at 4 MB) when the plan's 5-hour or weekly % changes, at most once per 10 minutes otherwise. The line holds the time, the session id, the model id and the two `{ pct, resets }` readings, nothing else. `install` sets `statusLine` in `~/.claude/settings.json` (a `.glassbox-backup` is kept). A status line that was already there is saved in `~/.claude/glassbox/statusline-previous.json` and run on each refresh with the same stdin (2 s timeout; its last good line is kept in `statusline-previous.last`). `uninstall` puts it back. It opens no sockets, and `plan --live` reads the log.
+- `glassbox plan` (0.11) also reads `~/.claude.json` (or `<home>/.claude.json`) and keeps two fields of `oauthAccount`, the rate-limit tier and `subscriptionCreatedAt`. Nothing else from that file is kept or printed. It also reads the transcripts written since the start of the previous billing month.
 - `glassbox fence` with no target also reads `~/.claude/history.jsonl`, `paste-cache/`, `file-history/`, `debug/` and `shell-snapshots/` (§6b).
 - `glassbox recall` reads the transcripts of one project (the folder Claude Code keeps for it) and `<project>/.glassbox/memory.json`; `glassbox memory` reads `memory.json` and `last-session.md`; the Stop hook with `--context` reads the project's auto-memory `MEMORY.md` or `CLAUDE.local.md` to rewrite its own block in it; the SessionStart hook with `--context --memory glassbox` reads both `.glassbox/` files (§6e).
 - `glassbox memory audit` reads the instruction files Claude Code loads at startup — the managed policy `CLAUDE.md`, `~/.claude/CLAUDE.md` and `~/.claude/rules/`, `CLAUDE.md` / `CLAUDE.local.md` in the project and every directory above it, `.claude/CLAUDE.md`, `.claude/rules/`, `AGENTS.md`, the files they `@import` — plus the auto-memory folder `~/.claude/projects/<project>/memory/`, the `autoMemory*` keys of `~/.claude/settings.json` and the project's `package.json` (§6e).
@@ -41,7 +43,10 @@ These transcripts contain everything the agent saw: prompts, file contents, comm
 
 | command | writes | contains | lifetime |
 |---|---|---|---|
-| `glassbox open <id>` | `<temp>/glassbox-<id8>.html` (`%TEMP%` on Windows, `$TMPDIR` elsewhere) | the viewer **with the transcript embedded** | not deleted automatically; `glassbox clean` removes them. Use `--out PATH` to choose the location, `--no-open` to skip the browser |
+| `glassbox open <id>` | `<temp>/glassbox-<id8>.html` (`%TEMP%` on Windows, `$TMPDIR` elsewhere) | the viewer **with the transcript embedded**; with `GLASSBOX_TEMP=redact` (or `--redact`) a structure-only copy: every prompt, input, result and assistant text blanked to `«N chars»`; with `GLASSBOX_TEMP=deny` nothing (`open` then needs `--out`) | not deleted automatically; `glassbox clean` removes them. Use `--out PATH` to choose the location, `--no-open` to skip the browser |
+| `glassbox managed --install` (0.13) | `<managed dir>/managed-settings.d/glassbox.json` (+ `.glassbox-backup` when replacing it): `C:\Program Files\ClaudeCode`, `/Library/Application Support/ClaudeCode` or `/etc/claude-code` | the hook entries, the status line and/or `env.GLASSBOX_TEMP` asked for, nothing else; it never edits `managed-settings.json` | until `glassbox managed --uninstall` |
+| `glassbox statusline install` (0.12) | `~/.claude/settings.json` (+ backup), `~/.claude/glassbox/statusline-previous.json` if a status line was already set | the `statusLine` entry; the previous one, to run in front and restore | until `statusline uninstall` |
+| the status line, on each refresh (0.12) | `~/.claude/glassbox/limits.jsonl` (0600; `limits.1.jsonl` after 4 MB) | time, session id, model id, the plan's 5-hour and weekly `{ pct, resets }` | until deleted |
 | `glassbox open <id> --out F`, `compare A B --out F` | the file named | viewer + transcript(s) | until deleted |
 | `glassbox check --legend F` | `F` | salt + key → path map for every file path in the report | until deleted; keep it local, it is the key to the redacted report |
 | `glassbox fence` | `~/.claude/glassbox/fence.key` (created once, owner-only) | 64 hex characters: the key its fingerprints are made with | until deleted; keep it on the machine — deleting it only means new fingerprints |
@@ -55,6 +60,8 @@ These transcripts contain everything the agent saw: prompts, file contents, comm
 | viewer **Export report** / **Export redacted** | a download the user saves | Markdown findings / structure-only `.jsonl` | user's choice |
 
 Nothing is written anywhere else. There is no config file, no cache and no state outside the rows above.
+
+**The temp-folder policy.** The temp folder is the one place Glassbox writes a transcript without being told where. `GLASSBOX_TEMP` sets what it may write there: `allow` (the default), `redact` or `deny`. Glassbox reads it from the environment first, then from `env.GLASSBOX_TEMP` in Claude Code's managed settings (`managed-settings.json`, then `managed-settings.d/*.json` in name order), so the setting IT already pushes for Claude Code covers Glassbox too: `glassbox managed --temp deny --install`. `--out` is always the user's own choice of location and is not restricted.
 
 ## 5. Processes it starts
 
@@ -119,9 +126,19 @@ Nothing leaves unless a person sends it. The formats built for sending are:
 
 Anything else (`open --out`, a plain `check` report, a transcript) contains session text and should be treated as such.
 
+## 7b. Deploying to every user — `glassbox managed`
+
+Claude Code reads managed settings for every user from a fixed folder (`C:\Program Files\ClaudeCode`, `/Library/Application Support/ClaudeCode`, `/etc/claude-code`): `managed-settings.json`, plus every `*.json` in `managed-settings.d/` beside it. `glassbox managed` prints the settings for the hook, the status line and the temp policy, and changes nothing. `--install` writes them as Glassbox's own drop-in, `managed-settings.d/glassbox.json`, which needs an administrator. `--uninstall` deletes that file. The commands point at this machine's Glassbox install (`node "<install>/bin/glassbox.mjs"`, not `npx`). If that path is inside one user's profile, `managed` warns that other users can't run it: install Glassbox with a machine-wide npm prefix, or pass `--command`.
+
+## 7c. Export-control markings — `glassbox fence --markings`
+
+Off by default, because a conversation *about* export rules is not a spill. With `--markings`, `fence` also reports text marked as controlled that reached a transcript: classification banners (`SECRET//…`, `NOFORN`), ITAR markings and the ITAR / AECA legend sentences, CUI (`CUI//…`, `CONTROLLED UNCLASSIFIED INFORMATION`), DoD distribution statements B–F (*error*); `EXPORT CONTROLLED`, the EAR legend and ECCNs (*warn*); `EAR99` (*info*). `--markings-file FILE` adds a company's own markings: a JSON list of `{ "id", "pattern", "flags"?, "severity"? }`, for example `BOEING PROPRIETARY`. The report shows the marking itself (it isn't a secret) and where it sat (prompt, which tool's result, which file). `--shred` never touches a marking: removing it would leave the controlled text in place, unmarked. `--fail-on error` makes it a CI or audit gate. Network: none. It matches markings as printed, not content, so it can't know about controlled text that carries no marking.
+
 ## 8. Cost figures
 
 Costs are estimates from a rate card of Anthropic list prices (README, "Token and cost accounting"), or the `total_cost_usd` an Agent SDK run reports. Teams on negotiated rates, seats or credits pass their own card with `--rates FILE` or `GLASSBOX_RATES`; unknown models show "—" rather than a wrong number. The token counts are exact — they are read from the transcript.
+
+**Bedrock and Vertex (0.13).** Model ids from either platform resolve to the same rows (`us.anthropic.claude-sonnet-4-5-…-v1:0`, `claude-sonnet-4-5@20250929`). A regional or multi-region endpoint costs 10% more than global on Claude 4.5 and later, per Anthropic's pricing page. Glassbox reads the endpoint from a Bedrock id (`global.` is global; `us.`, `eu.`, `apac.` and in-region ids are regional). For Vertex, where the id doesn't say, it takes `--endpoint global|regional`. `--geo us` prices first-party US-only inference (+10% on Claude 4.6 and later). Bedrock's and Vertex's global prices are taken to be Anthropic's list, so if your cloud price sheet differs, put it in `--rates`. A row you priced yourself is not raised again for a regional id. `check` and `plan` print one line saying how a session was priced.
 
 ## 9. Removal
 
@@ -134,8 +151,9 @@ Nothing else was changed on the machine.
 
 ## 10. Provenance and verification
 
-- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs`, with `src/collect.mjs`, `src/tail.mjs`, `src/textfile.mjs`, `src/fence.mjs`, `src/adhere.mjs`, `src/claims.mjs` and `src/guard.mjs`. It is small enough to read.
+- Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-stack/glassbox), MIT. The engine is one file, `src/trace-core.js`, with no DOM and no imports; the CLI is `src/cli.mjs`, with `src/collect.mjs`, `src/tail.mjs`, `src/textfile.mjs`, `src/fence.mjs`, `src/adhere.mjs`, `src/claims.mjs`, `src/guard.mjs`, `src/plan.mjs`, `src/statusline.mjs` and `src/managed.mjs`. It is small enough to read.
 - npm releases are published by the repository's GitHub Actions workflow with `npm publish --provenance`, so npm shows which commit and workflow built each version.
+- **Offline install bundle** (0.13): `node scripts/bundle.mjs` in a checkout writes `release/glassbox-trace-<version>/`. It holds the npm tarball, the standalone viewer, a CycloneDX 1.5 SBOM (`sbom.cdx.json`: the package, the viewer, and the seven IBM Plex font files inside the viewer, OFL-1.1, each with its SHA-256; marked complete, because there are no runtime dependencies), `SHA256SUMS` in `sha256sum -c` format, and `INSTALL.md`. `npm pack` is deterministic, so the tarball's SHA-256 is the same from the same commit, and `SOURCE_DATE_EPOCH` fixes the SBOM's timestamp. `node scripts/bundle.mjs --verify <folder>` re-checks every hash. The install is `npm install --global --offline ./glassbox-trace-<version>.tgz`, and no registry is needed.
 - `npm test` runs the unit suite (parser, every rule, cost, redaction, legend, CLI, hooks and the guard, collect, fence, adhere, claims, offline check); `npm run e2e` runs the browser suite with the request log; `npm run audit` runs the accessibility gate. All three run in CI on every push.
 - Security reports: see [SECURITY.md](../SECURITY.md) — privately, never in a public issue.
 - To check a build yourself: open `dist/glassbox.html` with the browser's network panel open. It should show one entry, the file.
