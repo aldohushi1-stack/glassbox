@@ -246,14 +246,14 @@ test('check --format md is the agent-ready report; --json/--markdown still work 
   assert.equal(outputFormat({}), 'text'); assert.equal(outputFormat({ json: true }), 'json'); assert.equal(outputFormat({ format: 'markdown' }), 'md');
 });
 
-test('hook --context: Stop keeps notes in <project>/.glassbox, SessionStart hands them over, a clean session clears them', () => {
+test('hook --context --memory glassbox: Stop keeps notes in <project>/.glassbox, SessionStart hands them over, a clean session clears them', () => {
   const home = fakeHome();
   const bad = path.join(home, 'projects/-home-aldo-proj-one/aaaa1111-0000.jsonl');
   const clean = path.join(home, 'projects/-home-aldo-proj-one/bbbb2222-0000.jsonl');
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-proj-'));
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-'));
   const notes = path.join(project, '.glassbox', 'last-session.md');
-  const opts = { feedback: true, context: true, failOn: 'warn', stateDir };
+  const opts = { feedback: true, context: true, memory: 'glassbox', failOn: 'warn', stateDir };
   const r1 = hookResponse({ hook_event_name: 'Stop', transcript_path: bad, cwd: project, session_id: 'aaaa1111-0000', stop_hook_active: false }, opts);
   assert.equal(r1.decision, 'block');
   const text = fs.readFileSync(notes, 'utf8');
@@ -278,11 +278,15 @@ test('hook --context: Stop keeps notes in <project>/.glassbox, SessionStart hand
   assert.equal(fs.existsSync(notes), false);
   // install registers both events with --context in the command
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-settings-'));
-  const inst = installHook({ home: h, context: true });
-  assert.equal(inst.command, 'npx -y glassbox-trace hook --context');
+  const inst = installHook({ home: h, context: true, memory: 'glassbox' });
+  assert.equal(inst.command, 'npx -y glassbox-trace hook --context --memory glassbox');
   const st = JSON.parse(fs.readFileSync(settingsPath(h), 'utf8'));
   assert.deepEqual(Object.keys(st.hooks).sort(), ['SessionStart', 'Stop']);
   assert.equal(uninstallHook({ home: h }).removed, 2);
+  // 0.12 default (one memory): Stop only; the lessons go into the agent's own memory, so nothing to inject at start
+  const h2 = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-settings-'));
+  assert.equal(installHook({ home: h2, context: true, memory: 'agent' }).command, 'npx -y glassbox-trace hook --context');
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(settingsPath(h2), 'utf8')).hooks), ['Stop']);
 });
 
 test('glassbox hook never exits non-zero: an analysis error becomes a systemMessage', async () => {

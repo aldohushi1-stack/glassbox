@@ -1,5 +1,5 @@
 {
-  "description": "Glassbox: a one-screen session summary after every turn. Plugin options: `feedback` hands new findings back to the agent once each; `context` keeps a memory in <project>/.glassbox/ (lessons that keep coming back, a digest per session, the last session's notes) and gives the next session in that project a note built from it.",
+  "description": "Glassbox: a one-screen session summary after every turn, and a loop guard before every tool call. Plugin options: `feedback` hands new findings back to the agent once each; `context` keeps a memory in <project>/.glassbox/ and writes the lessons that keep coming back into the agent's own memory (auto memory's MEMORY.md, else CLAUDE.local.md) — or, with `memory` set to glassbox, hands the next session 0.11's note; `guard` (on by default) blocks a shell command that already failed twice in a row, unchanged, this turn — Bash and PowerShell only, so reads and edits never wait on a Node start.",
   "hooks": {
     "Stop": [
       {
@@ -22,6 +22,19 @@
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-hook.mjs"],
             "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/glassbox-guard.mjs"],
+            "timeout": 10
           }
         ]
       }

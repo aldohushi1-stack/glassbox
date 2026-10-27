@@ -115,6 +115,18 @@ function gitRoot(dir) {
 }
 function settingsOf(home) { try { return JSON.parse(readTextFile(path.join(home, 'settings.json'))) || {}; } catch (e) { return {}; } }
 
+// The project's auto memory folder, as Claude Code resolves it: settings.autoMemoryDirectory (with ~), else
+// <claude home>/projects/<git root, encoded>/memory. dir is null when no such folder exists; enabled is false when
+// settings.autoMemoryEnabled is false. Shared by the audit and by the Stop hook's lessons block (0.12).
+export function autoMemoryDir(opts = {}) {
+  const project = path.resolve(opts.project || process.cwd());
+  const home = opts.home || claudeHome();
+  const userHome = opts.userHome || os.homedir();
+  const settings = settingsOf(home);
+  const dirs = opts.dir ? [opts.dir] : settings.autoMemoryDirectory ? [String(settings.autoMemoryDirectory).replace(/^~(?=\/|\\|$)/, userHome)] : encodings(gitRoot(project) || project).map((e) => path.join(home, 'projects', e, 'memory'));
+  return { dir: dirs.find(isDir) || null, enabled: settings.autoMemoryEnabled !== false };
+}
+
 export function auditMemory(opts = {}) {
   const project = path.resolve(opts.project || process.cwd());
   const home = opts.home || claudeHome();
@@ -158,10 +170,8 @@ export function auditMemory(opts = {}) {
     }
   }
   // 3. Auto memory: the first 200 lines or 25 KB of MEMORY.md at launch; topic files when Claude reads them.
-  const settings = settingsOf(home);
-  const autoOff = settings.autoMemoryEnabled === false;
-  const memDirs = opts.autoMemoryDir ? [opts.autoMemoryDir] : settings.autoMemoryDirectory ? [String(settings.autoMemoryDirectory).replace(/^~(?=\/|\\|$)/, userHome)] : encodings(gitRoot(project) || project).map((e) => path.join(home, 'projects', e, 'memory'));
-  const memDir = memDirs.find(isDir);
+  const { dir: memDir, enabled } = autoMemoryDir({ project, home, userHome, dir: opts.autoMemoryDir });
+  const autoOff = !enabled;
   if (memDir && !autoOff) {
     const cut = (t) => { let out = t.split(/\r?\n/).slice(0, L.memoryLines).join('\n'); if (Buffer.byteLength(out) > L.memoryBytes) out = Buffer.from(out).subarray(0, L.memoryBytes).toString('utf8'); return out; };
     const idx = add(path.join(memDir, 'MEMORY.md'), 'auto-memory', 'auto memory index (first 200 lines / 25 KB)', { limitTo: cut });

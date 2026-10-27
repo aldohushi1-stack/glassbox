@@ -39,7 +39,7 @@ function run() {
   const sessions = sessionsToCheck();
   const rows = []; const reports = []; let failed = 0, findings = 0, cost = 0;
   for (const s of sessions) {
-    const rep = checkReport(analyse(loadSessionFiles(s), rates), { failOn, redact });
+    const rep = checkReport(analyse(loadSessionFiles(s), rates), { failOn, redact, rates });
     const f = rep.json.findings, c = rep.json.summary.cost;
     findings += f.length; if (c != null) cost += c; if (rep.failed) failed++;
     const label = (rep.json.summary.session || s.id).slice(0, 8);

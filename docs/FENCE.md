@@ -31,7 +31,7 @@ Exit codes: `0` nothing at or above `--fail-on`; `1` something was; `2` usage er
 
 | severity | rule | what |
 |---|---|---|
-| error | `private-key` | a `-----BEGIN … PRIVATE KEY-----` block, matched whole |
+| error | `private-key` | a `-----BEGIN … PRIVATE KEY-----` block, matched whole — and only a key: up to 16,384 characters, and after its header lines (`Proc-Type:`, `DEK-Info:`…) and line breaks, base64 only (0.12; before, a BEGIN in one tool result and an END megabytes later read as one 20-million-character "key") |
 | error | `aws-access-key` | an AWS access key id (`AKIA…`, `ASIA…`) |
 | error | `github-token` | `ghp_` `gho_` `ghu_` `ghs_` `ghr_` and fine-grained `github_pat_` tokens |
 | error | `anthropic-key` | `sk-ant-…` |
@@ -81,6 +81,10 @@ A plain hash of a random API key is safe to share. A plain hash of `Summer2026!`
 - The key is never written into a report; the report names the key *file* (`fingerprint.key`) so you know which key made it.
 - **Across machines** fingerprints differ, because each machine has its own key. To see one leaked key on many laptops, give them the same key file: `glassbox fence --key \\share\team.key` (64 hex characters, e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`). Whoever holds that file can test guesses against the fingerprints, so keep it where the reports don't go. A `--key` that doesn't exist is an error, not a new key.
 - Placeholders written by 0.8.0–0.9.0 carry plain SHA-256 fingerprints. They hold no value, but a weak password's placeholder could be guessed against; re-running `--shred` does not rewrite them (there is nothing left to find), so delete those sessions if that matters to you.
+
+## Big transcripts
+
+A transcript over 64 MB is scanned in segments of whole lines (32 MB each), so it never has to fit in one string — Node can't hold more than about 512 MB in one, and before 0.12 a session past that broke the scan. The findings, line numbers, fingerprints and where each value sits are the same as a whole-file scan; the report marks such a file `streamed`. `--shred` rewrites it segment by segment into a temp file, re-parses every changed line, and renames only when every segment passed. Expect about 15 MB a second.
 
 ## Shred
 

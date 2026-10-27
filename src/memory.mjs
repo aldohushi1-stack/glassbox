@@ -17,6 +17,7 @@ import { maskSecrets } from './fence.mjs';
 import { segments, actionRe, isShell, projectSessions } from './adhere.mjs';
 import { TEST_CMD, runFailed } from './claims.mjs';
 import { loadSessionFiles } from './cli.mjs';
+import { autoMemoryDir } from './memory-audit.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 
@@ -47,14 +48,25 @@ export const cleanCmd = (seg) => String(seg).replace(/^timeout\s+(?:-\S+\s+)*\d+
 
 // What a shell command does, in a word or two: the first segment that isn't navigation, its program and subcommand
 // ("npm test", "npm run e2e", "git push", "python -m pytest").
+// A word in a lesson key must look like a program or a subcommand, never like a password or a token: a key is
+// written into the agent's own memory (0.12 review: `echo <pw> | sudo -S apt-get …` became `Bash echo <pw>`).
+// Lowercase words joined by : . _ - are names (build:es2015, test:e2e2, build-v2, python3.11, webpack5); mixed case
+// with digits, or anything long, is not kept.
+const NAME_RE = /^[a-z][a-z0-9]*(?:[:._-][a-z0-9]+)*$/;
+const secretish = (w) => w.length > 40 || (!NAME_RE.test(w) && (w.length > 24 || (w.length >= 8 && /\d/.test(w) && /[A-Za-z]/.test(w)) || (/[A-Z]/.test(w) && /[a-z]/.test(w) && /\d/.test(w))));
 export function commandHead(cmd) {
-  const seg = cleanCmd(segments(cmd).find((s) => !/^(?:cd|pushd|popd|export|set|source|\.)(?:\s|$)/.test(s)) || '');
-  const toks = seg.split(/\s+/).filter(Boolean); if (!toks.length) return '';
+  // Not navigation, and not a segment that only feeds data to the next one (echo / printf / yes / cat <<).
+  const seg = cleanCmd(segments(cmd).find((s) => !/^(?:cd|pushd|popd|export|set|source|\.|echo|printf|yes|true|false|:)(?:\s|$)/.test(s) && !/^cat\s+<</.test(s)) || '');
+  let toks = seg.split(/\s+/).filter(Boolean);
+  while (toks.length && /^-/.test(toks[0])) toks = toks.slice(/^-[ugpCDhr]$/.test(toks[0]) ? 2 : 1); // what's left of `sudo -u bob …`
+  if (!toks.length) return '';
   const prog = toks[0].replace(/^.*[\\/]/, '');
-  if (/^python3?$/.test(prog) && toks[1] === '-m' && toks[2]) return `${prog} -m ${toks[2]}`;
+  if (!/^[\w.+-]+$/.test(prog) || secretish(prog)) return '';
+  if (/^python(?:3(?:\.\d+)?)?$/.test(prog) && toks[1] === '-m' && toks[2]) return `${prog} -m ${toks[2]}`;
   let i = 1; if (prog === 'git') while (i < toks.length && /^-/.test(toks[i])) i += /^-[Cc]$/.test(toks[i]) ? 2 : 1;
   let sub = toks[i] && /^[A-Za-z][\w:.-]*$/.test(toks[i]) ? toks[i] : toks[1] && /^--[a-z][\w-]*$/.test(toks[1]) ? toks[1] : '';
-  if (/^(?:run|exec|x|dlx)$/.test(sub) && toks[i + 1] && /^[\w:.-]+$/.test(toks[i + 1])) sub += ' ' + toks[i + 1];
+  if (sub && secretish(sub)) sub = '';
+  if (/^(?:run|exec|x|dlx)$/.test(sub) && toks[i + 1] && /^[\w:.-]+$/.test(toks[i + 1]) && !secretish(toks[i + 1])) sub += ' ' + toks[i + 1];
   return sub ? `${prog} ${sub}` : prog;
 }
 
@@ -298,10 +310,141 @@ export function forget(cwd, what) {
   return keys;
 }
 
-export function clearMemory(cwd) {
+export function clearMemory(cwd, opts = {}) {
   const removed = [];
   for (const f of [MEMORY_FILE, NOTES_FILE]) { const p = path.join(cwd, f); if (fs.existsSync(p)) { fs.unlinkSync(p); removed.push(p); } }
+  // The lessons block, wherever it was written (auto memory may have been switched on or off since).
+  for (const file of lessonsFiles(cwd, opts)) { if (writeLessonsBlock(file, null).changed) removed.push(`${file} (Glassbox lessons block)`); }
   return removed;
+}
+
+// ---------------------------------------------------------------------------------------------
+// One memory (0.12, DESIGN.md §21). The lessons the agent should act on go into the memory it already reads — the
+// auto memory MEMORY.md when auto memory is on and its folder exists, else <project>/CLAUDE.local.md; never the
+// shared CLAUDE.md — as one block Glassbox owns and rewrites at every Stop. The block is a projection of the ledger
+// (active lessons, worst first, the advice once per rule), so it can't drift from it; text outside the markers is
+// never touched. The end marker carries the keys, so the next session's first Stop knows what it was told.
+// ---------------------------------------------------------------------------------------------
+export const BLOCK_START = '<!-- glassbox:lessons:start';
+export const BLOCK_END = '<!-- glassbox:lessons:end';
+export const BLOCK_MAX = 1800;
+export function lessonsTarget(cwd, opts = {}) {
+  const am = autoMemoryDir({ project: cwd, home: opts.home, userHome: opts.userHome });
+  if (am.enabled && am.dir) return { file: path.join(am.dir, 'MEMORY.md'), kind: 'auto-memory' };
+  return { file: path.join(path.resolve(cwd), 'CLAUDE.local.md'), kind: 'local' };
+}
+function lessonsFiles(cwd, opts) {
+  const am = autoMemoryDir({ project: cwd, home: opts.home, userHome: opts.userHome });
+  return [am.dir ? path.join(am.dir, 'MEMORY.md') : null, path.join(path.resolve(cwd), 'CLAUDE.local.md')].filter((f) => f && fs.existsSync(f));
+}
+export function lessonsBlock(led, opts = {}) {
+  const o = Object.assign({}, MEMORY_DEFAULTS, opts), n = led.sessions.length;
+  let shown = lessonStats(led, o).filter((l) => l.active).slice(0, o.lessons);
+  const build = (list) => {
+    const advised = new Set();
+    const lines = list.map((l) => {
+      const adv = !advised.has(l.rule) && core.ADVICE[l.rule]; advised.add(l.rule);
+      const howOften = n === 1 ? 'in the only session so far' : `in ${l.sessions} of the last ${n} sessions`;
+      // No marker can be forged from a key, title or path: an HTML comment opener is broken with a zero-width non-joiner.
+      return '- ' + clip(`${maskSecrets(l.key)} — ${howOften}: ${maskSecrets(l.title)}.${adv ? ` Next time: ${adv}` : ''}`, 320).replace(/<!--/g, '<\u200c!--');
+    });
+    return [`${BLOCK_START} (rewritten by the Glassbox Stop hook from this project's transcripts; edit outside these markers; \`glassbox memory forget <lesson>\` drops one) -->`,
+      '## Glassbox: what keeps going wrong in this project', '', ...lines,
+      `${BLOCK_END} keys=${list.map((l) => encodeURIComponent(l.key)).join(',')} -->`, ''].join('\n');
+  };
+  if (!shown.length) return null;
+  let text = build(shown);
+  while (text.length > BLOCK_MAX && shown.length > 1) { shown = shown.slice(0, -1); text = build(shown); }
+  return { text, keys: shown.map((l) => l.key) };
+}
+export function blockKeys(text) {
+  const t = String(text || ''); const b = findBlocks(t.charCodeAt(0) === 0xfeff ? t.slice(1) : t).blocks[0];
+  return b ? b.keys.split(',').filter(Boolean).map((k) => { try { return decodeURIComponent(k); } catch (e) { return k; } }) : [];
+}
+// Put `body` (a block, or null to remove it) into the file. Markers count only as whole lines outside ``` / ~~~
+// fences, so a marker quoted in prose, inline code or a fenced example is never taken for the block (0.12 review);
+// a start line with no end line after it replaces only itself. In place when a block is there (any extra complete
+// blocks are dropped); under a leading `# ` title in an auto memory index, so it sits inside the 200-line cut; at the
+// end of anything else. Line endings and a BOM follow the file. Written through a symlink, with the file's mode, via
+// a temp file unique to this process; a file we can't write is left alone. Concurrent writers each start from the
+// whole file, so the last rename wins without losing the user's lines.
+const START_LINE = /^<!-- glassbox:lessons:start\b.*-->[ \t]*\r?$/;
+const END_LINE = /^<!-- glassbox:lessons:end keys=(\S*) -->[ \t]*\r?$/;
+// CommonMark fences: an opener is 3+ backticks or tildes (backtick openers can't have a backtick in the info
+// string); the closer is the same character, at least as long, with nothing after it. A fence still open at the end
+// of the file runs to the end in Markdown, but anything after it may be ours, so it is scanned again with that
+// opener read as text — otherwise every Stop would append another block inside it (0.12 review, round 2).
+function findBlocks(text, ignore = new Set()) {
+  const blocks = []; let fence = null, open = null, at = 0, idx = -1;
+  for (const line of text.split('\n')) {
+    idx++; const start = at, end = at + line.length + 1; at = end;
+    const l = line.replace(/\r$/, '');
+    if (fence) {
+      const c = l.match(/^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$/);
+      if (c && c[1][0] === fence.ch && c[1].length >= fence.len) fence = null;
+      continue;
+    }
+    const o = l.match(/^[ \t]{0,3}(`{3,}|~{3,})(.*)$/);
+    if (o && !ignore.has(idx) && !(o[1][0] === '`' && o[2].includes('`'))) { fence = { ch: o[1][0], len: o[1].length, idx }; continue; }
+    if (START_LINE.test(line)) { if (!open) open = { start, lineEnd: Math.min(end, text.length) }; continue; }
+    const m = line.match(END_LINE);
+    if (m && open) { blocks.push({ start: open.start, end: Math.min(end, text.length), keys: m[1] }); open = null; }
+  }
+  if (fence) return findBlocks(text, new Set([...ignore, fence.idx])); // each pass ignores one more opener: it ends
+  return { blocks, broken: open };
+}
+export function writeLessonsBlock(file, body, kind) {
+  let real = file;
+  try { real = fs.realpathSync(file); } catch (e) { let link = false; try { link = fs.lstatSync(file).isSymbolicLink(); } catch (e2) { } if (link) return { file, changed: false, reason: 'a link to nothing' }; }
+  const exists = fs.existsSync(real);
+  // Read-only by its mode bits (root passes an access() check on a 0444 file) or by access(): someone froze it; leave it.
+  if (exists) { let ok = (fs.statSync(real).mode & 0o222) !== 0; try { fs.accessSync(real, fs.constants.W_OK); } catch (e) { ok = false; } if (!ok) return { file, changed: false, reason: 'not writable' }; }
+  const raw = exists ? fs.readFileSync(real, 'utf8') : '';
+  const bom = raw.charCodeAt(0) === 0xfeff ? '﻿' : '';
+  const text = bom ? raw.slice(1) : raw;
+  const eol = /\r\n/.test(text) ? '\r\n' : '\n';
+  const blk = body ? body.replace(/\r?\n/g, eol) : '';
+  const { blocks, broken } = findBlocks(text);
+  let out;
+  if (blocks.length) {
+    out = ''; let pos = 0;
+    blocks.forEach((b, i) => { out += text.slice(pos, b.start) + (i === 0 ? blk : ''); pos = b.end; });
+    let rest = text.slice(pos);
+    // Removed: take back the blank line that was put beside it, so the file reads as it did before the block.
+    if (!blk && rest.startsWith(eol) && (out === '' || out.endsWith(eol + eol))) rest = rest.slice(eol.length);
+    else if (!blk && rest === '' && out.endsWith(eol + eol)) out = out.slice(0, -eol.length);
+    out += rest;
+  } else if (broken) out = text.slice(0, broken.start) + blk + text.slice(broken.lineEnd);
+  else if (!blk) return { file, changed: false };
+  else if (kind === 'auto-memory') {
+    const m = /^# [^\r\n]*\r?\n(?:\r?\n)?/.exec(text); const at = m ? m[0].length : 0;
+    out = text.slice(0, at) + blk + (text.slice(at) ? eol : '') + text.slice(at);
+  } else out = text + (text && !text.endsWith('\n') ? eol : '') + (text.trim() ? eol : '') + blk;
+  out = bom + out;
+  if (out === raw) return { file, changed: false };
+  if (!exists && !out) return { file, changed: false };
+  fs.mkdirSync(path.dirname(real), { recursive: true });
+  const mode = exists ? fs.statSync(real).mode & 0o777 : 0o644;
+  const tmp = `${real}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2, 8)}.glassbox~`;
+  try { fs.writeFileSync(tmp, out, { flag: 'wx', mode }); fs.chmodSync(tmp, mode); fs.renameSync(tmp, real); }
+  catch (e) { try { fs.unlinkSync(tmp); } catch (e2) { } throw e; }
+  return { file, changed: true };
+}
+// The Stop hook's part: what this session started with (first Stop only), then the block for the next one.
+export function syncLessonsBlock(cwd, opts = {}) {
+  if (!memoryPath(cwd)) return null;
+  const t = lessonsTarget(cwd, opts);
+  const led = loadLedger(cwd);
+  const blk = lessonsBlock(led, opts);
+  return Object.assign(writeLessonsBlock(t.file, blk ? blk.text : null, t.kind), { kind: t.kind, keys: blk ? blk.keys : [] });
+}
+export function toldFromBlock(cwd, sessionId, opts = {}) {
+  if (!sessionId || !memoryPath(cwd)) return false;
+  const led = loadLedger(cwd);
+  if (led.sessions.some((x) => x.id === sessionId) || led.pending[sessionId]) return false;
+  const t = lessonsTarget(cwd, opts);
+  const keys = fs.existsSync(t.file) ? blockKeys(fs.readFileSync(t.file, 'utf8')) : [];
+  return noteTold(cwd, sessionId, keys);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -310,13 +453,15 @@ export function clearMemory(cwd) {
 export function memoryReport(opts = {}) {
   const project = path.resolve(opts.project || process.cwd());
   const led = loadLedger(project), o = Object.assign({}, MEMORY_DEFAULTS, opts);
+  const target = lessonsTarget(project, opts); const blk = lessonsBlock(led, o);
   const lessons = lessonStats(led, o);
   const note = memoryNote(project, Object.assign({}, o, { ledger: led }));
   const told = lessons.reduce((s, l) => s + l.told, 0), recurred = lessons.reduce((s, l) => s + l.recurred, 0);
   return { glassbox: core.VERSION, kind: 'memory', schema: 1, project, file: fs.existsSync(path.join(project, MEMORY_FILE)) ? path.join(project, MEMORY_FILE) : null, updated: led.updated,
     sessions: led.sessions.length, window: o.window, retireAfter: o.retireAfter,
     summary: { lessons: lessons.length, active: lessons.filter((l) => l.active).length, retired: lessons.filter((l) => !l.active).length, told, recurred },
-    lessons, recent: led.sessions.slice().reverse().slice(0, o.recent).map((d) => ({ id: d.id, start: d.start, line: digestLine(d) })), note: note ? note.text : null };
+    lessons, recent: led.sessions.slice().reverse().slice(0, o.recent).map((d) => ({ id: d.id, start: d.start, line: digestLine(d) })), note: note ? note.text : null,
+    block: { file: target.file, kind: target.kind, text: blk ? blk.text : null } };
 }
 export function memoryText(rep) {
   const s = rep.summary;
@@ -326,6 +471,11 @@ export function memoryText(rep) {
   if (rep.lessons.length) {
     L.push('');
     for (const l of rep.lessons) L.push(`  ${(l.active ? 'ACTIVE' : 'RETIRED').padEnd(8)} ${l.key}  ·  ${l.sessions} session${l.sessions === 1 ? '' : 's'}, last ${String(l.lastSeen || '').slice(0, 10)}${l.told ? ` · told ${l.told}, came back ${l.recurred}` : ''}${l.quiet ? ` · quiet ${l.quiet}` : ''}`);
+  }
+  if (rep.block) {
+    L.push('', rep.block.text ? `  The agent's own memory carries these lessons, in ${rep.block.file} (${rep.block.kind === 'auto-memory' ? 'auto memory' : 'CLAUDE.local.md'}):` : `  No lessons to carry: the block in ${rep.block.file} is removed at the next Stop.`);
+    if (rep.block.text) { L.push(''); for (const line of rep.block.text.replace(/\n$/, '').split('\n')) L.push('  │ ' + line); }
+    L.push('', '  (With --memory glassbox the next session gets this note from the SessionStart hook instead:)');
   }
   L.push('', rep.note ? '  The next session in this project starts with this note:' : '  The next session in this project starts with no note.');
   if (rep.note) { L.push(''); for (const line of rep.note.replace(/\n$/, '').split('\n')) L.push('  │ ' + line); }
@@ -371,7 +521,8 @@ export function recall(opts = {}) {
   for (const s of list) {
     const files = loadSessionFiles(s);
     const words = terms.flatMap((t) => t.split(/\s+/)).filter(rawSafe);
-    if (words.length) { const raw = files.map((f) => f.text).join('\n').toLowerCase(); if (!words.every((w) => raw.includes(w))) continue; }
+    // The raw-text shortcut needs the text; a streamed (big) transcript has records instead and is parsed (0.12).
+    if (words.length && files.every((f) => typeof f.text === 'string')) { const raw = files.map((f) => f.text).join('\n').toLowerCase(); if (!words.every((w) => raw.includes(w))) continue; }
     const d = digestOf(core.parseTrace(files), { cwd: project, id: s.id }); parsed++;
     const prev = byId.get(s.id);
     byId.set(s.id, Object.assign(d, { hit: prev ? prev.hit : [], cost: prev ? prev.cost : null, source: prev ? 'both' : 'transcript' }));

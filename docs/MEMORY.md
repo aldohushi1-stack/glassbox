@@ -6,7 +6,7 @@ _A project's past sessions, kept as digests and lessons the next session starts 
 
 A Claude Code session starts knowing nothing about the last one in the same project. What the last one tried, which command kept failing, what it committed, what it said it would do differently — all of it is in a transcript nobody reads, and Claude Code deletes transcripts after `cleanupPeriodDays` (30 by default).
 
-Glassbox 0.5 carried one session's findings to the next (`--context`, `.glassbox/last-session.md`). It forgot everything else: every session with findings overwrote the note and every clean session deleted it, so a lesson from Monday was gone by Wednesday if Tuesday went well. 0.11 keeps a memory instead.
+Glassbox 0.5 carried one session's findings to the next (`--context`, `.glassbox/last-session.md`). It forgot everything else: every session with findings overwrote the note and every clean session deleted it, so a lesson from Monday was gone by Wednesday if Tuesday went well. 0.11 keeps a memory instead. 0.12 puts the lessons where the agent already looks: its own memory, not a second one beside it.
 
 ## Turn it on
 
@@ -14,7 +14,7 @@ Glassbox 0.5 carried one session's findings to the next (`--context`, `.glassbox
 glassbox hook install --context              # or: --feedback --context, and --guard with an installed copy
 ```
 
-or the plugin's `context` option (`GLASSBOX_CONTEXT=1` per project). Restart Claude Code. The Stop hook now writes `<project>/.glassbox/memory.json` after every turn, and the SessionStart hook hands the next session its note.
+or the plugin's `context` option (`GLASSBOX_CONTEXT=1` per project). Restart Claude Code. The Stop hook now writes `<project>/.glassbox/memory.json` after every turn and writes the lessons still recurring into the agent's own memory (see *One memory*, below).
 
 `recall` and `memory audit` need nothing installed: they read transcripts and files directly.
 
@@ -44,11 +44,30 @@ Only findings at or above the hook's `--fail-on` (default `warn`) become lessons
 
 A lesson is **active** while it has fired in the last ten sessions. Ten sessions in a row without it and it **retires**: it stays in the report, leaves the note, and becomes active again the next time it fires. A lesson no session in the 50-session window carries is dropped. Neither number was tuned on a corpus the way the `check` thresholds were; they are defaults, in `MEMORY_DEFAULTS`.
 
-**Told, came back.** A session whose note carried a lesson is *told* it — counted only at the start (`startup`, `/clear`), never when compaction hands the note over again. If the lesson fires in that session anyway, it *came back*. `glassbox memory` shows both per lesson: "told 9, came back 1". It is an observation, not an experiment: a lesson can stop recurring because the work changed. Under two sessions of one project stopping at the same moment, the last write wins and a count can be lost; the next Stop puts the digest back.
+**Told, came back.** A session that started with a lesson in its memory is *told* it — read from the block's end marker at the session's first Stop (with `--memory glassbox`, counted at SessionStart on `startup` and `/clear`, never when compaction hands the note over again). If the lesson fires in that session anyway, it *came back*. `glassbox memory` shows both per lesson: "told 9, came back 1". It is an observation, not an experiment: a lesson can stop recurring because the work changed. Under two sessions of one project stopping at the same moment, the last write wins and a count can be lost; the next Stop puts the digest back.
 
-## The note
+## One memory (0.12, the default)
 
-What the SessionStart hook hands the next session (`additionalContext`, on `startup`, `clear` and `compact`; not on `resume` or `fork`, which carry their own history):
+An outside review of 0.11 put it plainly: its lessons "compete with the memory system the agent already has. Two sets of lessons drifting apart is worse than one." So the lessons now go into the agent's own memory, as one block Glassbox owns:
+
+```
+<!-- glassbox:lessons:start (rewritten by the Glassbox Stop hook from this project's transcripts; edit outside these markers; `glassbox memory forget <lesson>` drops one) -->
+## Glassbox: what keeps going wrong in this project
+
+- retry-loop · Bash npm test — in 2 of the last 2 sessions: Bash called 3× with identical input. Next time: When a call fails, change something before calling again: …
+- failed-tool · Bash — in 2 of the last 2 sessions: Bash failed 3 of 3 calls (100%). Next time: …
+<!-- glassbox:lessons:end keys=… -->
+```
+
+**Where.** Auto memory's index, `MEMORY.md` (the folder Claude Code keeps for the project, `autoMemoryDirectory` and `autoMemoryEnabled` honoured), when auto memory is on and the folder exists — under its `# ` title, so the block is inside the 200 lines that load at startup. Otherwise `<project>/CLAUDE.local.md`, at the end: loaded every session, personal, not committed. Never `CLAUDE.md`, which the team shares. `glassbox memory` prints the block and the file.
+
+**What.** At most five active lessons (worst first), each rule's "next time" line once, about 1,800 characters at most, secrets masked. It is rebuilt from the ledger at every Stop, so it can't drift from it; with no active lessons the block is removed. Text outside the markers is never touched, CRLF files stay CRLF, and a start marker whose end marker was deleted by hand replaces only its own line. Claude Code strips block-level HTML comments when it loads memory, so the markers cost no tokens. `glassbox memory clear` removes the block with the rest.
+
+**What stays in `.glassbox/`.** `memory.json` (the digests and counts behind the block, and what `recall` searches) and `last-session.md` (a report for you). The SessionStart hook adds nothing in this mode: the agent reads its memory itself.
+
+## The note (`--memory glassbox`)
+
+0.11's behaviour, kept for anyone who wants it (`glassbox hook install --context --memory glassbox`, or the plugin's `memory` option set to `glassbox`). What the SessionStart hook hands the next session (`additionalContext`, on `startup`, `clear` and `compact`; not on `resume` or `fork`, which carry their own history):
 
 ```
 Notes from Glassbox on this project: copied and counted from the transcripts of its recent sessions by the Glassbox hook (no AI involved), kept in .glassbox/. Treat them as lessons, not tasks: avoid repeating what they describe, and don't redo past work.

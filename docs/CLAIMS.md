@@ -146,6 +146,31 @@ The one unverified row is the sentence the hand analysis found — turn 23 of th
 
 The first pass over the thirteen produced 17 unverified, 2 contradicted and 9 partial rows; all but the five partials were the ledger's own mistakes, each now a test: hedges ("it seems", "likely", "I'd", "we'll", "once the Page is live", "something like") and instructions ("ping me", "you must have") read as claims; an adjectival participle read as an action ("the fixed one", "the committed template", "One merged file", "fixed quote" inside quotation marks, "pushed back"); a negated claim word read as the claim ("haven't written it to any file", "No bundle shipped"); "is up 8%" read as "is up"; "it gets saved" (how a tool behaves) read as a write; "Committed as `c9b4747`, but the push was refused" read as a contradiction when the sentence itself declares the failure; a test summary printed by a custom script (`28 passed, 0 failed` from `python test_brief.py`) and a `php -l` not recognised as runs; a `tail` naming a file read as a write of it; a third party's write ("the repair agent wrote 10 rows into `logs/x.jsonl`") demanded a write by this agent rather than a read of the file; and a ship claim restated in a closing summary ("the intake is live") flagged although the receipt sat two turns earlier. The unit tests pin the sanitised real fixture (`test/fixtures/real-main.jsonl`) to a claim count between 1 and 60 and zero contradictions, so a regex change that starts flagging every sentence fails the build.
 
+**Second calibration (26 Oct 2026, the local "0.13.0" line → its calibration fixes, published in 0.12.0).** These numbers are from that line, before it was merged with GitHub's 0.11.1 claims rules; the merged ledger has not been re-run on the 145 sessions. The ledger ran over 145 more Claude Code sessions from one developer's machine (28 Sep to 26 Oct, none of them in the first sixteen). Every flagged row was checked: 133 sorted by rule and spot-checked, 121 read against their transcripts by hand.
+
+| | claims | verified | declared | sourced | partial | stale | unverified | contradicted |
+|---|---|---|---|---|---|---|---|---|
+| local 0.13.0 | 3,184 | 2,717 | 128 | 4 | 70 | 11 | 171 | 83 |
+| local, calibrated | 3,204 | 2,805 | 140 | 2 | 76 | 12 | 148 | 21 |
+
+(The claim count moved by 20 because a few of the sessions were still being written between the two runs.)
+
+At the local 0.13.0, 254 sentences were flagged, and the hand check found three with no receipt behind them when they were said, and none that the transcript showed false. So about 1 real finding per 85 flags, too noisy for the Stop hook. In the hand-checked rows, the misreads were: the proof was in the transcript but the ledger missed it (96 of 121), not a claim at all (14), or a failure the sentence itself stated (8). The fixes, in order of how many rows they cost:
+
+1. A failure the sentence admits ("410 of 412 pass", "410 pass. The 2 failures are…") was read as a contradiction. The stated tally is now checked against the run's, and a failure stated only in words is *declared*. This alone was most of the 83 contradicted rows.
+2. A `run_in_background` call, its `<task-notification>` and the later read of `tasks/<id>.output` are now one run. This is how every CI watch in these sessions came back.
+3. Runner formats it didn't know: unittest, `gh run view` job lists, `gh pr checks`, `N/M checks pass`, `ok:N … 0 failures`, `RESULT PASS`, `all passed`, `allPass: true`.
+4. A red run planted after the claim (the old code, the fix disabled) was taken as the latest word.
+
+After the fixes: 169 flags (−33%), contradicted down from 83 to 21 (−75%). Of the 121 hand-checked rows, 31 are no longer flagged (3 more couldn't be matched to a row in the new run). All three real findings are still flagged. The 21 contradictions left are mostly causes 5–6 below, plus a few that now point at a precise gap: the sentence gives one failure count, and the run it is judged on shows another. What remains, in order of size:
+
+5. Receipts in earlier turns: the claim sits in a later summary, and the run was several turns back.
+6. Not claims: headings and table cells, instructions and plans ("Next: …"), quoted post drafts, reports relayed from another session, "published" as an adjective.
+7. Evidence the ledger can't see: screenshots, mail headers, a Monitor event.
+8. Staleness misses edits outside the src/test folders (a script in a project root, views a browser suite loads).
+
+One verdict got stricter: a test claim backed only by a background launch's "running in background" message is now *unverified*, as it should have been.
+
 Known gaps: negative claims are not judged — "zero analytics" (the live-site session's self-corrected error) and "haven't written it to any file" are left out rather than checked; a `verify` or `state` claim is backed by any non-error inspection in its window, which is lenient by design (the report says "inspection in the window", not what was inspected); a shell edit through `sed -i` or a heredoc is an edit for the `fix` rule but not for staleness.
 
 **The 0.11.1 pass (25 Oct 2026).** Forty more sessions (207 claims, Sep 17 – Oct 24) were run through 0.11.0 and every `contradicted` row was read against its transcript. Of the seven, five were wrong:
@@ -164,7 +189,7 @@ It does not know whether the code is correct — only whether the sentence has a
 
 `src/claims.mjs` is pure — a parsed trace in, a ledger out, no file I/O: `userFacingTexts` → `sentences` → `classify` → `extractClaims`; `judgeClaims(trace)` builds each claim's window and judges it; `claimFindings(ledger)` maps verdicts to the three `check` rules (`CLAIM_RULES`); `claimsText` / `claimsMarkdown` render; `focus(text, kind)` quotes a long sentence around its claim words. `analyse()` in `src/cli.mjs` runs it beside `diagnose()`, so `check`, the hook and `collect` see the rules without a new code path; `glassbox claims` is the same ledger printed on its own. The advice lines live in `TraceCore.ADVICE`; the three rule ids are in `CONTENT_DETAIL`, so `--redact` blanks their detail.
 
-Tests: `test/claims.test.mjs` (20 tests, synthetic sessions from `test/gen.mjs`) — sentences and classification; each verdict from a planted run (passing, none, stale, failing, wrong count, CI rescue); which run a counted or named claim is judged on; declared; PowerShell runs and "All green" after curls; ship sha match, mismatch, failed push, npm version; state, write and fix with and without their receipts; numbers and sourced counts; the window per turn; subagent and `SendUserMessage` claims; corrected-at; the calibration lessons above; both renderings under `--redact`; the `check` / hook integration; the CLI contract; and the pinned real fixture.
+Tests: `test/claims.test.mjs` (24 tests, synthetic sessions from `test/gen.mjs`; the last four are the second calibration's fixes) — sentences and classification; each verdict from a planted run (passing, none, stale, failing, wrong count, CI rescue); which run a counted or named claim is judged on; declared; PowerShell runs and "All green" after curls; ship sha match, mismatch, failed push, npm version; state, write and fix with and without their receipts; numbers and sourced counts; the window per turn; subagent and `SendUserMessage` claims; corrected-at; the calibration lessons above; both renderings under `--redact`; the `check` / hook integration; the CLI contract; and the pinned real fixture.
 
 ## Next rules
 
