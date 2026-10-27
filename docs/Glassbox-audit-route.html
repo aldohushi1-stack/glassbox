@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glassbox — the audit route</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: 'Inter', 'Liberation Sans', Arial, sans-serif; color: #0F172A; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 9.1pt; line-height: 1.36; }
+.page { width: 210mm; height: 297mm; display: flex; flex-direction: column; overflow: hidden; page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+.mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace; font-size: 8.6pt; }
+.head { background: #0F172A; color: #E2E8F0; padding: 8mm 13mm 6mm; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: #94A3B8; }
+.brand .logo { width: 14px; height: 14px; border-radius: 3px; background: #161C24; position: relative; display: inline-block; border: 1px solid #33404F; }
+.brand .logo::before { content: ""; position: absolute; left: 3px; top: 3px; width: 5px; height: 2px; background: #7DB0F0; border-radius: 1px; }
+.brand .logo::after { content: ""; position: absolute; left: 3px; top: 6px; width: 8px; height: 2px; background: #FF8A4D; border-radius: 1px; box-shadow: 3px 3px 0 0 #4FD0BB; }
+h1 { margin: 2mm 0 1.5mm; font-size: 19pt; line-height: 1.12; font-weight: 800; letter-spacing: -.02em; color: #fff; }
+h1 span { color: #FDBA74; }
+.lede { margin: 0; max-width: 178mm; color: #CBD5E1; font-size: 9.6pt; }
+.body { padding: 4mm 13mm 0; }
+h2 { font-size: 11.5pt; font-weight: 800; letter-spacing: -.01em; margin: 3.2mm 0 1.2mm; padding-top: 2.2mm; border-top: 1.5px solid #E2E8F0; }
+h2 small { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 7.5pt; font-weight: 400; letter-spacing: .12em; color: #EA580C; text-transform: uppercase; display: block; margin-bottom: .6mm; }
+p { margin: 0 0 1.5mm; color: #334155; }
+b { color: #0F172A; font-weight: 600; }
+.two { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 1.5mm 6mm; }
+.box { background: #FFF1E8; border: 1px solid #FDBA74; border-radius: 5px; padding: 2.4mm 3.5mm; margin: 1.5mm 0; }
+.box p { margin: 0 0 1mm; }
+.cmd { display: block; background: #0F172A; color: #E2E8F0; border-radius: 4px; padding: 1.6mm 2.6mm; font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 8.2pt; white-space: pre-wrap; word-break: break-word; line-height: 1.5; margin: 1.2mm 0 1.6mm; }
+.cmd i { color: #94A3B8; font-style: normal; } .cmd b { color: #FDBA74; font-weight: 500; }
+table { width: 100%; border-collapse: collapse; margin: 1mm 0 1.5mm; font-size: 8.8pt; }
+th, td { text-align: left; vertical-align: top; padding: 1.3mm 2mm; border-top: 1px solid #E2E8F0; }
+th { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 7.5pt; letter-spacing: .1em; text-transform: uppercase; color: #64748B; font-weight: 500; border-top: none; background: #F8FAFC; }
+td:first-child { font-weight: 600; color: #0F172A; white-space: nowrap; }
+.q { border-left: 2px solid #FDBA74; padding-left: 2.6mm; margin: 0 0 1.4mm; }
+.foot { margin-top: auto; padding: 2.4mm 13mm 6mm; display: flex; justify-content: space-between; align-items: end; gap: 8mm; font-size: 8pt; color: #64748B; border-top: 1px solid #E2E8F0; }
+.foot span { color: #0F172A; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="head">
+    <div class="brand"><span class="logo"></span> Glassbox · the audit route · draft for 12 Sep 2026</div>
+    <h1>Sell the reading of it<br><span>before you sell the tool.</span></h1>
+    <p class="lede">A fixed-price "agent cost audit" for teams that have rolled Claude Code out and don't understand the bill. The tool stays free; the service is the interpretation. Page one is the offer and the buyer; page one also the price; page two the first week, what needs building, why this route, and the questions only you can answer.</p>
+  </header>
+
+  <div class="body">
+    <h2><small>01</small>The offer, in one breath</h2>
+    <p><b>"Send me twenty of your team's Claude Code sessions. Five business days later you get a report that says where the money went, which patterns cost you most, and what to change. Nothing sensitive leaves your building: you run one command that strips every prompt, file and result before you send it."</b></p>
+
+    <div class="two">
+      <div>
+        <h2><small>02</small>Who buys, and why now</h2>
+        <p>An engineering manager, head of engineering or CTO at a company with five to fifty developers on Claude Code, Cursor-style budgets and a bill that grew faster than headcount. They know it costs money; they don't know why; nobody has time to read transcripts. The trigger is a finance question ("why is this line item up 3×?") or a rollout decision ("do we give it to everyone?").</p>
+        <p>You have the proof they need: one 8-hour session that reported $21.83 and cost $322.36; 80% of it spent above 120k tokens of context; one doc read by 22 agents. All true, from your own sessions; that's the pitch.</p>
+      </div>
+      <div>
+        <h2><small>03</small>The privacy answer, first</h2>
+        <p>It's the first objection and Glassbox already answers it. The customer runs this on their own machines:</p>
+        <span class="cmd"><b>$</b> npx glassbox-trace check --all --since 30d --redact --format json &gt; audit.json</span>
+        <p>The file has tool names, counts, tokens, timings, model ids and cost. It has no prompts, no code, no file contents, no tool results. They can open it and see that before they send it. Procurement gets a one-paragraph data statement; you never hold anything you'd need to protect.</p>
+      </div>
+    </div>
+
+    <h2><small>04</small>What they get</h2>
+    <p>A short PDF, mostly numbers the tool already prints, plus the part they pay for: your reading. Section by section: total spend and its shape (per developer, per project, per model); where it goes (share above 120k context, cache hit rate, subagent share, screenshots and oversized results); the five findings that cost most, each with the evidence and the fix; three <span class="mono">CLAUDE.md</span> lines and two habits to change; an estimated monthly saving with the arithmetic shown; and a "run this again in 30 days" command so they can see the delta themselves. Optional: a 45-minute readout with the team, which is where the retainer gets sold.</p>
+
+    <h2><small>05</small>Price and ladder</h2>
+    <table>
+      <tr><th>Tier</th><th>What</th><th>Price (AUD, starting point)</th><th>Purpose</th></tr>
+      <tr><td>Readout</td><td>15-minute call over their <span class="mono">corpus-audit</span> counts, no report</td><td>Free</td><td>Gets the conversation started. Costs you 15 minutes.</td></tr>
+      <tr><td>Audit</td><td>20+ sessions, PDF report, 5 business days</td><td>$1,500–2,500</td><td>First three at the low end so the yes is easy. Raise after the first before/after.</td></tr>
+      <tr><td>Audit + workshop</td><td>Audit plus a 60-minute session with the team on the fixes</td><td>$3,500–4,500</td><td>Where most of the value lands; the fixes are behavioural.</td></tr>
+      <tr><td>Cost watch</td><td>Monthly: they run the command, you send a one-page delta and one recommendation</td><td>$500–800 / month</td><td>Recurring. Sold on the readout call from the audit numbers.</td></tr>
+    </table>
+    <p>The number that changes everything is the first customer's before-and-after. "We cut their agent spend by a third in a month" is worth more than any feature, and it becomes the headline of every post after.</p>
+  </div>
+  <footer class="foot"><div>Draft · BlueprintAU, Adelaide · <span>blueprintau.com/glassbox</span></div><div>page 1 of 2</div></footer>
+</div>
+
+<div class="page">
+  <div class="body" style="padding-top:8mm">
+    <h2 style="border-top:none;padding-top:0;margin-top:0"><small>06</small>The first week</h2>
+    <div class="two">
+      <div>
+        <p><b>Day 1 — the offer exists.</b> One section on blueprintau.com/glassbox ("Get your team's sessions audited"), three sentences, a price, a booking link. The intake instructions (the command above and what the file contains) on the same page. Post 3 of the LinkedIn campaign becomes the audit story instead of the planned feature post.</p>
+        <p><b>Day 2 — the report template.</b> Build it from one of your own corpora so the first real audit is filling in numbers, not designing a document. Ten pages at most; the reader is busy.</p>
+        <p><b>Day 3–5 — ten conversations.</b> Adelaide software firms you can name, the X outreach list, anyone who reacted to posts 1 and 2. The ask is the free readout, not the audit. Three of ten will take the readout; one will buy.</p>
+      </div>
+      <div>
+        <p><b>What the free readout sounds like.</b> "Run <span class="mono">node scripts/corpus-audit.mjs</span> on your sessions; it prints counts only. Read me the top three lines." You then say what those numbers usually mean and what the audit would show. Fifteen minutes, no slides. You are selling your reading, and this is a sample of it.</p>
+        <p><b>What to say when they ask "why not just use Anthropic's dashboard?"</b> The dashboard tells you how much. Glassbox tells you why, per session, with the tool calls it's about, and what to change. The two are complementary, and the audit uses both if they'll share the dashboard number.</p>
+      </div>
+    </div>
+
+    <h2><small>07</small>What needs building (small, and most of it exists)</h2>
+    <table>
+      <tr><th>Piece</th><th>Status</th><th>Effort</th></tr>
+      <tr><td>Redacted intake</td><td><span class="mono">check --all --redact --format json</span> ships in 0.5.0. Needs a one-page "what's in the file" statement.</td><td>Half a day</td></tr>
+      <tr><td>Report generator</td><td>New script: many <span class="mono">audit.json</span> files → the report sections as Markdown, then PDF. Reuses <span class="mono">METRICS</span>, <span class="mono">compare()</span> and the corpus audit.</td><td>One to two days</td></tr>
+      <tr><td>Offer section on the site</td><td>Copy above, booking link (the existing blueprintau.com/#booking works to start).</td><td>An hour</td></tr>
+      <tr><td>Data statement for procurement</td><td>What is and isn't in the redacted file; retention (delete after delivery); no third parties.</td><td>An hour</td></tr>
+      <tr><td>Before/after case study</td><td>Can't be built; comes from customer one. Design the audit so the 30-day re-run is part of the price.</td><td>—</td></tr>
+    </table>
+
+    <h2><small>08</small>Why this route and not the others first</h2>
+    <p>It pays soonest, it needs almost nothing built, and it uses what you're best at. A paid product tier needs months of build before the first dollar and competes with free tools and with whatever Anthropic ships next; the audit is a service, so it competes with nobody and it teaches you exactly which product features teams would pay for. Every audit also grows the corpus the rules are tuned on, which makes the free tool better, which makes the next audit easier to sell. And the job-search route runs in parallel at no cost: "I run agent cost audits" is a better opening line on LinkedIn than "I'm between roles".</p>
+
+    <h2><small>09</small>Questions only you can answer tomorrow</h2>
+    <p class="q"><b>Who are the first ten?</b> Names, not categories. Adelaide firms, the X list, LinkedIn reactors. If you can't name ten, the offer goes on the site anyway and post 3 does the finding.</p>
+    <p class="q"><b>Is the price right for you?</b> $1,500 is deliberately low for a five-day turnaround. If the first customer says yes too fast, the second one pays $2,500.</p>
+    <p class="q"><b>Solo or with a name behind you?</b> BlueprintAU as the vendor, you as the auditor. Or your own name only. The site already says BlueprintAU; consistency matters more than the choice.</p>
+    <p class="q"><b>How much of the report do you want written by hand?</b> The generator can produce 80% of it. The 20% you write is why they pay; decide how long that takes you before you promise five days.</p>
+    <p class="q"><b>Retention and liability.</b> One paragraph: you delete the file after delivery, you make no guarantees on savings, the figures are estimates from an editable rate card. Worth writing before the first customer, not after.</p>
+
+    <div class="box">
+      <p><b>The one-line version for tomorrow morning:</b> put the offer on the site, book ten free readouts, and let the first paying audit tell you what to build next.</p>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <div>Draft · BlueprintAU, Adelaide · <span>blueprintau.com/glassbox</span></div>
+    <div>page 2 of 2</div>
+  </footer>
+</div>
+</body>
+</html>

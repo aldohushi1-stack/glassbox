@@ -1,0 +1,92 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Glassbox — findings, 16 September 2026</title><style>
+@page{size:A4;margin:16mm 16mm 18mm}
+body{font:10.5pt/1.45 Inter,"Segoe UI",system-ui,sans-serif;color:#111827;max-width:180mm;margin:0 auto}
+h1{font-size:22pt;margin:0 0 4pt} h2{font-size:12.5pt;margin:16pt 0 5pt;color:#0F172A;border-bottom:1px solid #E5E7EB;padding-bottom:2pt}
+h3{font-size:11pt;margin:12pt 0 3pt;color:#0F172A}
+p{margin:5pt 0} em{color:#4B5563} code{font:9.2pt "JetBrains Mono",Consolas,monospace;background:#F3F4F6;padding:0 3px;border-radius:3px}
+pre{background:#F3F4F6;padding:6pt 8pt;border-radius:4px;font:8.8pt "JetBrains Mono",Consolas,monospace;white-space:pre-wrap}
+table{border-collapse:collapse;width:100%;font-size:9.3pt;margin:6pt 0} th,td{border:1px solid #D1D5DB;padding:4pt 6pt;vertical-align:top;text-align:left} th{background:#F9FAFB}
+.tag{display:inline-block;font-size:8.3pt;font-weight:600;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle}
+.done{background:#DCFCE7;color:#166534}.todo{background:#FFEDD5;color:#9A3412}
+.foot{margin-top:14pt;font-size:8.8pt;color:#6B7280;border-top:1px solid #E5E7EB;padding-top:5pt}
+.lead{font-size:11pt;color:#374151}
+</style></head><body>
+<h1>Glassbox — findings, 16 September 2026</h1>
+<p><em>One Cowork session, two releases, two real-transcript runs, and what they found. Written by Claude for Aldo Hushi to pick up on the 17th.</em></p>
+
+<p class="lead">The day started as "PDF the product list and go wild again" and ended with Glassbox at 0.9.0: two of the products on that list are built, tested and sitting in <code>sesh\glassbox</code> waiting for the GitHub upload. Both were run on real transcripts before being called done, and both runs found things — one of them about the tool, one of them about me.</p>
+
+<h2>1. What was built</h2>
+
+<h3>0.8.0 — Fence: secrets that reached a transcript <span class="tag done">built · tested · delivered</span></h3>
+<p><code>glassbox fence [ID|FILE|DIR] [--since] [--project] [--format text|md|json] [--out] [--fail-on error|warn|info] [--shred]</code>. Scans Claude Code transcripts for credentials by format (AWS, GitHub, Anthropic, OpenAI, Slack, Stripe, Google, npm, SendGrid, private-key blocks, database URLs with passwords — <em>error</em>), secrets by context (<code>password=</code>, <code>api_key:</code>, <code>Bearer</code>, basic-auth URLs, JWTs — <em>warn</em>) and credential-file reads (<code>.env</code>, <code>.npmrc</code>, <code>.netrc</code>, <code>id_rsa</code>, <code>*.pem</code>, <code>secrets.json</code> — <em>info</em>). Every row is a masked preview and an 8-hex SHA-256 fingerprint, never the value; the same key can be recognised across sessions without the report carrying it. <code>--shred</code> overwrites each value in place with <code>[FENCED:rule:fingerprint]</code>: no backup, every rewritten line re-parsed before anything is written, atomic rename, CRLF preserved. A shredded transcript still opens and checks.</p>
+<p>Engineering: DESIGN.md §14, nine tests written before the code, 111 total, e2e and audit green. Docs: FENCE.md, IT.md §6b, PILOT.md day-0 sweep, README, CHANGELOG.</p>
+
+<h3>0.9.0 — Adhere: "is my CLAUDE.md doing anything?" <span class="tag done">built · tested · delivered</span></h3>
+<p><code>glassbox adhere [--project DIR] [--claude-md FILE] [--since] [--format] [--out] [--redact] [--fail-under N]</code>. Reads the project's instruction files (<code>CLAUDE.md</code>, <code>.claude/CLAUDE.md</code>, <code>CLAUDE.local.md</code>, <code>~/.claude/CLAUDE.md</code>), turns each line into a rule, finds every session of that project, and judges each rule per occasion with evidence (session, turn prompt, command or path). Nine shapes are checkable mechanically: run X before commit/push, run X after changes, use A not B, never run, never touch, ask before, read before edit, commit message format, no new docs. Everything else is listed as <em>not checkable yet</em> with its line number, so the report never claims more than it measured. Headline: <em>N rules · K checkable · sessions · obeyed X of Y occasions (Z%)</em>.</p>
+<p>Engineering: DESIGN.md §15, ten tests before the code, 121 total, e2e and audit green. Docs: ADHERE.md, IT.md §6c, README, CHANGELOG.</p>
+
+<h3>Also produced</h3>
+<p><code>docs/Glassbox-next-products.pdf</code> (+ .html) — the seven-product list with status and sizing. <code>docs/RELEASE-0.8.0.md</code> and <code>docs/RELEASE-0.9.0.md</code> — the 0.9.0 note carries a single upload order covering both releases, since 0.8.0 was never pushed on its own.</p>
+
+<h2>2. What the real runs found</h2>
+
+<h3>Fence, run on the session that built it</h3>
+<p>1.2 MB, one transcript. 50 findings, 19 distinct secrets — every one of them a planted test value that had passed through tool inputs and outputs while the tests were being written. <code>--shred</code> on a copy rewrote 96 occurrences; all 221 lines still parsed and <code>glassbox check</code> gave the same result. On the real fixture transcript (<code>test/fixtures/real-main.jsonl</code>): nothing found, which is the correct answer for that file. The point for the launch post: the tool's own build session is proof that a transcript collects everything the agent touches, including secrets it was only shown in passing.</p>
+
+<h3>Adhere, run on the session that built it</h3>
+<p>Against a CLAUDE.md written for the test with the rules Glassbox would plausibly have, the score was <strong>22%</strong> — 12 of 54 occasions.</p>
+<table>
+<thead><tr><th>rule</th><th>shape</th><th>occasions</th><th>obeyed</th><th>verdict</th></tr></thead>
+<tbody>
+<tr><td>Use rg rather than grep.</td><td>prefer-tool</td><td>38</td><td>0</td><td>ignored</td></tr>
+<tr><td>Never create markdown files unless asked.</td><td>no-new-docs</td><td>2</td><td>0</td><td>ignored</td></tr>
+<tr><td>Use conventional commits.</td><td>commit-format</td><td>1</td><td>0</td><td>ignored</td></tr>
+<tr><td>Ask before committing.</td><td>ask-before</td><td>1</td><td>0</td><td>ignored</td></tr>
+<tr><td>Never edit files in dist/ by hand.</td><td>never-touch</td><td>8</td><td>8</td><td>obeyed</td></tr>
+<tr><td>Always run npm test before committing.</td><td>run-before</td><td>1</td><td>1</td><td>obeyed</td></tr>
+<tr><td>Run the tests after making changes.</td><td>run-after</td><td>1</td><td>1</td><td>obeyed</td></tr>
+<tr><td>Never force push.</td><td>never-run</td><td>1</td><td>1</td><td>obeyed</td></tr>
+<tr><td>Read a file before editing it.</td><td>read-before-edit</td><td>1</td><td>1</td><td>obeyed</td></tr>
+<tr><td>Keep the CLI dependency-free. / Prefer small, single-purpose modules.</td><td>—</td><td colspan="3">not checkable yet</td></tr>
+</tbody>
+</table>
+<p>The reading: the rules that were obeyed are the ones that cost nothing to obey (don't touch dist, don't force push). The ones ignored are habits — grep over rg 38 times in one session — and the ones where the instruction was never in the prompt at the moment of the action (the one commit was requested by a Stop hook, not by you, and its message was <code>v0.8.0: glassbox fence — …</code>, not <code>feat:</code>). That is the honest shape of the answer to "is my CLAUDE.md doing anything?": <em>the cheap rules, yes; the habit-changing rules, much less; and you can now see which is which.</em></p>
+
+<h3>Three bugs the first run found in the tool itself</h3>
+<p>The first pass of the same run scored 19% and was wrong in both directions. A <code>git push --force</code> inside a document being written with a heredoc was counted as a force push (3 breaches). Commits inside <code>node -e "…"</code> test strings were counted as commits (5 instead of 1). The one real commit was missed entirely because it read <code>git -c user.name=… commit</code>. All three are fixed by judging commands on their <em>shell surface</em> — heredoc bodies and inline programs are content, segments split on <code>&amp;&amp;</code> <code>|</code> <code>;</code> and newlines, <code>git</code>'s leading options looked through — and all three are now tests. This is exactly what the "run it on a real transcript before calling it done" rule is for.</p>
+
+<h2>3. State of the repo and the site</h2>
+<table>
+<thead><tr><th>where</th><th>version</th><th>note</th></tr></thead>
+<tbody>
+<tr><td><code>sesh\glassbox</code> (your PC)</td><td>0.9.0</td><td>all files written; local matched GitHub byte-for-byte before the day's changes</td></tr>
+<tr><td>Cloud clone, branch <code>v0.8.0-fence</code></td><td>0.9.0</td><td>two commits, c9b4747 (0.8.0) and c6e98f5 (0.9.0); push refused as always (repo not in the session's authorised set)</td></tr>
+<tr><td>GitHub <code>origin/main</code></td><td>0.7.1</td><td>nothing from today is on it yet</td></tr>
+<tr><td>npm <code>glassbox-trace</code></td><td>0.7.1</td><td>publish after the push (Actions → publish → Run workflow)</td></tr>
+<tr><td>blueprintau.com/glassbox/</td><td>0.7.1</td><td>no "New in 0.8/0.9" yet; app/ viewer unchanged apart from version string</td></tr>
+<tr><td>Claude artifact</td><td>0.7.1 (v13)</td><td>viewer has no fence/adhere UI, so not urgent</td></tr>
+<tr><td>IT / pilot PDFs</td><td>0.7.1 renderings</td><td>the .md files are current and carry the new sections; regenerate when next needed</td></tr>
+<tr><td>Still unpushed from before</td><td>—</td><td>test/action.test.mjs, docs/CI.md, the Node 24 workflow files (yours to upload)</td></tr>
+</tbody>
+</table>
+
+<h2>4. To pick up on the 17th</h2>
+<p>In the order I'd take them, but they are independent:</p>
+<table>
+<thead><tr><th>#</th><th>what</th><th>who</th><th>size</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>Run <code>adhere</code> on your own projects</strong> — <code>node bin\glassbox.mjs adhere --project &lt;folder with a CLAUDE.md&gt;</code> from <code>sesh\glassbox</code>, and <code>--home</code> at the copied transcripts in <code>sesh\projects</code> if the live ones are elsewhere. The 22% is a good story; your number is the post. Send me the output (or <code>--redact</code> it) and I'll read it for parser misses the way I read my own.</td><td>you</td><td>10 min</td></tr>
+<tr><td>2</td><td><strong>Push 0.8.0 + 0.9.0 to GitHub and publish</strong> — upload order in docs/RELEASE-0.9.0.md (one list for both). Either you upload, or I do it from your Chrome via the web upload page as before. Then Actions → publish → Run workflow. No GitHub Release.</td><td>either</td><td>30 min</td></tr>
+<tr><td>3</td><td><strong>LinkedIn Post 4 is due Thu 17 Sep</strong> per CAMPAIGN.md, and the X thread slot is the same day. Fence's "the session that built it had 19 secrets in it" and Adhere's "22%" are both stronger than whatever Post 4 was going to be; pick one, or run the two on consecutive days.</td><td>you decide</td><td>—</td></tr>
+<tr><td>4</td><td><strong>Site: "New in 0.9"</strong> — fence + adhere block, <code>v0.9.0</code> Get-it line, app/ viewer swap. Same cPanel zip route as before once you've logged in.</td><td>me, after you log in</td><td>30 min</td></tr>
+<tr><td>5</td><td><strong>Startup tax</strong> — the next product on the list: the cold-open cost per session and per fleet, one rule in <code>check</code> plus a table in <code>collect</code>. One day.</td><td>me</td><td>1 day</td></tr>
+<tr><td>6</td><td><strong>Adhere, second pass</strong> — after real-project runs: more rule phrasings, skill-fired checks, and the <code>ask-before</code> "standing instruction" case (a commit asked for in an earlier turn). Only worth doing against real CLAUDE.md files.</td><td>me, after #1</td><td>1–2 days</td></tr>
+</tbody>
+</table>
+
+<h2>5. One thing worth keeping</h2>
+<p>Both tools were only right after they were run on a real transcript. The tests passed before that; the real run is what found the heredoc, the inline program and the <code>git -c</code> case. "Ship nothing that hasn't been run on the session that built it" is a rule now — and, yes, it is checkable.</p>
+
+<p class="foot">glassbox-trace 0.9.0 · github.com/aldohushi1-stack/glassbox · blueprintau.com/glassbox · hi@aldo.ltd · 16 September 2026 · transcript of this session in sesh\glassbox\sessions\cowork-2026-09-16-535876c9.jsonl</p>
+</body></html>

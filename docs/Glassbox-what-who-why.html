@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glassbox — what, who, why</title>
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { width: 210mm; height: 297mm; font-family: 'Inter', 'Liberation Sans', Arial, sans-serif; color: #0F172A; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8.7pt; line-height: 1.34; }
+.page { width: 210mm; height: 297mm; display: flex; flex-direction: column; overflow: hidden; }
+.mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace; }
+.head { background: #0F172A; color: #E2E8F0; padding: 8mm 13mm 6mm; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: #94A3B8; }
+.brand .logo { width: 14px; height: 14px; border-radius: 3px; background: #161C24; position: relative; display: inline-block; border: 1px solid #33404F; }
+.brand .logo::before { content: ""; position: absolute; left: 3px; top: 3px; width: 5px; height: 2px; background: #7DB0F0; border-radius: 1px; }
+.brand .logo::after { content: ""; position: absolute; left: 3px; top: 6px; width: 8px; height: 2px; background: #FF8A4D; border-radius: 1px; box-shadow: 3px 3px 0 0 #4FD0BB; }
+h1 { margin: 2mm 0 1.5mm; font-size: 19pt; line-height: 1.12; font-weight: 800; letter-spacing: -.02em; color: #fff; }
+h1 span { color: #FDBA74; }
+.lede { margin: 0; max-width: 178mm; color: #CBD5E1; font-size: 9.6pt; }
+.lede b { color: #fff; font-weight: 600; }
+/* three bands */
+.bands { padding: 3.2mm 13mm 0; display: grid; grid-template-columns: 1fr; gap: 2.2mm; }
+.band { display: grid; grid-template-columns: 30mm 1fr; gap: 5mm; border-top: 1.5px solid #E2E8F0; padding-top: 2.2mm; }
+.band .k { font-size: 22pt; font-weight: 800; letter-spacing: -.03em; color: #EA580C; line-height: 1; }
+.band .k small { display: block; font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 7.5pt; font-weight: 400; letter-spacing: .12em; color: #64748B; margin-top: 1.6mm; text-transform: uppercase; }
+.band h2 { margin: 0 0 1mm; font-size: 11.5pt; font-weight: 700; letter-spacing: -.01em; }
+.band p { margin: 0 0 1.4mm; color: #334155; }
+.band p:last-child { margin-bottom: 0; }
+.band b { color: #0F172A; font-weight: 600; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6mm 5mm; }
+.cols p { margin: 0; }
+.who { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.8mm 5mm; }
+.who div { border-left: 2px solid #FDBA74; padding-left: 2.6mm; }
+.who b { display: block; margin-bottom: .3mm; }
+.who p { margin: 0; }
+.cmd { display: inline-block; background: #0F172A; color: #FDBA74; border-radius: 3px; padding: .3mm 1.8mm; font-size: 8pt; white-space: nowrap; }
+/* numbers strip */
+.nums { margin: 2.4mm 13mm 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #E2E8F0; border: 1px solid #E2E8F0; border-radius: 6px; overflow: hidden; }
+.nums div { background: #F8FAFC; padding: 1.8mm 2.8mm; }
+.nums b { display: block; white-space: nowrap; font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 10.5pt; font-weight: 500; letter-spacing: -.02em; color: #0F172A; }
+.nums span { font-size: 7.8pt; color: #64748B; line-height: 1.3; display: block; margin-top: .6mm; }
+/* footer */
+.foot { margin-top: auto; padding: 2.4mm 13mm 6mm; display: flex; justify-content: space-between; align-items: end; gap: 8mm; font-size: 8pt; color: #64748B; border-top: 1px solid #E2E8F0; }
+.foot .links { display: flex; gap: 4.5mm; flex-wrap: wrap; }
+.foot .links span { color: #0F172A; }
+.foot .fine { text-align: right; max-width: 62mm; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="head">
+    <div class="brand"><span class="logo"></span> Glassbox · what, who, why · v0.5.0</div>
+    <h1>Other tools show you what happened.<br><span>Glassbox tells you what went wrong.</span></h1>
+    <p class="lede">A one-page brief for anyone deciding whether to try it, share it, or write about it. <b>Local, mechanical, open source.</b> Reads the transcript Claude Code already writes; asks no model for an opinion; sends nothing anywhere.</p>
+  </header>
+
+  <section class="bands">
+    <div class="band">
+      <div class="k">What<small>the thing</small></div>
+      <div>
+        <h2>A flight-recorder reader for AI coding sessions</h2>
+        <p>Every Claude Code, Cowork and Agent SDK session writes a <span class="mono">.jsonl</span> transcript to <span class="mono">~/.claude/projects/</span>: every prompt, every tool call, every token served, every dollar. Glassbox turns that file into a <b>timeline</b> of every call, a <b>chart</b> of where the context and cost went, and a list of <b>findings</b> — retry loops, tools that kept failing, results that flooded the context, the request that pushed the prompt past 120k tokens and how much of the bill was spent after it. Each finding links to the exact tool calls it is about and ends with one line on what to do differently.</p>
+        <div class="cols">
+          <p><b>Three ways in.</b> One HTML file you drop a transcript onto (<span class="mono">blueprintau.com/glassbox/app</span>); a CLI, <span class="cmd">npx glassbox-trace</span>, that lists, opens, checks, compares and live-tails sessions; and a Claude Code plugin, <span class="cmd">/plugin install glassbox@glassbox-trace</span>, that ends every turn with a summary and can hand the findings back to the agent.</p>
+          <p><b>No AI in the loop.</b> The rules are thresholds you can read and change, so the same session always gets the same report — which is what lets <span class="cmd">check --fail-on warn</span> gate a <span class="mono">claude -p</span> job in CI the way a test would. Share mode and <span class="cmd">--redact</span> keep the structure and blank the content, so a screenshot is safe to post.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="band">
+      <div class="k">Who<small>it is for</small></div>
+      <div>
+        <div class="who">
+          <div><b>The developer who just got a surprising bill</b><p>"Why was that so expensive?" is the first question Glassbox answers. Click the cost line, see the request that crossed 120k context, see the screenshots riding along in every request after the tenth.</p></div>
+          <div><b>The team running agents in CI</b><p><span class="mono">check --all --since 1h</span> checks every session from the last hour, one line each, exit 1 if any fails. <span class="mono">--rates</span> pins a team rate card so everyone's numbers agree.</p></div>
+          <div><b>The person writing or teaching about agents</b><p>Compare Sonnet against Opus on the same task, before and after a <span class="mono">CLAUDE.md</span> change, the run that worked against the one that didn't — every metric with the change, and the findings only one of them has.</p></div>
+          <div><b>The agent itself</b><p>With the plugin's <span class="mono">feedback</span> and <span class="mono">context</span> options on, the findings go back to Claude, it says what it would do differently, and the next session in that project starts knowing it.</p></div>
+        </div>
+        <p style="margin-top:1.8mm"><b>Who built it.</b> Glassbox is a BlueprintAU build from Adelaide, by Aldo Hushi. The brief to the agent was "build a tool your own system would benefit from"; it chose a flight recorder, wrote the design doc, tests and viewer in one session, then loaded that session's own transcript. That trace, sanitised, is the demo inside the tool.</p>
+      </div>
+    </div>
+
+    <div class="band">
+      <div class="k">Why<small>it exists</small></div>
+      <div>
+        <p><b>Because the transcript exists and nobody reads it.</b> The diff shows what the agent changed. It does not show that a tool failed six times, that a subagent re-read the same architecture doc twenty-two times, or that most of the money went on requests carrying 120,000 tokens of context. All of it is already in a file on your disk.</p>
+        <p><b>Because the numbers have to be right, and once they weren't.</b> An audit of 33 real sessions found that costs on subagent- and workflow-heavy sessions were badly under-reported: one 8-hour session showed <b>$21.83</b> when it had cost <b>$322.36</b>. Workflow agent transcripts weren't being read; streamed output-token counts were taken at their first value. Both were fixed in 0.4.2, and the story is told on the site: a cost tool that hides its own mistakes is worthless. The same audit tuned the rules from 481 findings to 142 — a median of two per session, no warnings in the median one — and the audit script ships in the repo so you can run it on yours; it prints counts only.</p>
+        <p><b>Because it should be private and boring.</b> No model calls, no tokens spent, no network. The viewer is one file; the CLI has no dependencies; the plugin runs the bundled code with Node. MIT-licensed, source on GitHub.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="nums" aria-label="Facts">
+    <div><b>33¢</b><span>the agent's first "hello", after 90k tokens of context</span></div>
+    <div><b>$21.83 → $322.36</b><span>one 8-hour session: reported, then actual</span></div>
+    <div><b>481 → 142</b><span>findings on 33 sessions, before and after tuning</span></div>
+    <div><b>0</b><span>bytes that leave your machine</span></div>
+  </div>
+
+  <footer class="foot">
+    <div class="links">
+      <div>Viewer <span>blueprintau.com/glassbox</span></div>
+      <div>Source <span>github.com/aldohushi1-stack/glassbox</span></div>
+      <div>npm <span>glassbox-trace</span></div>
+      <div>Plugin <span>glassbox@glassbox-trace</span></div>
+    </div>
+    <div class="fine">MIT · BlueprintAU, Adelaide · Aldo Hushi. Claude, Claude Code and Cowork are Anthropic trademarks; Glassbox is independent and not affiliated.</div>
+  </footer>
+</div>
+</body>
+</html>

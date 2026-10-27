@@ -9,15 +9,20 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.10.1';
+  const VERSION = '0.13.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
   // ids like claude-sonnet-4-5-20250929 resolve. Longest prefix wins.
-  // Source: platform.claude.com/docs/en/about-claude/pricing, fetched 2026-09-05.
+  // Source: platform.claude.com/docs/en/about-claude/pricing, fetched 2026-10-25.
+  // `over`: a second price set for requests whose prompt (input + cache reads + cache writes) is over
+  // `at` tokens; the whole request pays it (Haiku 5.5).
   // ---------------------------------------------------------------------------
   const RATES = {
     'claude-fable-5-1':   { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 0.25 },
+    'claude-opus-5-5':    { in: 4,   out: 20, w5m: 5,     w1h: 8,   read: 0.2 },
+    'claude-sonnet-5-5':  { in: 2,   out: 10, w5m: 2.5,   w1h: 4,   read: 0.1 },
+    'claude-haiku-5-5':   { in: 0.1, out: 0.5, w5m: 0.125, w1h: 0.2, read: 0.01, over: { at: 100000, in: 0.5, out: 2.5, w5m: 0.625, w1h: 1, read: 0.05 } },
     'claude-mythos-5-1':  { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 0.25 },
     'claude-fable-5':     { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 1.0 },
     'claude-mythos-5':    { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 1.0 },
@@ -29,10 +34,15 @@
     'claude-opus-4-1':    { in: 15,  out: 75, w5m: 18.75, w1h: 30,  read: 1.5 },
     'claude-opus-4-2025': { in: 15,  out: 75, w5m: 18.75, w1h: 30,  read: 1.5 },
     'claude-sonnet-5':    { in: 2,   out: 10, w5m: 2.5,   w1h: 4,   read: 0.2 },
+    'claude-sonnet-4-6':  { in: 3,   out: 15, w5m: 3.75,  w1h: 6,   read: 0.3 },
+    'claude-sonnet-4-5':  { in: 3,   out: 15, w5m: 3.75,  w1h: 6,   read: 0.3 },
     'claude-sonnet-4':    { in: 3,   out: 15, w5m: 3.75,  w1h: 6,   read: 0.3 },
     'claude-haiku-4-5':   { in: 1,   out: 5,  w5m: 1.25,  w1h: 2,   read: 0.1 },
     'claude-3-5-haiku':   { in: 0.8, out: 4,  w5m: 1.0,   w1h: 1.6, read: 0.08 },
   };
+  // The day RATES was checked against the pricing page. rateCardCheck() warns when a session ran long after it.
+  const RATES_DATE = '2026-10-25';
+  const RATES_STALE_DAYS = 60;
 
   const DEFAULTS = {
     retryLoopMin: 3,
@@ -419,7 +429,7 @@
           req = {
             id: key, agent: a.id, model: msg.model || null, stopReason: null, start: t, end: t, version: rec.version || null,
             usage: emptyUsage(), blocks: [], turnIndex: turn.index, contextTokens: 0, records: 0,
-            isApiError: !!rec.isApiErrorMessage, uuid: rec.uuid || null,
+            isApiError: !!rec.isApiErrorMessage, apiError: rec.error || null, uuid: rec.uuid || null,
           };
           requestByKey.set(key, req);
           requests.push(req);
@@ -434,6 +444,7 @@
         if (msg.stop_reason) req.stopReason = msg.stop_reason;
         if (!req.version && rec.version) req.version = rec.version;
         if (rec.isApiErrorMessage) req.isApiError = true;
+        if (rec.error && !req.apiError) req.apiError = rec.error;
         const content = Array.isArray(msg.content) ? msg.content : (msg.content != null ? [{ type: 'text', text: String(msg.content) }] : []);
         const blockIndex = typeof rec.apiBlockIndex === 'number' ? rec.apiBlockIndex : req.blocks.length;
         for (const b of content) {
@@ -910,16 +921,115 @@
   // ---------------------------------------------------------------------------
   // Cost
   // ---------------------------------------------------------------------------
-  function rateFor(model, rates) {
+  // ---------------------------------------------------------------------------
+  // Platforms. Bedrock ids carry the endpoint: `global.anthropic.claude-…-v1:0` is the global endpoint,
+  // `us.` / `eu.` / `apac.` … (geographic cross-region) and bare `anthropic.` (in-region) are regional.
+  // Vertex ids are `claude-…@20250929`; the endpoint is not in the id. From Sonnet 4.5 / Haiku 4.5 / Opus 4.5
+  // on, regional and multi-region endpoints cost 10% more than global (pricing page, 2026-10-25); earlier
+  // models keep one price. First-party `inference_geo: "us"` is 1.1× for 4.6 and later. Bedrock's and Vertex's
+  // global prices are taken to be Anthropic's list: a cloud price sheet that differs goes in --rates.
+  // ---------------------------------------------------------------------------
+  const NO_REGIONAL_PREMIUM = new Set(['claude-opus-4-1', 'claude-opus-4-2025', 'claude-sonnet-4', 'claude-3-5-haiku']);
+  const NO_GEO_PREMIUM = new Set([...NO_REGIONAL_PREMIUM, 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
+  function normaliseModel(id) {
+    let s = String(id || ''), platform = null, endpoint = null;
+    const b = s.match(/^(?:(global|us|us-gov|eu|apac|jp|au|ca)\.)?anthropic\.(claude-.+)$/);
+    if (b) { platform = 'bedrock'; endpoint = b[1] === 'global' ? 'global' : 'regional'; s = b[2].replace(/-v\d+(?::\d+)?$/, ''); }
+    else if (/^claude-[^@]+@/.test(s)) { platform = 'vertex'; s = s.replace(/@.*$/, ''); }
+    return { id: s, platform, endpoint };
+  }
+  // A card with a platform setting: { platform, endpoint: 'global'|'regional', geo: 'us' }, kept off the
+  // enumerable keys so the viewer's rate editor and JSON output never see it.
+  function withPricing(rates, pricing) {
+    const base = rates || RATES, out = Object.assign({}, base);
+    for (const k of ['_custom', '_userKeys']) if (base[k]) Object.defineProperty(out, k, { value: base[k] });
+    Object.defineProperty(out, '_pricing', { value: Object.assign({}, pricing) });
+    return out;
+  }
+  const scaled = new WeakMap();
+  function scaleRate(rate, f) {
+    let byF = scaled.get(rate); if (!byF) { byF = new Map(); scaled.set(rate, byF); }
+    if (!byF.has(f)) { const s = (r) => ({ in: r.in * f, out: r.out * f, w5m: r.w5m * f, w1h: r.w1h * f, read: r.read * f }); const o = s(rate); if (rate.over) o.over = Object.assign(s(rate.over), { at: rate.over.at }); byF.set(f, o); }
+    return byF.get(f);
+  }
+  function rateKey(model, rates) {
     rates = rates || RATES;
     if (!model) return null;
-    if (rates[model]) return rates[model];
+    model = normaliseModel(model).id;
+    if (rates[model]) return model;
     let best = null;
     for (const k of Object.keys(rates)) if (model.startsWith(k) && (!best || k.length > best.length)) best = k;
-    return best ? rates[best] : null;
+    return best;
+  }
+  // The multiplier for one model id under a card's platform setting. The endpoint in a Bedrock id applies on
+  // its own, except to a row the user priced themselves (their sheet already has the regional price in it);
+  // an explicit --endpoint applies to every row.
+  function premiumFor(model, rates) {
+    const card = rates || RATES, n = normaliseModel(model), k = rateKey(model, card);
+    if (!k) return 1;
+    const p = card._pricing || {}, userRow = card._userKeys && card._userKeys.has(k);
+    const endpoint = p.endpoint || (userRow ? null : n.endpoint);
+    let f = 1;
+    if (endpoint === 'regional' && !NO_REGIONAL_PREMIUM.has(k)) f *= 1.1;
+    if (p.geo === 'us' && (n.platform || p.platform || 'anthropic') === 'anthropic' && !NO_GEO_PREMIUM.has(k)) f *= 1.1;
+    return f;
+  }
+  function rateFor(model, rates) {
+    const k = rateKey(model, rates);
+    if (!k) return null;
+    const rate = (rates || RATES)[k], f = premiumFor(model, rates);
+    return f === 1 ? rate : scaleRate(rate, f);
+  }
+  // One line naming how a session was priced, or null for plain first-party list prices.
+  function pricingNote(models, rates) {
+    const card = rates || RATES, p = card._pricing || {};
+    const seen = { bedrock: new Set(), vertex: false };
+    for (const m of new Set(models || [])) { if (!m || m === '<synthetic>') continue; const n = normaliseModel(m); if (n.platform === 'bedrock') seen.bedrock.add(n.endpoint); if (n.platform === 'vertex') seen.vertex = true; }
+    const platform = p.platform || (seen.bedrock.size ? 'bedrock' : seen.vertex ? 'vertex' : 'anthropic');
+    const parts = [];
+    if (platform === 'bedrock') parts.push(`Bedrock, ${p.endpoint ? `${p.endpoint} endpoint` : seen.bedrock.size ? `${[...seen.bedrock].sort().join(' and ')} endpoint${seen.bedrock.size > 1 ? 's' : ''} from the model ids` : 'global endpoint'}`);
+    else if (platform === 'vertex') parts.push(`Vertex, ${p.endpoint ? `${p.endpoint} endpoint` : 'global endpoint assumed (--endpoint regional if not)'}`);
+    else if (p.endpoint === 'regional') parts.push('a regional endpoint');
+    if (p.geo === 'us') parts.push('US-only inference');
+    if (!parts.length) return null;
+    const extras = [];
+    if (p.endpoint === 'regional' || (p.endpoint == null && seen.bedrock.has('regional'))) extras.push('+10% for regional on Claude 4.5 and later');
+    if (p.geo === 'us') extras.push('+10% for US-only on Claude 4.6 and later');
+    const cloud = platform === 'bedrock' || platform === 'vertex';
+    return `pricing: ${parts.join(', ')}${extras.length ? `; ${extras.join('; ')}` : ''}.${cloud ? ` Global prices taken as Anthropic's list; put your cloud price sheet in --rates if it differs.` : ''}`;
+  }
+  // Is the card still right for these models? A model priced through a shorter row of another version
+  // (claude-opus-5-5 by claude-opus-5 before 0.11) is "approximate": a dated id or a date-prefixed row is not.
+  // `latest` is the newest request time: the card is "old" for a session that ran long after RATES_DATE.
+  // With a custom card (--rates) the age is the user's business and is not reported.
+  function rateCardCheck(models, rates, opts = {}) {
+    const out = { date: RATES_DATE, ageDays: null, old: false, approximate: [], unpriced: [] };
+    for (const m of new Set(models || [])) {
+      if (!m || m === '<synthetic>') continue;
+      const k = rateKey(m, rates);
+      if (!k) { out.unpriced.push(m); continue; }
+      const rest = normaliseModel(m).id.replace(/-\d{8}$/, '').slice(k.length);
+      if (/^-\d/.test(rest)) out.approximate.push({ model: m, as: k });
+    }
+    if (opts.latest != null && !opts.custom) {
+      out.ageDays = Math.floor((opts.latest - Date.parse(RATES_DATE + 'T00:00:00Z')) / 864e5);
+      out.old = out.ageDays > RATES_STALE_DAYS;
+    }
+    out.ok = !out.old && !out.approximate.length && !out.unpriced.length;
+    return out;
+  }
+  // One line for a report, or null when the card is fine.
+  function rateCardLine(rc) {
+    if (!rc || rc.ok) return null;
+    const parts = [];
+    if (rc.approximate.length) parts.push(rc.approximate.map((a) => `${a.model} priced as ${a.as}`).join(', ') + ' (no row of its own)');
+    if (rc.unpriced.length) parts.push(`no price for ${rc.unpriced.join(', ')}`);
+    if (rc.old) parts.push(`the built-in card is from ${rc.date}, ${rc.ageDays} days before this ran`);
+    return `rate card: ${parts.join('; ')}. Check platform.claude.com/docs/en/about-claude/pricing, or pass --rates FILE.`;
   }
   function requestCost(u, rate) {
     if (!rate) return null;
+    if (rate.over && u.input + u.cacheRead + u.cacheWrite > rate.over.at) rate = rate.over;
     const w5 = u.cacheWrite5m || 0, w1 = u.cacheWrite1h || 0;
     const write = (w5 || w1) ? (w5 * rate.w5m + w1 * rate.w1h) : (u.cacheWrite * rate.w5m);
     return (u.input * rate.in + u.cacheRead * rate.read + write + u.output * rate.out) / 1e6;
@@ -1229,5 +1339,5 @@
   }
   function toJsonl(records) { return records.map((r) => JSON.stringify(r)).join('\n') + '\n'; }
 
-  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, denialKind, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable, fileStats, filePathOf, normalisePath };
+  return { VERSION, RATES, RATES_DATE, rateKey, rateCardCheck, rateCardLine, normaliseModel, withPricing, premiumFor, pricingNote, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, denialKind, estimateCost, rateFor, requestCost, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable, fileStats, filePathOf, normalisePath };
 });

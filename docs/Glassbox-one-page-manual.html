@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Glassbox — get hooked in nine steps</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+@page { size: A4; margin: 0; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { width: 210mm; height: 297mm; font-family: 'Inter', 'Liberation Sans', Arial, sans-serif; color: #0F172A; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 9.1pt; line-height: 1.34; }
+.page { width: 210mm; height: 297mm; display: flex; flex-direction: column; overflow: hidden; }
+.mono { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', Menlo, monospace; }
+/* header */
+.head { background: #0F172A; color: #E2E8F0; padding: 9mm 13mm 7mm; }
+.brand { display: flex; align-items: center; gap: 8px; font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; color: #94A3B8; }
+.brand .logo { width: 14px; height: 14px; border-radius: 3px; background: #161C24; position: relative; display: inline-block; border: 1px solid #33404F; }
+.brand .logo::before { content: ""; position: absolute; left: 3px; top: 3px; width: 5px; height: 2px; background: #7DB0F0; border-radius: 1px; }
+.brand .logo::after { content: ""; position: absolute; left: 3px; top: 6px; width: 8px; height: 2px; background: #FF8A4D; border-radius: 1px; box-shadow: 3px 3px 0 0 #4FD0BB; }
+h1 { margin: 2.5mm 0 1.8mm; font-size: 20pt; line-height: 1.12; font-weight: 800; letter-spacing: -.02em; color: #fff; }
+h1 span { color: #FDBA74; }
+.lede { margin: 0; max-width: 175mm; color: #CBD5E1; font-size: 9.6pt; }
+.lede b { color: #fff; font-weight: 600; }
+/* steps */
+.steps { padding: 4.5mm 13mm 0; display: grid; grid-template-columns: 1fr 1fr; gap: 2.4mm 7mm; align-content: start; }
+.step { border-top: 1.5px solid #E2E8F0; padding-top: 1.8mm; break-inside: avoid; }
+.step .n { font-family: 'JetBrains Mono', 'DejaVu Sans Mono', monospace; font-size: 8pt; color: #EA580C; letter-spacing: .12em; }
+.step h3 { margin: .4mm 0 .8mm; font-size: 10.2pt; font-weight: 700; letter-spacing: -.01em; }
+.step p { margin: 0; color: #334155; }
+.step .cmd { display: block; margin: 1.1mm 0 1mm; background: #0F172A; color: #E2E8F0; border-radius: 4px; padding: 1.3mm 2.4mm; font-size: 8.2pt; white-space: pre; line-height: 1.45; }
+.step .cmd b { color: #FDBA74; font-weight: 500; }
+.step .cmd i { color: #94A3B8; font-style: normal; }
+.step .see { color: #0F172A; }
+.step .see::before { content: "You'll see: "; color: #64748B; font-weight: 600; }
+.wide { grid-column: 1 / -1; }
+/* hook */
+.hook { margin: 0 13mm; margin-top: 2.5mm; background: #FFF1E8; border: 1px solid #FDBA74; border-radius: 6px; padding: 2.4mm 4mm; display: grid; grid-template-columns: auto 1fr; gap: 4mm; align-items: center; }
+.hook .big { font-size: 13.5pt; font-weight: 800; letter-spacing: -.02em; color: #9A3412; white-space: nowrap; }
+.hook p { margin: 0; color: #334155; }
+/* footer */
+.foot { margin-top: auto; padding: 3mm 13mm 7mm; display: flex; justify-content: space-between; align-items: end; gap: 8mm; font-size: 8pt; color: #64748B; border-top: 1px solid #E2E8F0; }
+.foot .links { display: flex; gap: 6mm; flex-wrap: wrap; }
+.foot .links span { color: #0F172A; }
+.foot .fine { text-align: right; max-width: 70mm; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="head">
+    <div class="brand"><span class="logo"></span> Glassbox · one-page manual · v0.5.0</div>
+    <h1>Other tools show you what happened.<br><span>Glassbox tells you what went wrong.</span></h1>
+    <p class="lede">Every Claude Code, Cowork and Agent SDK session writes a flight recorder nobody reads. Nine steps, fifteen minutes, and you'll never run an agent blind again. <b>Nothing leaves your machine.</b></p>
+  </header>
+
+  <section class="steps">
+    <div class="step">
+      <div class="n">01 · TWO MINUTES, NO INSTALL</div>
+      <h3>Open it and load the demo</h3>
+      <p>Go to <span class="mono">blueprintau.com/glassbox/app</span> and press <b>Load demo</b>. That trace is the real session that built Glassbox, sanitised.</p>
+      <p class="see">the agent's first "hello" cost 33¢, because 90,000 tokens of context loaded before it spoke.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">02 · YOUR OWN SESSION</div>
+      <h3>Drop a transcript on it</h3>
+      <p>Drag any <span class="mono">.jsonl</span> from <span class="mono">~/.claude/projects/</span> (Windows: <span class="mono">%USERPROFILE%\.claude\projects\</span>) onto the page — or click <b>Open folder…</b> in Chrome/Edge and pick from a list.</p>
+      <p class="see">wall time vs active time, tool calls, tokens served, and what it cost.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">03 · THE MOMENT IT CLICKS</div>
+      <h3>Click a finding</h3>
+      <p>The findings panel is a fixed set of rules, no AI: retry loops, failing tools, oversized results, context over 120k, stalls. Click one.</p>
+      <p class="see">the exact tool calls it is about, lit up on the timeline. Every selection is a permalink.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">04 · FROM THE TERMINAL</div>
+      <h3>Let it find your sessions</h3>
+      <span class="cmd"><b>$</b> npx glassbox-trace            <i># opens your newest session</i>
+<b>$</b> npx glassbox-trace list --last 10</span>
+      <p class="see">id, time, size, project and the first prompt of each session. Node 18+ is the only requirement.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">05 · FEED IT BACK</div>
+      <h3>Hand the findings to Claude</h3>
+      <span class="cmd"><b>$</b> npx glassbox-trace check --format md</span>
+      <p>Each finding comes with its evidence and one line on what to do differently. Paste it into your next session: "here's what went wrong last time".</p>
+      <p class="see">the agent acknowledges the findings and changes its approach.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">06 · BEFORE AND AFTER</div>
+      <h3>Compare two sessions</h3>
+      <span class="cmd"><b>$</b> npx glassbox-trace compare 81c4 9f0a</span>
+      <p>Same task, done twice: before and after you changed <span class="mono">CLAUDE.md</span>, Sonnet vs Opus, the run that worked vs the one that didn't. Or <b>Compare…</b> in the viewer.</p>
+      <p class="see">every metric with the change, tool use side by side, findings only one of them has.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">07 · WATCH IT LIVE</div>
+      <h3>Follow a session as it runs</h3>
+      <span class="cmd"><b>$</b> npx glassbox-trace watch</span>
+      <p>Serves the viewer on <span class="mono">127.0.0.1</span> and streams the transcript while Claude Code is still writing it.</p>
+      <p class="see">tool calls landing on the timeline within a second; <b>Follow</b> keeps the right edge on now.</p>
+    </div>
+
+    <div class="step">
+      <div class="n">08 · THE HOOK</div>
+      <h3>Let the agent read its own recorder</h3>
+      <span class="cmd"><i>in Claude Code:</i>  /plugin marketplace add aldohushi1-stack/glassbox
+                 /plugin install glassbox@glassbox-trace</span>
+      <p>Every session ends with a one-screen summary; with <span class="mono">feedback</span> and <span class="mono">context</span> on, the findings go back to the agent and carry into the next session in that project. No plugin? <span class="mono">npx glassbox-trace hook install --feedback --context</span>.</p>
+      <p class="see">Claude tells you, in a sentence, what it would do differently — and the next session starts knowing it.</p>
+    </div>
+
+    <div class="step wide">
+      <div class="n">09 · SHARE SAFELY</div>
+      <h3>Show someone without showing them everything</h3>
+      <p><b>Share mode</b> blanks every prompt, input and result in the view; <b>Export redacted</b> downloads a structure-only transcript; <span class="mono">check --redact</span> does the same for reports. Tool names, counts, tokens and cost stay — the content goes. Then post the screenshot.</p>
+    </div>
+  </section>
+
+  <div class="hook">
+    <div class="big">You're hooked when…</div>
+    <p>you open Glassbox before you open the diff. The diff shows what the agent changed; Glassbox shows what it cost to get there, where it looped, and what to tell it next time.</p>
+  </div>
+
+  <footer class="foot">
+    <div class="links">
+      <div>Viewer <span>blueprintau.com/glassbox</span></div>
+      <div>Source <span>github.com/aldohushi1-stack/glassbox</span></div>
+      <div>npm <span>glassbox-trace</span></div>
+      <div>CI recipe <span>docs/CI.md</span></div>
+    </div>
+    <div class="fine">MIT · BlueprintAU, Adelaide · Aldo Hushi. Claude, Claude Code and Cowork are Anthropic trademarks; Glassbox is independent and not affiliated.</div>
+  </footer>
+</div>
+</body>
+</html>
