@@ -161,3 +161,28 @@ test('plugin memory option: agent (default) writes the lessons block into CLAUDE
   assert.equal(ss.status, 0);
   assert.equal(JSON.parse(ss.stdout).hookSpecificOutput, undefined);
 });
+
+// Merge review: `glassbox managed` puts the hooks in managed settings; the plugin's hooks must see them there too,
+// or a machine with both runs the guard twice per command and Stop twice per turn (two memory rewrites).
+test('plugin hooks step aside for a Glassbox hook in managed settings (drop-in or main file), not only settings.json', () => {
+  const mdir = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-managed-'));
+  fs.mkdirSync(path.join(mdir, 'managed-settings.d'));
+  fs.writeFileSync(path.join(mdir, 'managed-settings.d', 'glassbox.json'), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'node "/opt/glassbox/bin/glassbox.mjs" hook --guard' }] }], Stop: [{ hooks: [{ type: 'command', command: 'node "/opt/glassbox/bin/glassbox.mjs" hook --guard' }] }] } }));
+  let r = guardRun(preUse(loopTranscript()), { GLASSBOX_MANAGED_DIR: mdir });
+  assert.equal(r.status, 0); assert.equal(r.stdout.trim(), '', 'guard: the managed --guard hook judges the call');
+  const h = readJson('hooks/hooks.json').hooks.Stop[0].hooks[0];
+  const sub = (s) => s.replaceAll('${CLAUDE_PLUGIN_ROOT}', ROOT);
+  const stopEnv = { ...process.env, CLAUDE_PLUGIN_ROOT: ROOT, GLASSBOX_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-plugin-')), GLASSBOX_STATE_DIR: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-state-')), GLASSBOX_MANAGED_DIR: mdir };
+  const st = spawnSync(process.execPath, h.args.map(sub), { input: JSON.stringify(stop({ cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-p-')) })), encoding: 'utf8', env: stopEnv });
+  assert.equal(st.status, 0); assert.equal(st.stdout.trim(), '', 'Stop: the managed hook already gives the summary');
+  // the main managed-settings.json counts too (an admin who pasted the fragment there)
+  const m2 = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-managed-'));
+  fs.writeFileSync(path.join(m2, 'managed-settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'glassbox hook --guard' }] }] } }));
+  r = guardRun(preUse(loopTranscript()), { GLASSBOX_MANAGED_DIR: m2 });
+  assert.equal(r.stdout.trim(), '');
+  // a managed Stop hook without --guard does not switch off the plugin's guard
+  const m3 = fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-managed-'));
+  fs.writeFileSync(path.join(m3, 'managed-settings.json'), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'glassbox hook --context' }] }] } }));
+  r = guardRun(preUse(loopTranscript()), { GLASSBOX_MANAGED_DIR: m3 });
+  assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny');
+});

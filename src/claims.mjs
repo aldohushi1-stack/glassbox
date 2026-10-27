@@ -205,7 +205,10 @@ const SMALL = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'e
 // Does the text name exactly `n` failures? "The 3 failures are…", "three failing", "fails: 3".
 // The count may carry thousands separators ("1,200"); only test words may sit between it and the failure word, and
 // a sentence that says the failures are fixed or gone is not owning up to them.
-const OWNED_GONE_RE = /\b(?:fixed|gone|resolved|cleared|no\s+longer|now\s+pass\w*|went\s+away)\b/i;
+const OWNED_GONE_BASE = /\b(?:fixed|gone|resolved|cleared|no\s+longer|now\s+pass\w*|went\s+away)\b/i;
+// "aren't fixed yet", "not resolved", "which I have not fixed": still the run's failures (merge review).
+const NOT_GONE = /\b(?:not|never|yet\s+to\s+be)\s+(?:\w+\s+){0,2}?(?:fixed|gone|resolved|cleared)\b|n't\s+(?:\w+\s+){0,2}?(?:fixed|gone|resolved|cleared)\b|\b(?:fixed|resolved)\s+yet\b/gi;
+const OWNED_GONE_RE = { test: (s) => OWNED_GONE_BASE.test(String(s || '').replace(NOT_GONE, ' ')) };
 function namesFailures(text, n) {
   const forms = [String(n), n.toLocaleString('en-US')].concat(SMALL[n] ? [SMALL[n]] : []);
   const num = `(?:${Array.from(new Set(forms)).map((f) => f.replace(/,/g, ',?')).join('|')})`;

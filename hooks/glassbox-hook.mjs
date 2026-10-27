@@ -6,11 +6,12 @@
 //    from GLASSBOX_FEEDBACK / GLASSBOX_FAIL_ON / GLASSBOX_CONTEXT / GLASSBOX_MEMORY in the environment, which win when set
 //    (per-project override); SessionStart does nothing unless context is on;
 //  - it always exits 0: a Stop hook that exits 2 blocks Claude with its stderr as the reason;
-//  - it stays silent when `glassbox hook install` already put a Glassbox hook in settings.json, so the
-//    summary (and any feedback) doesn't arrive twice.
+//  - it stays silent when `glassbox hook install` or `glassbox managed --hook` already put a Glassbox hook in
+//    settings.json or the managed settings, so the summary (and any feedback, and the memory) doesn't arrive twice.
 import fs from 'node:fs';
 import path from 'node:path';
 import { hookResponse, readStdinJson, settingsPath, HOOK_RE } from '../src/cli.mjs';
+import { managedFiles, hookCommands } from '../src/managed-paths.mjs';
 
 const env = process.env;
 const pick = (...vals) => vals.find((v) => v != null && String(v).trim() !== '');
@@ -24,13 +25,10 @@ const opts = {
   failOn: ['error', 'warn', 'info'].includes(level) ? level : 'warn',
 };
 
+// A Glassbox hook in the user's settings.json or in Claude Code's managed settings (`glassbox managed --hook`).
 function settingsHasGlassboxHook() {
   const file = env.GLASSBOX_HOME || !env.CLAUDE_CONFIG_DIR ? settingsPath() : path.join(env.CLAUDE_CONFIG_DIR, 'settings.json');
-  try {
-    const hooks = JSON.parse(fs.readFileSync(file, 'utf8')).hooks || {};
-    return Object.values(hooks).some((list) => Array.isArray(list) && list.some((entry) => entry && Array.isArray(entry.hooks)
-      && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
-  } catch (e) { return false; }
+  return hookCommands([file, ...managedFiles()]).some((c) => HOOK_RE.test(c));
 }
 
 let reply = null;

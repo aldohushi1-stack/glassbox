@@ -12,11 +12,8 @@ import path from 'node:path';
 import { hookEntries } from './cli.mjs';
 import { readTextFile } from './textfile.mjs';
 
-export function managedDir(platform = process.platform, env = process.env) {
-  if (env.GLASSBOX_MANAGED_DIR) return env.GLASSBOX_MANAGED_DIR;
-  return platform === 'win32' ? 'C:\\Program Files\\ClaudeCode' : platform === 'darwin' ? '/Library/Application Support/ClaudeCode' : '/etc/claude-code';
-}
-export const dropInFile = (dir) => path.join(dir || managedDir(), 'managed-settings.d', 'glassbox.json');
+import { managedDir, dropInFile } from './managed-paths.mjs';
+export { managedDir, dropInFile };
 
 // ---------------------------------------------------------------------------
 // The temp-folder policy: what `open` may write to the temp folder without --out.

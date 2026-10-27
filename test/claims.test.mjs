@@ -673,3 +673,13 @@ test('calibration 2 (fix 4): a red run the agent planted after the claim, or des
   u.assistant([{ text: 'Hm.' }]);
   assert.equal(ledger(u).claims[0].verdict, 'contradicted');
 });
+
+// Merge review: GitHub's "fixed / gone" guard must not eat a sentence that says the failures are NOT fixed.
+test('merge: failures stated as not fixed yet are still the run\'s failures; "are fixed" still is not', () => {
+  const RUN = '# tests 60\n# pass 58\n# fail 2\n';
+  const said2 = (text) => { const s = session(); s.user('go'); s.call('Bash', { command: 'npm test' }, RUN); s.assistant([{ text }]); return only(ledger(s), 'test')[0].verdict; };
+  for (const t of ['58 of 60 pass; the 2 failures aren\'t fixed yet.', '58 tests pass. The 2 failures are not fixed yet — they need the network.', '58 pass and 2 fail; that bug is not resolved.', '58 tests pass. 2 still fail, which I have not fixed.'])
+    assert.equal(said2(t), 'verified', t);
+  for (const t of ['58 tests pass. The 2 failures from this morning are fixed.', '58 tests pass. Those 2 failing specs are gone now.'])
+    assert.equal(said2(t), 'contradicted', t);
+});
