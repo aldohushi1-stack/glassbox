@@ -15,6 +15,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { findSessions, subagentFiles, resolveTarget, claudeHome } from './cli.mjs';
+import { constants as BUF } from 'node:buffer';
+import { streamBytes } from './jsonl.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 
@@ -64,10 +66,24 @@ export function mask(v) { const s = String(v); if (/-----BEGIN/.test(s)) return 
 // `re` must have the g flag; `value(m)` picks the secret out of the match (default: the whole match).
 // In raw JSONL a newline inside a string is the two characters \n, so a key at the start of a line sits right after
 // an "n"; B is the word boundary that also accepts an escaped \n, \r or \t before the match.
+// A PEM / PGP body: header lines (Proc-Type:, DEK-Info:, Comment:, Version:) and line breaks — real, or the escaped
+// \n / \r\n of a JSON string — removed, what's left is base64 and at least 64 characters long.
+// Keys arrive with line numbers too: the Read tool's `12\t…` and `cat -n`'s padded `    12\t…` (a literal tab, or
+// \t once JSON-escaped, or \\t twice), and a key that sat inside a JSON file (service-account.json) carries its
+// newlines as \\n — so any run of backslashes before r / n is a line break here (0.12 review).
+export function isKeyBlock(v) {
+  const body = String(v).replace(/^-----BEGIN[^-]*-----/, '').replace(/-----END[^-]*-----$/, '');
+  const lines = body.split(/\r?\n|(?:\\+[rn])+/).map((l) => l.replace(/^\s*\d+(?:\\+t|\t|\u2192)/, '').trim().replace(/^"|",?$/g, '')).filter((l) => l && !/^[A-Za-z][\w-]*:\s/.test(l));
+  const b64 = lines.join('');
+  return b64.length >= 64 && /^[A-Za-z0-9+/=]+$/.test(b64);
+}
 const B = String.raw`(?:(?<![A-Za-z0-9_])|(?<=\\[nrt]))`;
 const R = (src, flags = 'g') => new RegExp(B + src, flags);
 export const DETECTORS = [
-  { id: 'private-key', severity: 'error', re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/g, what: 'a private key' },
+  // The body is bounded (16,384 chars; an RSA-4096 PEM is ~3.3 KB) and can't contain another marker, and it must be
+  // a key: after the header lines and line breaks (real or JSON-escaped), base64 only. 0.11 matched from a BEGIN in
+  // one tool result to an END megabytes later. DESIGN.md §21.
+  { id: 'private-key', severity: 'error', re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----(?:(?!-----)[\s\S]){1,16384}?-----END (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----/g, ok: isKeyBlock, what: 'a private key' },
   { id: 'aws-access-key', severity: 'error', re: R(String.raw`(?:AKIA|ASIA)[0-9A-Z]{16}\b`), what: 'an AWS access key id' },
   { id: 'github-token', severity: 'error', re: R(String.raw`(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b`), what: 'a GitHub token' },
   { id: 'anthropic-key', severity: 'error', re: R(String.raw`sk-ant-[A-Za-z0-9_-]{20,}`), what: 'an Anthropic API key' },
@@ -153,7 +169,8 @@ export function scanText(text, opts = {}) {
   hits.sort((a, b) => a.start - b.start);
   // Attribution needs the record; parse each line once, and walk every line for tool_use ids (results come after calls)
   // and for credential-file reads.
-  const tools = new Map(); const parsed = new Map(); const fileReads = [];
+  // opts.state carries the tool_use map from one segment of a big file to the next (results come after their calls).
+  const tools = opts.state ? (opts.state.tools || (opts.state.tools = new Map())) : new Map(); const parsed = new Map(); const fileReads = [];
   const hitLines = new Set(hits.map((h) => h.line));
   for (let n = 1; n <= starts.length; n++) {
     const raw = lineText(text, starts, n); if (!raw.trim()) continue;
@@ -164,7 +181,9 @@ export function scanText(text, opts = {}) {
     if (hitLines.has(n)) parsed.set(n, loc);
   }
   for (const h of hits) Object.assign(h, opts.where ? { where: opts.where } : parsed.get(h.line) || { where: 'other' });
-  return hits.concat(fileReads).sort((a, b) => a.start - b.start || SEV[a.severity] - SEV[b.severity]);
+  const all = hits.concat(fileReads).sort((a, b) => a.start - b.start || SEV[a.severity] - SEV[b.severity]);
+  if (opts.lineOffset) for (const h of all) h.line += opts.lineOffset;
+  return all;
 }
 
 // Text Glassbox keeps for later (memory notes, session digests): every value a detector recognises becomes
@@ -192,7 +211,7 @@ function rows(hits) {
   const map = new Map();
   for (const h of hits) {
     const k = [h.rule, h.fingerprint, h.where, h.tool || '', h.path || ''].join('|');
-    if (map.has(k)) { const r = map.get(k); r.count++; r.spans.push([h.start, h.end]); continue; }
+    if (map.has(k)) { const r = map.get(k); r.count++; if (h.value != null) r.spans.push([h.start, h.end]); continue; } // a credential-file read has no value to shred
     map.set(k, Object.defineProperties({ rule: h.rule, severity: h.severity, where: h.where, tool: h.tool, path: h.path, line: h.line, preview: h.preview, fingerprint: h.fingerprint, count: 1 }, {
       value: { value: h.value, enumerable: false }, spans: { value: h.value == null ? [] : [[h.start, h.end]], enumerable: false },
     }));
@@ -200,7 +219,44 @@ function rows(hits) {
   return [...map.values()];
 }
 
+// A big file in segments of whole lines (≤ segmentBytes, 32 MiB by default), each decoded on its own: the whole
+// file never becomes one string (V8's limit is ~512 MB). fn(text, lineOffset, raw) per segment. DESIGN.md §21.
+export const SEGMENT_BYTES = 32 * 1048576;
+export function forEachSegment(file, segBytes, fn) {
+  const fd = fs.openSync(file, 'r'); const chunk = Buffer.allocUnsafe(Math.max(Math.min(segBytes, 8 * 1048576), 4096));
+  let carry = Buffer.alloc(0), lineOffset = 0;
+  const emit = (seg) => {
+    if (seg.length > BUF.MAX_STRING_LENGTH) throw new Error(`a single line of ${seg.length} bytes is too large to scan`);
+    fn(seg.toString('utf8'), lineOffset, seg);
+    let n = 0; for (let i = seg.indexOf(10); i >= 0; i = seg.indexOf(10, i + 1)) n++;
+    lineOffset += n;
+  };
+  try {
+    for (;;) {
+      const got = fs.readSync(fd, chunk, 0, chunk.length, null); if (!got) break;
+      carry = carry.length ? Buffer.concat([carry, chunk.subarray(0, got)]) : Buffer.from(chunk.subarray(0, got));
+      if (carry.length < segBytes) continue;
+      const cut = carry.lastIndexOf(10); if (cut < 0) continue; // one line longer than a segment: keep reading
+      const seg = carry.subarray(0, cut + 1); carry = Buffer.from(carry.subarray(cut + 1));
+      emit(seg);
+    }
+    if (carry.length) emit(carry);
+  } finally { fs.closeSync(fd); }
+}
+
+function scanFileSegmented(file, meta) {
+  const state = {}, hits = []; let lines = 0;
+  forEachSegment(file, meta.segmentBytes || SEGMENT_BYTES, (text, off) => {
+    for (const h of scanText(text, { key: meta.key, where: meta.where, state, lineOffset: off })) hits.push(h);
+    lines = off + text.split('\n').length;
+  });
+  const findings = rows(meta.store ? hits.filter((h) => h.rule !== 'credential-file-read') : hits).map((r) => Object.assign(r, {
+    file, session: meta.store ? meta.session || undefined : meta.session || path.basename(file).replace(/\.jsonl$/, ''), project: meta.project || undefined, store: meta.store || undefined }));
+  return { file, bytes: fs.statSync(file).size, lines, findings, streamed: true };
+}
+
 export function scanFile(file, meta = {}) {
+  if (!meta.store && fs.statSync(file).size > streamBytes()) return scanFileSegmented(file, meta);
   const buf = fs.readFileSync(file);
   if (meta.store && isBinary(buf)) return { file, bytes: buf.length, skipped: 'binary file', findings: [] };
   const text = buf.toString('utf8');
@@ -215,6 +271,7 @@ export function scanFile(file, meta = {}) {
 // anything is written; on failure the file is left as it was.
 export function shredFile(file, findings, opts = {}) {
   const replacer = opts.replacer || ((f) => `[FENCED:${f.rule}:${f.fingerprint}]`);
+  if (opts.raw == null && opts.text == null && fs.statSync(file).size > streamBytes()) return shredFileSegmented(file, findings, replacer, opts);
   const raw = opts.raw || fs.readFileSync(file);
   const text = opts.text != null ? opts.text : raw.toString('utf8');
   const json = opts.json != null ? opts.json : /\.jsonl$/i.test(file);
@@ -233,6 +290,37 @@ export function shredFile(file, findings, opts = {}) {
   const mode = fs.statSync(file).mode & 0o777;
   fs.writeFileSync(tmp, out, { mode }); fs.renameSync(tmp, file);
   return { written: true, values: spans.length };
+}
+
+// The big-file rewrite: scan each segment again with the same key (so fingerprints match), replace every hit whose
+// rule and fingerprint were reported, check the segment the way the small path checks the file, and write it to the
+// temp file; rename only when every segment passed. Same guarantees as the small path, one segment in memory.
+function shredFileSegmented(file, findings, replacer, opts) {
+  const want = new Map(); for (const f of findings) if (f.rule !== 'credential-file-read') want.set(f.rule + '|' + f.fingerprint, f);
+  if (!want.size) return { written: false, values: 0, reason: 'nothing to shred' };
+  const json = opts.json != null ? opts.json : /\.jsonl$/i.test(file);
+  const tmp = file + '.glassbox-shred~'; const mode = fs.statSync(file).mode & 0o777;
+  const fd = fs.openSync(tmp, 'w', mode); const state = {}; let values = 0, failed = null;
+  try {
+    forEachSegment(file, opts.segmentBytes || SEGMENT_BYTES, (text, off, raw) => {
+      if (failed) return;
+      if (!Buffer.from(text, 'utf8').equals(raw)) { failed = 'not plain UTF-8 text; nothing written'; return; }
+      const hits = scanText(text, { key: opts.key, state }).filter((h) => h.value != null && want.has(h.rule + '|' + h.fingerprint));
+      let out = text;
+      if (hits.length) {
+        out = ''; let pos = 0;
+        for (const h of hits) { if (h.start < pos) continue; out += text.slice(pos, h.start) + replacer(want.get(h.rule + '|' + h.fingerprint)); pos = h.end; values++; }
+        out += text.slice(pos);
+        const before = text.split('\n'), after = out.split('\n');
+        if (before.length !== after.length) { failed = 'line count changed; nothing written'; return; }
+        if (json) for (let i = 0; i < after.length; i++) { if (after[i] === before[i]) continue; const l = after[i].replace(/\r$/, ''); if (!l.trim()) continue; try { JSON.parse(l); } catch (e) { failed = `line ${off + i + 1} would not parse after the rewrite; nothing written`; return; } }
+      }
+      fs.writeSync(fd, out);
+    });
+  } catch (e) { failed = e.message; } finally { fs.closeSync(fd); }
+  if (failed || !values) { try { fs.unlinkSync(tmp); } catch (e) { } return { written: false, values, reason: failed || 'nothing to shred' }; }
+  fs.renameSync(tmp, file);
+  return { written: true, values };
 }
 
 // Which files to scan. opts: { home, target, since (ms epoch), project, sessionsOnly }.
@@ -281,10 +369,10 @@ export function fence(opts = {}) {
     if (t.store && fs.statSync(t.file).size > STORE_MAX_BYTES) { skipped.push({ file: t.file, reason: `larger than ${STORE_MAX_BYTES / 1048576} MB` }); continue; }
     let r; try { r = scanFile(t.file, { session: t.session, project: t.project, store: t.store, where: t.where, key }); } catch (e) { shredded.refused.push({ file: t.file, reason: e.message }); continue; }
     if (r.skipped) { skipped.push({ file: t.file, reason: r.skipped }); continue; }
-    files.push({ file: t.file, session: t.session || undefined, store: t.store, bytes: r.bytes, findings: r.findings.length });
+    files.push({ file: t.file, session: t.session || undefined, store: t.store, bytes: r.bytes, findings: r.findings.length, streamed: r.streamed || undefined });
     bytes += r.bytes; if (!t.store) sessions.add(t.session);
     findings.push(...r.findings);
-    if (opts.shred) { const s = shredFile(t.file, r.findings, { text: r.text, raw: r.raw }); if (s.written) { shredded.files++; shredded.values += s.values; } else if (s.reason !== 'nothing to shred') shredded.refused.push({ file: t.file, reason: s.reason }); }
+    if (opts.shred) { const s = shredFile(t.file, r.findings, r.streamed ? { key } : { text: r.text, raw: r.raw }); if (s.written) { shredded.files++; shredded.values += s.values; } else if (s.reason !== 'nothing to shred') shredded.refused.push({ file: t.file, reason: s.reason }); }
   }
   findings.sort((a, b) => SEV[a.severity] - SEV[b.severity] || a.file.localeCompare(b.file) || a.line - b.line);
   // Files actually scanned per store (skipped ones are listed under scanned.skipped); undefined when stores were not in scope.

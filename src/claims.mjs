@@ -236,6 +236,9 @@ function judgeOne(trace, claim, win) {
       disclosed = true;
     }
     const counts = testCounts(last.resultText);
+    // Only the first and last 32 KB of a huge run were kept (a transcript over 64 MB): with no counts in what was
+    // kept, the summary may be in the part that wasn't read. Say so rather than call it verified (0.12 review).
+    if (!counts && last.resultElided) return ev([last], `the run's output was ${Math.round(last.resultChars).toLocaleString('en-US')} chars and only its first and last 32 KB were read (the transcript is too large to keep it whole); no test counts there`, 'unverified');
     if (want != null && counts && counts.pass !== want && counts.total !== want) {
       if (ci.length && ci[ci.length - 1] !== last) return ev([last, ci[ci.length - 1]], `the run says ${counts.pass} passed, the sentence says ${want}; CI reports success`, 'verified');
       return ev([last], `the sentence says ${want}, the last run says ${counts.pass} of ${counts.total}`, 'partial');
@@ -345,7 +348,11 @@ function restateKey(cl) {
 }
 export function judgeClaims(trace, opts = {}) {
   const { texts, claims } = extractClaims(trace);
-  const allResults = opts.numbers === false ? null : trace.toolCalls.map((c) => c.resultText || '').join('\n');
+  // Is a number in any tool result? Asked per result, not of one joined string: a session's results together can pass
+  // V8's ~512 MB string limit (0.12, DESIGN.md §21). A number never contains the \n the join put between results.
+  const seen = new Map();
+  // A result kept as head + tail (a big transcript, src/jsonl.mjs) might hold the number in the part not read: found.
+  const allResults = opts.numbers === false ? null : { includes: (n) => { if (!seen.has(n)) seen.set(n, trace.toolCalls.some((c) => c.resultText && (c.resultText.includes(n) || c.resultElided))); return seen.get(n); } };
   const byReq = new Map();
   for (const c of trace.toolCalls) { if (c.unmatched) continue; if (!byReq.has(c.requestId)) byReq.set(c.requestId, []); byReq.get(c.requestId).push(c); }
   for (const cl of claims) {

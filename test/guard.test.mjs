@@ -61,12 +61,21 @@ test('an edit, another command, or a success in between breaks the chain; reads 
   assert.ok(denied(guardResponse(pre(write(s4), 'Bash', npmTest))), 'reading around changes nothing');
 });
 
-test('a reworded description or a timeout does not make it a different call', () => {
+test('a reworded description does not make it a different call; a longer timeout or a background run does', () => {
+  // 0.12 review S7: the guard is now on by default in the plugin, so it must never block a retry that did change.
   const s = session(); s.user('fix it');
   s.call('Bash', { command: 'npm test', description: 'Run tests' }, 'FAIL', { error: true });
-  s.call('Bash', { command: 'npm test', description: 'Run the tests again', timeout: 300000 }, 'FAIL', { error: true });
-  assert.ok(denied(guardResponse(pre(write(s), 'Bash', { command: 'npm test', description: 'One more try', run_in_background: false }))));
-  assert.equal(guardKey('Bash', { command: 'x', description: 'a' }), guardKey('Bash', { command: 'x', description: 'b', timeout: 1 }));
+  s.call('Bash', { command: 'npm test', description: 'Run the tests again' }, 'FAIL', { error: true });
+  assert.ok(denied(guardResponse(pre(write(s), 'Bash', { command: 'npm test', description: 'One more try' }))));
+  const t = session(); t.user('build it');
+  t.call('Bash', { command: 'npm run build' }, 'Command timed out after 2m 0s', { error: true });
+  t.call('Bash', { command: 'npm run build' }, 'Command timed out after 2m 0s', { error: true });
+  const f = write(t);
+  assert.equal(guardResponse(pre(f, 'Bash', { command: 'npm run build', timeout: 600000 })), null, 'a longer timeout after timeouts is a real change');
+  assert.equal(guardResponse(pre(f, 'Bash', { command: 'npm run build', run_in_background: true })), null, 'so is running it in the background');
+  assert.ok(denied(guardResponse(pre(f, 'Bash', { command: 'npm run build', description: 'again' }))));
+  assert.equal(guardKey('Bash', { command: 'x', description: 'a' }), guardKey('Bash', { command: 'x', description: 'b' }));
+  assert.notEqual(guardKey('Bash', { command: 'x' }), guardKey('Bash', { command: 'x', timeout: 1 }));
   assert.notEqual(guardKey('Edit', { file_path: 'a', old_string: 'x', new_string: 'y' }), guardKey('Edit', { file_path: 'a', old_string: 'x', new_string: 'z' }));
 });
 

@@ -7,9 +7,10 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { readTextFile } from './textfile.mjs';
+import { readTranscript, fileIncludes } from './jsonl.mjs';
 import { guardResponse } from './guard.mjs';
 import { judgeClaims, claimFindings, claimsText, claimsMarkdown } from './claims.mjs';
-import { NOTES_FILE, ensureMemoryDir, recordSession, memoryNote, noteTold, maskedTrace, recall, recallText, recallMarkdown, memoryReport, memoryText, memoryMarkdown, forget, clearMemory } from './memory.mjs';
+import { NOTES_FILE, ensureMemoryDir, recordSession, memoryNote, noteTold, maskedTrace, recall, recallText, recallMarkdown, memoryReport, memoryText, memoryMarkdown, forget, clearMemory, syncLessonsBlock, toldFromBlock } from './memory.mjs';
 import { maskSecrets } from './fence.mjs';
 const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
@@ -38,7 +39,7 @@ export function findSessions(opts = {}) {
   out.sort((a, b) => b.mtime - a.mtime);
   let list = out;
   if (opts.project) list = list.filter((s) => s.project.includes(opts.project));
-  if (opts.grep) { const q = opts.grep.toLowerCase(); list = list.filter((s) => { try { return fs.readFileSync(s.file, 'utf8').toLowerCase().includes(q); } catch (e) { return false; } }); }
+  if (opts.grep) { const q = opts.grep.toLowerCase(); list = list.filter((s) => { try { return fileIncludes(s.file, q); } catch (e) { return false; } }); }
   if (opts.last) list = list.slice(0, opts.last);
   return list;
 }
@@ -81,9 +82,11 @@ export function subagentFiles(s) {
   return out;
 }
 
+// Each file as { name, text }, or, past streamBytes() (64 MiB), as parsed records read line by line — a transcript
+// past V8's ~512 MB string limit can't be one string (src/jsonl.mjs, DESIGN.md §21).
 export function loadSessionFiles(s) {
-  const files = [{ name: s.id + '.jsonl', text: fs.readFileSync(s.file, 'utf8') }];
-  for (const f of subagentFiles(s)) files.push({ name: f.name, text: fs.readFileSync(f.path, 'utf8') });
+  const files = [readTranscript(s.file, s.id + '.jsonl')];
+  for (const f of subagentFiles(s)) files.push(readTranscript(f.path, f.name));
   return files;
 }
 
@@ -266,10 +269,21 @@ function undeliveredFindings(sessionId, top, stateDir) {
   return fresh;
 }
 
+// --memory: where the lessons the agent reads live. agent (default): a block in its own memory (auto memory's
+// MEMORY.md, else CLAUDE.local.md); glassbox: 0.11's note from the SessionStart hook.
+export function memoryMode(v) {
+  if (v == null || v === true || v === '') return 'agent';
+  const m = String(v).toLowerCase();
+  if (m !== 'agent' && m !== 'glassbox') throw new Error(`--memory must be agent or glassbox (got "${v}")`);
+  return m;
+}
 export function hookResponse(input, opts = {}) {
   const failOn = opts.failOn || 'warn';
   const feedback = !!opts.feedback;
-  if (input && input.hook_event_name === 'SessionStart') return opts.context ? sessionStartResponse(input) : { suppressOutput: true };
+  // One memory (0.12): with --memory agent (the default) the lessons live in the agent's own memory and the
+  // SessionStart hook says nothing; --memory glassbox keeps 0.11's note.
+  const memMode = opts.memory || 'agent';
+  if (input && input.hook_event_name === 'SessionStart') return opts.context && memMode === 'glassbox' ? sessionStartResponse(input) : { suppressOutput: true };
   // PreToolUse: null means "say nothing" (normal permission flow), never an approval.
   if (input && input.hook_event_name === 'PreToolUse') return opts.guard ? guardResponse(input) : null;
   // Second Stop after a feedback block: record what the agent said it would do differently, then let it stop.
@@ -298,7 +312,12 @@ export function hookResponse(input, opts = {}) {
       writeNotes(input.cwd, `# Glassbox: last session in this project\n\n${when} UTC · session ${String(input.session_id || s.id).slice(0, 8)} · ${head.replace(/^Glassbox · /, '')}\n\n${body.trim()}\n`);
     } else if (file && fs.existsSync(file)) fs.unlinkSync(file); // a clean session: don't keep old advice around
     // The memory ledger: this session's digest and lessons. A failure here must not cost the summary.
-    try { recordSession(input.cwd, res, { sessionId: input.session_id || s.id, failOn }); } catch (e) { out.systemMessage += `\nGlassbox memory: ${e.message}`; }
+    try {
+      const sid = input.session_id || s.id;
+      if (memMode === 'agent') toldFromBlock(input.cwd, sid, { home: opts.home });
+      recordSession(input.cwd, res, { sessionId: sid, failOn });
+      if (memMode === 'agent') syncLessonsBlock(input.cwd, { home: opts.home });
+    } catch (e) { out.systemMessage += `\nGlassbox memory: ${e.message}`; }
   }
   // Feedback loop: only on Stop, never while continuing from our own block (stop_hook_active), and each
   // finding only once per session. stop_hook_active resets every turn, so without the delivered set a
@@ -324,8 +343,8 @@ export function installHook(opts = {}) {
   let settings = {};
   if (fs.existsSync(file)) { try { settings = JSON.parse(readTextFile(file)); } catch (e) { throw new Error(`${file} is not valid JSON — fix it first (nothing was changed)`); } fs.copyFileSync(file, file + '.glassbox-backup'); }
   settings.hooks = settings.hooks || {};
-  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.guard ? ' --guard' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
-  const events = opts.events || ['Stop', ...(opts.context ? ['SessionStart'] : []), ...(opts.guard ? ['PreToolUse'] : [])];
+  const cmd = `${opts.command || 'npx -y glassbox-trace'} hook${opts.feedback ? ' --feedback' : ''}${opts.context ? ' --context' : ''}${opts.context && opts.memory === 'glassbox' ? ' --memory glassbox' : ''}${opts.guard ? ' --guard' : ''}${opts.failOn ? ' --fail-on ' + opts.failOn : ''}`;
+  const events = opts.events || ['Stop', ...(opts.context && opts.memory === 'glassbox' ? ['SessionStart'] : []), ...(opts.guard ? ['PreToolUse'] : [])];
   for (const ev of events) {
     const list = Array.isArray(settings.hooks[ev]) ? settings.hooks[ev] : [];
     const kept = list.filter((entry) => !(entry && Array.isArray(entry.hooks) && entry.hooks.some((h) => h && typeof h.command === 'string' && HOOK_RE.test(h.command))));
@@ -361,7 +380,7 @@ export function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key', 'limit'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
+    if (a.startsWith('--')) { const [k, v] = a.slice(2).split('='); if (v !== undefined) args.flags[k] = v; else if (i + 1 < argv.length && !argv[i + 1].startsWith('-') && ['last', 'grep', 'project', 'out', 'fail-on', 'home', 'command', 'events', 'format', 'label-a', 'label-b', 'port', 'rates', 'since', 'legend', 'claude-md', 'fail-under', 'key', 'limit', 'memory'].includes(k)) args.flags[k] = argv[++i]; else args.flags[k] = true; }
     else args._.push(a);
   }
   return args;
@@ -389,11 +408,12 @@ export const HELP = `glassbox — other tools show you what happened in a Claude
                                  same task, two sessions: what changed in time, tokens, cost, tools and findings
   glassbox watch [ID|FILE] [--port N] [--no-open]
                                  live tail: serves the viewer on 127.0.0.1 and pushes the transcript as it grows
-  glassbox hook install [--feedback] [--context] [--guard] [--fail-on warn]
+  glassbox hook install [--feedback] [--context [--memory agent|glassbox]] [--guard] [--fail-on warn]
                                  add a Claude Code Stop hook so every session ends with a Glassbox summary;
                                  --feedback also hands the findings back to the agent once, so it can learn from them;
                                  --context keeps a memory in <project>/.glassbox/ (lessons that keep coming back, a digest
-                                 per session, the last session's notes) and gives the next session there what it needs;
+                                 per session) and writes the lessons into the agent's own memory (auto memory's MEMORY.md,
+                                 else CLAUDE.local.md) as one block; --memory glassbox hands 0.11's note at session start;
                                  --guard blocks a tool call that already failed twice in a row, unchanged, and says why
   glassbox hook uninstall        remove it (a .glassbox-backup of settings.json is kept)
   glassbox collect DIR [--since 30d] [--format text|md|json] [--out FILE] [--top N]
@@ -528,6 +548,8 @@ export async function main(argv, io = {}) {
     if (cmd === 'open' && !args.flags.watch) {
       const s = resolveTarget(args._[1], { home });
       const files = loadSessionFiles(s);
+      const big = files.find((f) => Array.isArray(f.records));
+      if (big) throw new Error(`${big.name} is ${(big.bytes / 1048576).toFixed(0)} MB — too large for the browser viewer, which reads a transcript whole. glassbox check ${s.id.slice(0, 8)} reads it line by line.`);
       const html = embed(files, { template: io.template });
       const outFile = args.flags.out ? path.resolve(args.flags.out) : path.join(os.tmpdir(), `glassbox-${s.id.slice(0, 8)}.html`);
       fs.writeFileSync(outFile, html);
@@ -572,12 +594,12 @@ export async function main(argv, io = {}) {
     }
     if (cmd === 'hook') {
       const sub = args._[1];
-      if (sub === 'install') { const r = installHook({ home, feedback: !!args.flags.feedback, context: !!args.flags.context, guard: !!args.flags.guard, failOn: args.flags['fail-on'], command: args.flags.command || (args.flags.guard ? guardCommand(ROOT) : undefined), events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed ${r.events.join(', ')} hook${r.events.length > 1 ? 's' : ''} in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}${args.flags.context ? `; findings are kept in <project>/${NOTES_FILE.replace(/\\/g, '/')} and handed to the next session there` : ''}${args.flags.guard ? '; a call that already failed twice in a row, unchanged, is blocked with the reason' : ''}. Restart Claude Code to pick it up.`); return 0; }
+      if (sub === 'install') { const mem = memoryMode(args.flags.memory); const r = installHook({ home, feedback: !!args.flags.feedback, context: !!args.flags.context, memory: mem, guard: !!args.flags.guard, failOn: args.flags['fail-on'], command: args.flags.command || (args.flags.guard ? guardCommand(ROOT) : undefined), events: args.flags.events ? String(args.flags.events).split(',') : undefined }); out(`Installed ${r.events.join(', ')} hook${r.events.length > 1 ? 's' : ''} in ${r.file}\n  ${r.command}\nEvery session now ends with a Glassbox summary${args.flags.feedback ? ', and findings are handed back to the agent once' : ''}${args.flags.context ? (mem === 'agent' ? '; the lessons that keep coming back are kept in the agent\'s own memory (auto memory\'s MEMORY.md, else CLAUDE.local.md), in one block Glassbox rewrites' : `; findings are kept in <project>/${NOTES_FILE.replace(/\\/g, '/')} and handed to the next session there`) : ''}${args.flags.guard ? '; a call that already failed twice in a row, unchanged, is blocked with the reason' : ''}. Restart Claude Code to pick it up.`); return 0; }
       if (sub === 'uninstall') { const r = uninstallHook({ home }); out(`Removed ${r.removed} Glassbox hook${r.removed === 1 ? '' : 's'} from ${r.file}`); return 0; }
       // A hook must never fail loudly: exit 2 from a Stop hook blocks Claude with the error as the reason.
       // A null reply prints nothing, which for PreToolUse means "no decision".
       let reply = null, event = null;
-      try { const input = io.stdin !== undefined ? io.stdin : await readStdinJson(); event = input && input.hook_event_name; reply = hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback, context: !!args.flags.context, guard: !!args.flags.guard, rates, stateDir: io.stateDir }); }
+      try { const input = io.stdin !== undefined ? io.stdin : await readStdinJson(); event = input && input.hook_event_name; reply = hookResponse(input, { failOn: args.flags['fail-on'], feedback: !!args.flags.feedback, context: !!args.flags.context, memory: memoryMode(args.flags.memory), guard: !!args.flags.guard, rates, stateDir: io.stateDir, home }); }
       catch (e) { reply = event === 'PreToolUse' ? null : { systemMessage: 'Glassbox: ' + e.message, suppressOutput: true }; }
       if (reply != null) out(JSON.stringify(reply));
       return 0;
@@ -652,9 +674,9 @@ export async function main(argv, io = {}) {
         out(keys.length ? `Forgot ${keys.length} lesson${keys.length === 1 ? '' : 's'} in ${project}:\n  ${keys.join('\n  ')}` : `No lesson matches "${what}" in ${project} — glassbox memory lists them`);
         return keys.length ? 0 : 1;
       }
-      if (sub === 'clear') { const removed = clearMemory(project); out(removed.length ? `Removed:\n  ${removed.join('\n  ')}` : `No Glassbox memory in ${project}`); return 0; }
+      if (sub === 'clear') { const removed = clearMemory(project, { home }); out(removed.length ? `Removed:\n  ${removed.join('\n  ')}` : `No Glassbox memory in ${project}`); return 0; }
       if (sub !== 'show') throw new Error(`memory: unknown subcommand "${sub}" (show, forget, clear, audit)`);
-      const rep = memoryReport({ project });
+      const rep = memoryReport({ project, home });
       writeOut(fmtOut === 'json' ? JSON.stringify(rep, null, 2) : fmtOut === 'md' ? memoryMarkdown(rep) : memoryText(rep), `${rep.sessions} sessions, ${rep.summary.active} active lessons`);
       return 0;
     }

@@ -36,7 +36,9 @@ You set these in the dialog shown when the plugin is enabled. You can also pass 
 | Option | Default | Effect |
 | --- | --- | --- |
 | `feedback` | `false` | Hand the findings back to the agent when any are at or above `fail_on`. Each finding is handed back once per session (later turns only get new ones), and never while Claude is already continuing from a stop hook (`stop_hook_active`). |
-| `context` | `false` | Keep a memory of the project in `<project>/.glassbox/`: `memory.json` (a digest of each of the last 50 sessions and the findings that keep coming back, as lessons) and `last-session.md` (the last session's findings; with `feedback` on, the agent's "what I'd do differently" reply). The next session in that project starts with a note built from them — the lessons still recurring, a line per recent session, the previous session's notes (SessionStart hook: new sessions, `/clear` and compaction, not resumes). The folder gets a `.gitignore`; secrets a `fence` detector recognises are masked; `glassbox memory` shows the note. See [MEMORY.md](MEMORY.md). |
+| `context` | `false` | Keep a memory of the project in `<project>/.glassbox/`: `memory.json` (a digest of each of the last 50 sessions and the findings that keep coming back, as lessons) and `last-session.md` (the last session's findings; with `feedback` on, the agent's "what I'd do differently" reply). The lessons still recurring go into the agent's own memory — one block in auto memory's `MEMORY.md` when auto memory is on, else in `CLAUDE.local.md` — rewritten after every turn; text outside the block's markers is never touched. The folder gets a `.gitignore`; secrets a `fence` detector recognises are masked; `glassbox memory` shows the block. See [MEMORY.md](MEMORY.md). |
+| `memory` | `agent` | Where the lessons go. `agent`: the block above, in the memory the agent already reads — one set of lessons, in one place. `glassbox`: 0.11's behaviour, a note from the SessionStart hook built from `.glassbox/` (new sessions, `/clear` and compaction, not resumes). |
+| `guard` | `true` | Block a Bash or PowerShell command that already failed twice in a row this turn, unchanged, with the reason. See below. |
 | `fail_on` | `warn` | Lowest severity listed in the summary and handed back: `error`, `warn` or `info`. |
 
 Claude Code only reads plugin options from user or managed settings, never from a project's `.claude/settings.json`. To turn an option on or off for one project, set an environment variable in that project's settings instead. These variables win over the plugin options:
@@ -49,16 +51,20 @@ Claude Code only reads plugin options from user or managed settings, never from 
 
 Why it works this way: Claude Code exports plugin options to hooks as `CLAUDE_PLUGIN_OPTION_<KEY>`. The hook (`hooks/glassbox-hook.mjs`) reads them and calls the same `hookResponse` as `glassbox hook`. The wrapper also makes sure the hook always exits 0: a Stop hook that exits 2 blocks Claude and shows it the error text.
 
-## The loop guard is not in the plugin
+## The loop guard (0.12: in the plugin, before shell commands)
 
-The retry guard (`glassbox hook --guard`: block a call that already failed twice in a row, unchanged) is a PreToolUse hook, and a plugin's hooks always run: it would start a Node process before every tool call for every plugin user, even with the guard switched off. That costs little on most machines and about a second per call on some Windows setups, so it stays opt-in through the CLI:
+The plugin runs the retry guard as a PreToolUse hook, `hooks/glassbox-guard.mjs`: when the agent is about to repeat a command that already failed twice in a row this turn, unchanged, it blocks it and says why. On by default; the `guard` option (or `GLASSBOX_GUARD=false` per project) turns it off. It never approves anything, and says nothing when it has nothing to block.
+
+It runs before **Bash and PowerShell commands only** (`matcher: "Bash|PowerShell"`). A plugin's hooks always run, so every plugin user pays a Node start for each call it covers, even with the option off: about 30 ms on most machines, up to a second on some Windows setups (antivirus scanning each start). Identical failing retries are commands — tests, builds, pushes — and a command already takes longer than that, while reads, greps and edits, most of the calls, don't wait on it. Before 0.12 the guard was CLI-only for this reason.
+
+For the guard on every tool, install it through the CLI (it then writes a direct `node` command, never npx):
 
 ```
 npm i -g glassbox-trace
 glassbox hook install --guard      # add --feedback / --context to keep what the plugin options did
 ```
 
-The plugin sees a Glassbox hook in `settings.json` and steps aside, so nothing runs twice. `glassbox hook uninstall` hands the job back to the plugin.
+The plugin sees a Glassbox `--guard` hook in `settings.json` and its own guard steps aside, so a call is never judged twice; `glassbox hook uninstall` hands the job back to the plugin.
 
 ## Use
 

@@ -338,3 +338,72 @@ test('CLI: --key and --sessions-only', async () => {
   assert.equal(await main(['fence', '--home', home, '--key', path.join(home, 'nope.key')], io), 2, 'a --key that does not exist is an error, not a new key');
   assert.match(errs.join('\n'), /--key/);
 });
+
+// 0.12: the private-key rule must find keys, not the space between two markers (outside review, Oct 2026: a
+// 20-million-character "private key" from a session that had read docs mentioning both markers).
+test('private-key: a real key in a JSONL line is still matched whole, escaped newlines and all', () => {
+  const line = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'key:\n' + PRIVATE_KEY + '\nend' }] } });
+  const hits = scanText(line).filter((h) => h.rule === 'private-key');
+  assert.equal(hits.length, 1);
+  assert.ok(hits[0].value.startsWith('-----BEGIN RSA') && hits[0].value.endsWith('PRIVATE KEY-----'));
+});
+
+test('private-key: BEGIN in one result and END megabytes later is not a key', () => {
+  const begin = J('-----BEGIN ', 'PRIVATE KEY-----'), end = J('-----END ', 'PRIVATE KEY-----');
+  const filler = 'const x = 1; // ordinary code, prose and JSON\n'.repeat(20000); // ~900 KB between the markers
+  const text = [JSON.stringify({ type: 'assistant', text: 'the docs mention ' + begin }), JSON.stringify({ type: 'user', text: filler }), JSON.stringify({ type: 'assistant', text: 'and later ' + end })].join('\n');
+  const hits = scanText(text).filter((h) => h.rule === 'private-key');
+  assert.equal(hits.length, 0, 'no key between two distant markers');
+});
+
+test('private-key: markers around prose, or a key nested after a stray BEGIN', () => {
+  const begin = J('-----BEGIN ', 'PRIVATE KEY-----'), end = J('-----END ', 'PRIVATE KEY-----');
+  const prose = `${begin}\nThis section explains how to paste your key here; do not commit it.\n${end}`;
+  assert.equal(scanText(prose).filter((h) => h.rule === 'private-key').length, 0, 'prose between markers is not a key');
+  const nested = `docs say ${begin} goes first, then:\n${PRIVATE_KEY}`;
+  const hits = scanText(nested).filter((h) => h.rule === 'private-key');
+  assert.equal(hits.length, 1, 'the real key after a stray marker is still found');
+  assert.ok(hits[0].value.startsWith('-----BEGIN RSA'));
+  const enc = J('-----BEGIN RSA ', 'PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,3F17F5316E2BAC89\n\nMIIEpAIBAAKCAQEAxq7Zt3QfLm9Kp2Ws8Yv1Bn4Hd6Jc0Tg5Rf7Xz3Vk9Lq2Mw\nAb1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2Yz3Ab4Cd5Ef6Gh7Ij8Kl9Mn0Op1Qr\n-----END RSA ', 'PRIVATE KEY-----');
+  assert.equal(scanText(enc).filter((h) => h.rule === 'private-key').length, 1, 'an encrypted PEM with RFC 1421 headers is a key');
+});
+
+// 0.12 review B4: the base64 check must not hide real keys the way they actually reach a transcript — through the
+// Read tool (line-number prefixes), cat -n, a service-account.json (\n escapes inside the file, so \\n in JSONL),
+// CRLF, and a key quoted inside a Bash command. Keys are generated at runtime; nothing real is in the repo.
+test('review B4: real key formats are found whichever way they reached the transcript', () => {
+  const gen = (type, opts) => crypto.generateKeyPairSync(type, Object.assign({ publicKeyEncoding: { type: 'spki', format: 'pem' } }, opts)).privateKey;
+  const keys = {
+    pkcs8: gen('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } }),
+    pkcs1enc: gen('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs1', format: 'pem', cipher: 'aes-128-cbc', passphrase: 'x' } }),
+    enc8: gen('ec', { namedCurve: 'P-256', privateKeyEncoding: { type: 'pkcs8', format: 'pem', cipher: 'aes-256-cbc', passphrase: 'x' } }),
+    sec1: gen('ec', { namedCurve: 'P-256', privateKeyEncoding: { type: 'sec1', format: 'pem' } }),
+    openssh: J('-----BEGIN ', 'OPENSSH PRIVATE KEY-----\n') + crypto.randomBytes(400).toString('base64').match(/.{1,70}/g).join('\n') + J('\n-----END ', 'OPENSSH PRIVATE KEY-----\n'),
+  };
+  const catN = (s) => s.split('\n').map((l, i) => `${String(i + 1).padStart(6)}\t${l}`).join('\n');
+  const readTool = (s) => s.split('\n').map((l, i) => `${i + 1}\t${l}`).join('\n');
+  const rec = (content) => JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content }] } });
+  const cases = [];
+  for (const [k, v] of Object.entries(keys)) {
+    const crlf = v.replace(/\n/g, '\r\n');
+    cases.push([k, v], [k + ' crlf', crlf], [k + ' jsonl', rec(v)], [k + ' jsonl crlf', rec(crlf)], [k + ' Read tool', rec(readTool(v))], [k + ' cat -n', rec(catN(v))]);
+  }
+  const sa = JSON.stringify({ type: 'service_account', private_key: keys.pkcs8 }, null, 2);
+  cases.push(['service account', sa], ['service account jsonl', rec(sa)], ['service account Read', rec(readTool(sa))]);
+  cases.push(['key in a Bash command', JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't', name: 'Bash', input: { command: `echo ${JSON.stringify(keys.pkcs8)} > k` } }] } })]);
+  const missed = cases.filter(([, text]) => !scanText(text).some((h) => h.rule === 'private-key')).map(([label]) => label);
+  assert.deepEqual(missed, [], 'every case found');
+});
+
+test('review S6: a credential file read twice still shreds (the second read added an empty span)', () => {
+  const dir = tmp(); const f = path.join(dir, 'cred.jsonl');
+  const tok = J('ghp_', 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8');
+  const L = [];
+  for (const id of ['t1', 't2']) { L.push(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: 'Bash', input: { command: 'cat ~/.npmrc' } }] } })); L.push(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: '//registry.npmjs.org/:_authToken=' + tok }] } })); }
+  fs.writeFileSync(f, L.join('\n') + '\n');
+  const r = scanFile(f, {});
+  const s = shredFile(f, r.findings, { text: r.text, raw: r.raw });
+  assert.equal(s.written, true, s.reason);
+  assert.ok(!fs.readFileSync(f, 'utf8').includes(tok));
+  for (const l of fs.readFileSync(f, 'utf8').split('\n')) if (l.trim()) JSON.parse(l);
+});

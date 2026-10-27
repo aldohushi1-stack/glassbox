@@ -5,8 +5,8 @@
 //  - only failures count (denied-by-the-human and interrupted calls don't; they have their own flow);
 //  - the chain is broken by anything that could have changed the outcome: an edit, another command,
 //    any non-read call, a success, or a new human prompt. Re-running tests after a fix is never blocked;
-//  - calls are compared on what they do, not how they're labelled: Bash/PowerShell `description`,
-//    `timeout` and `run_in_background` are ignored, because the agent often rewords them on a retry.
+//  - calls are compared on what they do, not how they're labelled: a Bash/PowerShell `description` is ignored,
+//    because the agent often rewords it on a retry; a changed `timeout` or `run_in_background` is a change.
 // It never approves anything: when it has nothing to say it prints nothing, which leaves Claude Code's
 // normal permission flow in charge ("allow" would skip the user's permission prompts).
 import fs from 'node:fs';
@@ -15,7 +15,9 @@ const require = createRequire(import.meta.url);
 const core = require('./trace-core.js');
 
 export const GUARD_DEFAULTS = { maxFailures: 2, tailBytes: 4 * 1048576 };
-const IGNORED_KEYS = new Set(['description', 'timeout', 'run_in_background']);
+// Only the label. A longer timeout or a background run after a timeout is a real change (0.12 review: the guard is
+// on by default in the plugin now, so a false block costs more than a missed loop).
+const IGNORED_KEYS = new Set(['description']);
 
 export function guardKey(name, input) {
   const i = {};

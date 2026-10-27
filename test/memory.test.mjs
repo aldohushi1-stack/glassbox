@@ -8,7 +8,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { session } from './gen.mjs';
 import { main, analyse, hookResponse } from '../src/cli.mjs';
-import { digestOf, digestLine, lessonOf, commandHead, cleanCmd, recordSession, loadLedger, lessonStats, memoryNote, noteTold, forget, clearMemory, memoryReport, memoryText, recall, recallText, recallMarkdown, parseQuery, MEMORY_FILE, NOTES_FILE } from '../src/memory.mjs';
+import { digestOf, digestLine, lessonOf, commandHead, cleanCmd, recordSession, loadLedger, lessonStats, memoryNote, noteTold, forget, clearMemory, memoryReport, memoryText, recall, recallText, recallMarkdown, parseQuery, MEMORY_FILE, NOTES_FILE, BLOCK_START, BLOCK_END, lessonsTarget, blockKeys, lessonsBlock } from '../src/memory.mjs';
 import { auditMemory, auditText, auditMarkdown, auditFailed, importsIn, pathRefs, scriptRefs } from '../src/memory-audit.mjs';
 import { projectSessions, encodeProject } from '../src/adhere.mjs';
 import { maskSecrets } from '../src/fence.mjs';
@@ -197,12 +197,12 @@ function homeWith(project, list) {
   return { home, dir };
 }
 
-test('hook --context end to end: Stop keeps memory, SessionStart hands over lessons and history, no secret survives', async () => {
+test('hook --context --memory glassbox (0.11\'s note) end to end: Stop keeps memory, SessionStart hands over lessons and history, no secret survives', async () => {
   const project = tmp();
   const bad = looping('hhhh0001-0000', 0, ` with token ${TOKEN}`);
   const { home, dir } = homeWith(project, [bad, quiet('hhhh0002-0000', 1, 'tidy the readme')]);
   const stateDir = tmp('glassbox-state-');
-  const run = async (stdin, flags = ['--context', '--feedback']) => { const lines = []; assert.equal(await main(['hook', ...flags], { stdout: (s) => lines.push(s), stderr: () => { }, stdin, stateDir }), 0); return lines.length ? JSON.parse(lines[0]) : null; };
+  const run = async (stdin, flags = ['--context', '--memory', 'glassbox', '--feedback']) => { const lines = []; assert.equal(await main(['hook', ...flags], { stdout: (s) => lines.push(s), stderr: () => { }, stdin, stateDir }), 0); return lines.length ? JSON.parse(lines[0]) : null; };
   const stop = (id) => run({ hook_event_name: 'Stop', session_id: id, transcript_path: path.join(dir, id + '.jsonl'), cwd: project, stop_hook_active: false });
   const r1 = await stop('hhhh0001-0000');
   assert.equal(r1.decision, 'block');
@@ -353,7 +353,7 @@ test('found in review: secrets in keys and at the clip edge, checks that only na
   for (let i = 0; i < 3; i++) k.call('Bash', { command: `echo ${TOKEN} | gh auth login --with-token` }, 'error: bad token', { error: true });
   const kres = analyse(files(k));
   const keys = kres.findings.map((f) => lessonOf(f, kres.trace, '/work')).filter(Boolean).map((l) => l.key + ' ' + l.example);
-  assert.ok(keys.some((x) => x.startsWith('retry-loop · Bash echo [FENCED:github-token]')), keys.join(' | '));
+  assert.ok(keys.some((x) => x.startsWith('retry-loop · Bash gh auth')), keys.join(' | ')); // 0.12: the head skips the echo that feeds it
   assert.ok(!keys.join('\n').includes(TOKEN.slice(4, 16)));
   // a token straddling the 200-character cut is masked whole, not cut in half
   const edge = session({ sessionId: 'rrrr0002' }); edge.user('x'.repeat(180) + ' ' + TOKEN + ' tail'); edge.assistant([{ text: 'ok' }]);
@@ -393,9 +393,9 @@ test('found in review: recall finds words only the digest has, and never a neigh
   assert.equal(recall({ home, project: lone }).searched.sessions, 0);
   // compaction before the first Stop does not count as told
   fs.mkdirSync(project, { recursive: true }); fold(project, looping('cccc0001'));
-  hookResponse({ hook_event_name: 'SessionStart', source: 'compact', session_id: 'cccc0002', cwd: project }, { context: true });
+  hookResponse({ hook_event_name: 'SessionStart', source: 'compact', session_id: 'cccc0002', cwd: project }, { context: true, memory: 'glassbox' });
   assert.equal(loadLedger(project).pending.cccc0002, undefined);
-  hookResponse({ hook_event_name: 'SessionStart', source: 'clear', session_id: 'cccc0003', cwd: project }, { context: true });
+  hookResponse({ hook_event_name: 'SessionStart', source: 'clear', session_id: 'cccc0003', cwd: project }, { context: true, memory: 'glassbox' });
   assert.ok(loadLedger(project).pending.cccc0003);
   // a last-session.md left 0644 by 0.10 is made owner-only at the next write
   if (process.platform !== 'win32') {
@@ -405,4 +405,223 @@ test('found in review: recall finds words only the digest has, and never a neigh
     hookResponse({ hook_event_name: 'Stop', session_id: 'cccc0004', transcript_path: path.join(dir, 'cccc0004.jsonl'), cwd: project, stop_hook_active: false }, { context: true, failOn: 'warn', stateDir: tmp('glassbox-state-') });
     assert.equal(fs.statSync(notes).mode & 0o777, 0o600);
   }
+});
+
+// 0.12: one memory. The lessons the agent reads go into the agent's own memory — auto memory's MEMORY.md, else
+// CLAUDE.local.md — as one block Glassbox owns, instead of a second set handed over by the SessionStart hook.
+// (Outside review, Oct 2026: "two sets of lessons drifting apart is worse than one.") DESIGN.md §21.
+async function agentRun(home, project, stdin, flags = ['--context']) {
+  const lines = []; assert.equal(await main(['hook', ...flags], { home, stdout: (s) => lines.push(s), stderr: () => { }, stdin, stateDir: tmp('glassbox-state-') }), 0);
+  return lines.length ? JSON.parse(lines[0]) : null;
+}
+const stopIn = (dir, project, id) => ({ hook_event_name: 'Stop', session_id: id, transcript_path: path.join(dir, id + '.jsonl'), cwd: project, stop_hook_active: false });
+const count = (text, needle) => text.split(needle).length - 1;
+
+test('agent memory: without auto memory the lessons land in CLAUDE.local.md, after what is there, and SessionStart says nothing', async () => {
+  const project = tmp();
+  const { home, dir } = homeWith(project, [looping('aaaa0001-0000', 0, ` with token ${TOKEN}`)]);
+  fs.writeFileSync(path.join(project, 'CLAUDE.local.md'), '# Mine\n\n- keep replies short\n');
+  await agentRun(home, project, stopIn(dir, project, 'aaaa0001-0000'));
+  const t = fs.readFileSync(path.join(project, 'CLAUDE.local.md'), 'utf8');
+  assert.ok(t.startsWith('# Mine\n\n- keep replies short\n'), 'what was there is untouched and first');
+  assert.equal(count(t, BLOCK_START), 1); assert.equal(count(t, BLOCK_END), 1);
+  assert.match(t, /retry-loop · Bash npm test[\s\S]*Next time:/);
+  assert.ok(!t.includes(TOKEN), 'no secret reaches the agent\'s memory');
+  assert.ok(t.length < 2500, 'small: a projection of the ledger, not a report');
+  assert.deepEqual(blockKeys(t).sort(), ['failed-tool · Bash', 'retry-loop · Bash npm test'].sort());
+  const ss = await agentRun(home, project, { hook_event_name: 'SessionStart', source: 'startup', session_id: 'aaaa0002-0000', cwd: project });
+  assert.equal(ss.hookSpecificOutput, undefined, 'one memory: the agent reads its own, nothing is injected');
+  assert.equal(lessonsTarget(project, { home }).file, path.join(project, 'CLAUDE.local.md'));
+  assert.ok(!fs.existsSync(path.join(project, 'CLAUDE.md')), 'never the shared CLAUDE.md');
+});
+
+test('agent memory: with auto memory on, the block goes into MEMORY.md under its title, inside the 200-line cut; rewritten in place; CRLF kept', async () => {
+  const project = tmp();
+  const { home, dir } = homeWith(project, [looping('bbbb0001-0000', 0), looping('bbbb0002-0000', 1)]);
+  const mem = path.join(dir, 'memory'); fs.mkdirSync(mem);
+  fs.writeFileSync(path.join(mem, 'MEMORY.md'), '# Project memory\r\n\r\n- the user prefers pnpm\r\n' + Array.from({ length: 250 }, (_, i) => `- note ${i}\r\n`).join(''));
+  await agentRun(home, project, stopIn(dir, project, 'bbbb0001-0000'));
+  await agentRun(home, project, stopIn(dir, project, 'bbbb0001-0000'));
+  await agentRun(home, project, stopIn(dir, project, 'bbbb0002-0000'));
+  const t = fs.readFileSync(path.join(mem, 'MEMORY.md'), 'utf8');
+  assert.equal(count(t, BLOCK_START), 1, 'rewritten in place, never stacked');
+  assert.ok(t.startsWith('# Project memory\r\n\r\n' + BLOCK_START), 'right under the title');
+  assert.ok(t.split('\n').findIndex((l) => l.includes(BLOCK_END)) < 20, 'inside the lines that load at startup');
+  assert.ok(t.includes('- the user prefers pnpm\r\n- note 0\r\n') && t.includes('- note 249\r\n'), 'the agent\'s own lines untouched');
+  assert.ok(!/[^\r]\n/.test(t), 'every line ending still CRLF');
+  assert.match(t, /in 2 of the last 2 sessions/);
+  assert.ok(!fs.existsSync(path.join(project, 'CLAUDE.local.md')));
+  // auto memory switched off: CLAUDE.local.md instead
+  fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ autoMemoryEnabled: false }));
+  assert.equal(lessonsTarget(project, { home }).file, path.join(project, 'CLAUDE.local.md'));
+});
+
+test('agent memory: told comes from the block the session started with; no lessons removes the block; clear removes it too', async () => {
+  const project = tmp();
+  const { home, dir } = homeWith(project, [looping('cccc0001-0000', 0), looping('cccc0002-0000', 1), quiet('cccc0003-0000', 2)]);
+  await agentRun(home, project, stopIn(dir, project, 'cccc0001-0000'));
+  await agentRun(home, project, stopIn(dir, project, 'cccc0002-0000'));
+  const led = loadLedger(project);
+  assert.deepEqual(led.sessions.find((x) => x.id === 'cccc0002-0000').told.sort(), ['failed-tool · Bash', 'retry-loop · Bash npm test'].sort(), 'told: the keys in the block when the session first stopped');
+  assert.deepEqual(led.sessions.find((x) => x.id === 'cccc0001-0000').told, [], 'the first session started with no block');
+  assert.equal(lessonStats(led).find((l) => l.key === 'retry-loop · Bash npm test').recurred, 1, 'came back once after being told');
+  const file = path.join(project, 'CLAUDE.local.md');
+  fs.appendFileSync(file, '\n- mine, after the block\n');
+  clearMemory(project, { home });
+  const after = fs.readFileSync(file, 'utf8');
+  assert.equal(count(after, BLOCK_START), 0, 'clear removes the block');
+  assert.ok(after.includes('- mine, after the block'), '…and nothing else');
+  await agentRun(home, project, stopIn(dir, project, 'cccc0003-0000'));
+  assert.equal(count(fs.readFileSync(file, 'utf8'), BLOCK_START), 0, 'a clean session with no lessons writes no block');
+  fs.writeFileSync(file, '');
+  clearMemory(project, { home });
+  assert.ok(!fs.existsSync(file) || fs.readFileSync(file, 'utf8') === '', 'an empty file is left empty, not filled');
+});
+
+test('agent memory: an end marker typed away by hand never makes the hook eat the rest of the file', async () => {
+  const project = tmp();
+  const { home, dir } = homeWith(project, [looping('dddd0001-0000', 0)]);
+  const file = path.join(project, 'CLAUDE.local.md');
+  fs.writeFileSync(file, `- top\n${BLOCK_START} (rewritten by the Glassbox Stop hook) -->\n- old lesson\n- my own line after a broken block\n`);
+  await agentRun(home, project, stopIn(dir, project, 'dddd0001-0000'));
+  const t = fs.readFileSync(file, 'utf8');
+  assert.ok(t.includes('- my own line after a broken block'), 'nothing past a start marker with no end is removed');
+  assert.equal(count(t, BLOCK_END), 1);
+});
+
+// 0.12 review (independent pass over the diff, before release). Every confirmed bug is a test.
+import { writeLessonsBlock } from '../src/memory.mjs';
+import { spawn } from 'node:child_process';
+const BLK = (keys = ['retry-loop · Bash npm test']) => `${BLOCK_START} (rewritten by the Glassbox Stop hook) -->\n## Glassbox: what keeps going wrong in this project\n\n- lesson\n${BLOCK_END} keys=${keys.map(encodeURIComponent).join(',')} -->\n`;
+
+test('review B1: a start marker mentioned in prose, inline or in a code fence is never taken for the block', () => {
+  const dir = tmp(); const f = path.join(dir, 'CLAUDE.local.md');
+  const mine = [
+    `- note: the \`${BLOCK_START}\` block below is Glassbox's`,
+    '- user fact A',
+    `Remember: Glassbox writes ${BLOCK_START} at the top. Important user line`,
+    '```', BLOCK_START + ' (an example) -->', '- example lesson', BLOCK_END + ' keys= -->', '```',
+    '- user fact B',
+  ].join('\n') + '\n';
+  fs.writeFileSync(f, mine);
+  writeLessonsBlock(f, BLK(), 'local');
+  let t = fs.readFileSync(f, 'utf8');
+  assert.ok(t.startsWith(mine), 'every user line kept, in order, before the new block');
+  assert.equal(t.split('\n').filter((l) => l.startsWith(BLOCK_START)).length, 2, 'the fenced example and the real block');
+  writeLessonsBlock(f, BLK(['failed-tool · Bash']), 'local');
+  t = fs.readFileSync(f, 'utf8');
+  assert.ok(t.startsWith(mine), 'rewriting the block leaves the mentions alone');
+  assert.deepEqual(blockKeys(t), ['failed-tool · Bash'], 'keys come from the real block, not the fenced example');
+  writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8').replace(/\n+$/, '\n'), mine, 'removal gives back exactly what was there');
+  fs.writeFileSync(f, `- Glassbox owns ${BLOCK_START} blocks; never edit them by hand\n- fact\n`);
+  writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8'), `- Glassbox owns ${BLOCK_START} blocks; never edit them by hand\n- fact\n`, 'nothing to remove: untouched');
+});
+
+test('review B1: two complete blocks become one; a lone end marker is not a block', () => {
+  const dir = tmp(); const f = path.join(dir, 'CLAUDE.local.md');
+  fs.writeFileSync(f, `- a\n${BLK(['x'])}- b\n${BLK(['y'])}- c\n`);
+  writeLessonsBlock(f, BLK(['z']), 'local');
+  const t = fs.readFileSync(f, 'utf8');
+  assert.equal(t.split('\n').filter((l) => l.startsWith(BLOCK_START)).length, 1);
+  assert.deepEqual(blockKeys(t), ['z']);
+  assert.ok(/- a\n[\s\S]*- b\n[\s\S]*- c\n/.test(t));
+  fs.writeFileSync(f, `${BLOCK_END} keys=x -->\n- mine\n`);
+  writeLessonsBlock(f, BLK(['z']), 'local');
+  assert.ok(fs.readFileSync(f, 'utf8').startsWith(`${BLOCK_END} keys=x -->\n- mine\n`));
+});
+
+test('review B2: four Stops writing the same MEMORY.md at once never lose a user line', async () => {
+  const dir = tmp(); const f = path.join(dir, 'MEMORY.md');
+  const mine = '# Memory\n\n' + Array.from({ length: 200 }, (_, i) => `- user line ${i}\n`).join('');
+  fs.writeFileSync(f, mine);
+  const mod = new URL('../src/memory.mjs', import.meta.url).href;
+  const worker = `import { writeLessonsBlock, BLOCK_START, BLOCK_END } from ${JSON.stringify(mod)};
+for (let i = 0; i < 8; i++) writeLessonsBlock(${JSON.stringify(f)}, BLOCK_START + ' -->\\n- w' + process.argv[1] + ' ' + i + '\\n' + BLOCK_END + ' keys=k' + i + ' -->\\n', 'auto-memory');`;
+  await Promise.all([1, 2, 3, 4].map((w) => new Promise((resolve) => { const p = spawn(process.execPath, ['--input-type=module', '-e', worker, String(w)], { stdio: 'ignore' }); p.on('exit', resolve); })));
+  const t = fs.readFileSync(f, 'utf8');
+  for (let i = 0; i < 200; i++) assert.ok(t.includes(`- user line ${i}\n`), `line ${i} survived`);
+  assert.equal(t.split('\n').filter((l) => l.startsWith(BLOCK_START)).length, 1);
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n !== 'MEMORY.md'), [], 'no temp files left behind');
+});
+
+test('review B3: a password in a repeated command never reaches a lesson key or the agent\'s memory', async () => {
+  const pw = J('Hunter2', 'Sup3rS3cretValue99');
+  for (const c of [`./run.sh ${pw}`, `sudo -u bob ${pw}`, `echo ${pw} | sudo -S apt-get install -y jq`, `printf '%s' ${pw} | docker login -u me --password-stdin`])
+    assert.ok(!commandHead(c).includes(pw.slice(0, 6)), `${c.replace(pw, '<pw>')} → ${commandHead(c).replace(pw, '<pw>')}`);
+  assert.equal(commandHead(`echo ${pw} | sudo -S apt-get install -y jq`), 'apt-get install');
+  for (const [c, want] of [['npm test', 'npm test'], ['npm run e2e', 'npm run e2e'], ['git push origin main', 'git push'], ['python3 -m pytest -q', 'python3 -m pytest'], ['npx playwright test', 'npx playwright'], ['./gradlew test', 'gradlew test'], ['node build.mjs', 'node build.mjs']])
+    assert.equal(commandHead(c), want, 'ordinary commands keep their heads');
+  const project = tmp();
+  const s = session({ sessionId: 'pwpw0001-0000', start: T0 }); s.user('install jq');
+  for (let k = 0; k < 3; k++) s.call('Bash', { command: `echo ${pw} | sudo -S apt-get install -y jq` }, 'E: boom', { error: true });
+  s.assistant([{ text: 'Giving up.' }]);
+  const { home, dir } = homeWith(project, [s]);
+  await agentRun(home, project, stopIn(dir, project, 'pwpw0001-0000'));
+  const t = fs.readFileSync(path.join(project, 'CLAUDE.local.md'), 'utf8');
+  assert.ok(!t.includes(pw.slice(0, 6)) && !t.includes(encodeURIComponent(pw).slice(0, 6)), 'not in the lines, not in the end marker');
+});
+
+test('review S1: a symlinked MEMORY.md is written through the link; the file mode is kept; a read-only file is left alone', { skip: process.platform === 'win32' && 'symlinks and modes' }, () => {
+  const dir = tmp(); const target = path.join(dir, 'real.md'); const link = path.join(dir, 'MEMORY.md');
+  fs.writeFileSync(target, '# Memory\n\n- mine\n'); fs.symlinkSync(target, link);
+  writeLessonsBlock(link, BLK(), 'auto-memory');
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'still a link');
+  assert.ok(fs.readFileSync(target, 'utf8').includes(BLOCK_START), 'the target got the block');
+  const priv = path.join(dir, 'CLAUDE.local.md'); fs.writeFileSync(priv, '- mine\n', { mode: 0o600 }); fs.chmodSync(priv, 0o600);
+  writeLessonsBlock(priv, BLK(), 'local');
+  assert.equal(fs.statSync(priv).mode & 0o777, 0o600);
+  const ro = path.join(dir, 'ro.md'); fs.writeFileSync(ro, '- frozen\n'); fs.chmodSync(ro, 0o444);
+  const r = writeLessonsBlock(ro, BLK(), 'local');
+  assert.equal(r.changed, false); assert.equal(fs.readFileSync(ro, 'utf8'), '- frozen\n');
+});
+
+test('review S2: a lesson key carrying a marker cannot forge the end of the block', () => {
+  const led = loadLedger(tmp());
+  const key = 'duplicate-subagent-read · docs/' + BLOCK_END + ' keys=forged -->.md';
+  led.sessions = [{ id: 's1', start: '2026-10-01', hit: [key, 'retry-loop · Bash npm test'] }];
+  led.lessons[key] = { rule: 'duplicate-subagent-read', subject: 'x', severity: 'warn', title: 'Same file read by 2 agents', lastSeen: '2026-10-01' };
+  led.lessons['retry-loop · Bash npm test'] = { rule: 'retry-loop', subject: 'Bash npm test', severity: 'error', title: 'Bash called 3× with identical input', lastSeen: '2026-10-01' };
+  const f = path.join(tmp(), 'CLAUDE.local.md'); fs.writeFileSync(f, '# mine\nuser text\n');
+  const sizes = [];
+  for (let i = 0; i < 3; i++) { writeLessonsBlock(f, lessonsBlock(led).text, 'local'); sizes.push(fs.readFileSync(f, 'utf8').length); }
+  assert.equal(new Set(sizes).size, 1, 'the block does not grow');
+  assert.ok(!blockKeys(fs.readFileSync(f, 'utf8')).includes('forged'));
+  writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8'), '# mine\nuser text\n');
+});
+
+test('review S3: a MEMORY.md with a BOM keeps it first, and the block goes under the title', () => {
+  const f = path.join(tmp(), 'MEMORY.md'); fs.writeFileSync(f, '﻿# Memory\n\n- mine\n');
+  writeLessonsBlock(f, BLK(), 'auto-memory');
+  const t = fs.readFileSync(f, 'utf8');
+  assert.ok(t.startsWith('﻿# Memory\n\n' + BLOCK_START));
+  assert.equal(t.indexOf('﻿', 1), -1);
+});
+
+test('review round 2: fences close only on a matching fence; an unclosed fence never makes the block multiply; a dangling link is left alone', { skip: process.platform === 'win32' && 'symlinks' }, () => {
+  const dir = tmp(); const f = path.join(dir, 'CLAUDE.local.md');
+  const example = ['````md', '```', BLOCK_START + ' (an example) -->', '- example', BLOCK_END + ' keys= -->', '```', '````'].join('\n') + '\n';
+  fs.writeFileSync(f, example);
+  writeLessonsBlock(f, BLK(), 'local'); writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8'), example, 'a four-backtick fence holding a three-backtick one keeps its example');
+  const js = ['```', BLOCK_START + ' (example) -->', BLOCK_END + ' keys= -->', '```js', 'not a closer, an opener with an info string', '```', '- after'].join('\n') + '\n';
+  fs.writeFileSync(f, js); writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8'), js, '```js does not close a fence');
+  fs.writeFileSync(f, '- mine\n```bash\nnpm test\n');
+  for (let i = 0; i < 3; i++) writeLessonsBlock(f, BLK(), 'local');
+  assert.equal(fs.readFileSync(f, 'utf8').split('\n').filter((l) => l.startsWith(BLOCK_START)).length, 1, 'three Stops, one block');
+  writeLessonsBlock(f, null, 'local');
+  assert.equal(fs.readFileSync(f, 'utf8'), '- mine\n```bash\nnpm test\n');
+  const link = path.join(dir, 'MEMORY.md'); fs.symlinkSync(path.join(dir, 'gone.md'), link);
+  assert.equal(writeLessonsBlock(link, BLK(), 'auto-memory').changed, false);
+  assert.ok(fs.lstatSync(link).isSymbolicLink(), 'a dangling link stays a link');
+});
+
+test('review round 2: ordinary script and tool names keep their heads', () => {
+  for (const [c, want] of [['npm run build:es2015', 'npm run build:es2015'], ['npm run test:e2e2', 'npm run test:e2e2'], ['pnpm run build-v2', 'pnpm run build-v2'], ['python3.11 -m pytest', 'python3.11 -m pytest'], ['python3.12 -m pytest -x', 'python3.12 -m pytest'], ['webpack5 build', 'webpack5 build'], ['npm run test:integration', 'npm run test:integration'], ['make test2', 'make test2'], ['echo hi | npm test', 'npm test']])
+    assert.equal(commandHead(c), want, c);
+  const pw = J('Hunter2', 'Sup3rS3cretValue99');
+  assert.ok(!commandHead(`./run.sh ${pw}`).includes('Hunter'));
 });

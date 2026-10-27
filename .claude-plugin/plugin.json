@@ -1,8 +1,8 @@
 {
   "name": "glassbox",
   "displayName": "Glassbox",
-  "version": "0.11.1",
-  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), opt-in feedback of the findings to the agent, an opt-in memory the next session starts with (lessons that keep coming back, a line per recent session), and skills to check the current session, search past sessions, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
+  "version": "0.12.0",
+  "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), a loop guard that stops a call that already failed twice in a row unchanged, opt-in feedback of the findings to the agent, an opt-in memory that writes the lessons that keep coming back into the agent's own memory, and skills to check the current session, search past sessions, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
   "author": {
     "name": "Aldo Hushi",
     "url": "https://github.com/aldohushi1-stack"
@@ -21,14 +21,26 @@
     "context": {
       "type": "boolean",
       "title": "Keep a memory of the project for the next session",
-      "description": "Off by default. When on, the Stop hook keeps <project>/.glassbox/memory.json (a digest of each of the last 50 sessions and the findings that keep coming back, secrets masked, owner-only) and last-session.md (git-ignored), and the next session in that project starts with a note: the lessons still recurring, a line per recent session, and what the agent said it would do differently. `glassbox memory` shows the note; `glassbox recall` searches past sessions.",
+      "description": "Off by default. When on, the Stop hook keeps <project>/.glassbox/memory.json (a digest of each of the last 50 sessions and the findings that keep coming back, secrets masked, owner-only) and writes the lessons still recurring into the agent's own memory: one block in auto memory's MEMORY.md when auto memory is on, else in CLAUDE.local.md — rewritten every turn, text outside its markers never touched. `glassbox memory` shows it; `glassbox recall` searches past sessions.",
       "default": false
+    },
+    "memory": {
+      "type": "string",
+      "title": "Where the lessons go",
+      "description": "agent (default): a block in the agent's own memory, so there is one set of lessons, in the place the agent already reads. glassbox: 0.11's behaviour — a note from the SessionStart hook, built from <project>/.glassbox/.",
+      "default": "agent"
     },
     "fail_on": {
       "type": "string",
       "title": "Threshold",
       "description": "Lowest severity the Stop hook lists (and, with feedback on, hands back): error, warn or info. Default: warn.",
       "default": "warn"
+    },
+    "guard": {
+      "type": "boolean",
+      "title": "Loop guard",
+      "description": "On by default. Before each Bash or PowerShell command, blocks one that has already failed twice in a row this turn with nothing changed in between, and tells the agent why. Says nothing otherwise (never approves anything). Reads only the last 4 MB of the transcript. For the guard on every tool, use the CLI: glassbox hook install --guard.",
+      "default": true
     }
   }
 }

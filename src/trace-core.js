@@ -9,7 +9,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.11.1';
+  const VERSION = '0.12.0';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
@@ -110,6 +110,37 @@
     if (typeof t === 'number') return t > 1e12 ? t : t * 1000;
     const ms = Date.parse(t);
     return Number.isFinite(ms) ? ms : null;
+  }
+
+  // A big transcript's huge strings (multi-MB tool results, images) are kept as head + marker + tail when it is read
+  // line by line (src/jsonl.mjs); the marker carries how many characters were left out, so every size below is the
+  // original size. Strings without a marker cost one indexOf. DESIGN.md §21.
+  // The marker holds a nonce made once per process, so a marker-shaped string already in a transcript (a web page,
+  // a file the agent read) counts as ordinary text, and a hash of the cut middle, so two big strings that share a
+  // head and a tail are still different (0.12 review).
+  const NONCE = Math.random().toString(36).slice(2, 10);
+  const ELIDED = '⁣glassbox-elided:' + NONCE + ':';
+  const ELIDED_RE = new RegExp('⁣glassbox-elided:' + NONCE + ':(\\d+):[0-9a-f]+⁣', 'g');
+  function fnv(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h >>> 0).toString(16); }
+  function isElided(s) { return typeof s === 'string' && s.indexOf(ELIDED) >= 0; }
+  function charsOf(s) {
+    s = s == null ? '' : String(s);
+    if (s.indexOf(ELIDED) < 0) return s.length;
+    let n = s.length; ELIDED_RE.lastIndex = 0; let m;
+    while ((m = ELIDED_RE.exec(s))) n += +m[1] - m[0].length;
+    return n;
+  }
+  function slimString(s, keep) {
+    keep = keep || 32768;
+    if (typeof s !== 'string' || s.length <= keep * 2 + 64) return s;
+    const mid = s.slice(keep, s.length - keep);
+    return s.slice(0, keep) + ELIDED + mid.length + ':' + fnv(mid) + '⁣' + s.slice(-keep);
+  }
+  function slimRecord(v, keep) {
+    if (typeof v === 'string') return slimString(v, keep);
+    if (Array.isArray(v)) { for (let i = 0; i < v.length; i++) v[i] = slimRecord(v[i], keep); return v; }
+    if (v && typeof v === 'object') { for (const k of Object.keys(v)) v[k] = slimRecord(v[k], keep); return v; }
+    return v;
   }
 
   function textOf(content) {
@@ -248,10 +279,11 @@
         } catch (e) { problems.push({ file: name, line: 0, reason: 'bad meta.json' }); }
         continue;
       }
-      const { records, problems: p } = parseLines(f.text, name);
+      // Big transcripts arrive already parsed, line by line (src/jsonl.mjs): { name, records, problems, bytes }.
+      const { records, problems: p } = Array.isArray(f.records) ? { records: f.records, problems: f.problems || [] } : parseLines(f.text, name);
       problems.push(...p);
-      fileMeta.push({ name, records: records.length, bytes: f.text ? f.text.length : 0 });
-      allRecords.push(...records);
+      fileMeta.push({ name, records: records.length, bytes: f.text ? f.text.length : f.bytes || 0 });
+      for (const r of records) allRecords.push(r); // not push(...records): a spread of millions overflows the stack
     }
 
     // Stable sort by timestamp where available; keep file order otherwise.
@@ -382,12 +414,13 @@
               call.status = tr.is_error ? 'error' : 'ok';
               call.isError = !!tr.is_error;
               call.resultText = text;
-              call.resultChars = text.length;
+              call.resultChars = charsOf(text);
+              if (isElided(text)) call.resultElided = true; // kept as head + tail (src/jsonl.mjs)
               call.resultStructured = structured != null ? structured : null;
               const imgs = Array.isArray(tr.content) ? tr.content.filter((b) => b && b.type === 'image') : [];
               call.resultImages = imgs.length;
-              call.imageBytes = imgs.reduce((s, b) => s + Math.round(((b.source && b.source.data) || '').length * 0.75), 0);
-              if (structured && typeof structured === 'object' && !text && !imgs.length) call.resultChars = JSON.stringify(structured).length;
+              call.imageBytes = imgs.reduce((s, b) => s + Math.round(charsOf((b.source && b.source.data) || '') * 0.75), 0);
+              if (structured && typeof structured === 'object' && !text && !imgs.length) call.resultChars = charsOf(JSON.stringify(structured));
               // stream-json puts is_error only in block; Claude Code also stores toolUseResult as an Error string
               if (!tr.is_error && typeof structured === 'string' && /^Error/i.test(structured)) { call.status = 'error'; call.isError = true; }
               if (call.isError) call.denial = denialKind(rec, text);
@@ -443,7 +476,7 @@
               id: b.id || (key + ':' + blockIndex), agent: a.id, requestId: req.id, name: b.name || 'unknown', input: b.input || {},
               start: t, end: null, durationMs: null, status: 'orphan', isError: false, resultText: '', resultChars: 0,
               resultStructured: null, category: toolCategory(b.name), turnIndex: req.turnIndex, subagentId: null,
-              inputChars: JSON.stringify(b.input || {}).length, resultImages: 0, imageBytes: 0, denial: null,
+              inputChars: charsOf(JSON.stringify(b.input || {})), resultImages: 0, imageBytes: 0, denial: null,
             };
             toolCalls.push(call);
             toolCallById.set(call.id, call);
@@ -561,7 +594,7 @@
     return {
       id: tr.tool_use_id || ('result:' + rec._seq), agent: agentId, requestId: null, name: '(unmatched result)', input: {},
       start: ts(rec), end: ts(rec), durationMs: 0, status: tr.is_error ? 'error' : 'ok', isError: !!tr.is_error, resultText: text,
-      resultChars: text.length, resultStructured: null, category: 'other', turnIndex, subagentId: null, inputChars: 0, unmatched: true,
+      resultChars: charsOf(text), resultElided: isElided(text) || undefined, resultStructured: null, category: 'other', turnIndex, subagentId: null, inputChars: 0, unmatched: true,
     };
   }
 
@@ -1229,5 +1262,5 @@
   }
   function toJsonl(records) { return records.map((r) => JSON.stringify(r)).join('\n') + '\n'; }
 
-  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, parseTrace, diagnose, denialKind, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable, fileStats, filePathOf, normalisePath };
+  return { VERSION, RATES, DEFAULTS, ADVICE, METRICS, parseLines, normaliseLoose, charsOf, isElided, slimString, slimRecord, parseTrace, diagnose, denialKind, estimateCost, rateFor, redact, toJsonl, toolCategory, textOf, fmtDur, fmtInt, fmtMetric, fmtRatio, fmtChange, stableStringify, inputSummary, adviceFor, redactDetail, reportMarkdown, compare, compareMarkdown, toolTable, fileStats, filePathOf, normalisePath };
 });
