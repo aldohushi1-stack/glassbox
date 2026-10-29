@@ -7,6 +7,7 @@
 // to the status line, never to a transcript, and the limits count claude.ai and other machines too (DESIGN.md §22).
 // Nothing leaves the machine.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { findSessions, loadSessionFiles, sessionTitle, claudeHome } from './cli.mjs';
@@ -39,6 +40,13 @@ export function readPlan(home) {
     return { file: f, plan: tierPlan(tier), tier, since: acct.subscriptionCreatedAt || null };
   }
   return { file: first, plan: null };
+}
+
+// The .claude.json path as a report shows it. Under --redact a full path names the OS user (C:\Users\<name>\...),
+// so it becomes ~/.claude.json when it sits in the user's home, else just the file name.
+export function shownFile(f, redact, userHome = os.homedir()) {
+  if (!f || !redact) return f || null;
+  return path.relative(userHome, f) === '.claude.json' ? '~/.claude.json' : '.claude.json';
 }
 
 // Billing months run from the subscription's day and time of day (UTC); a 31st falls on a short month's last day.
@@ -132,7 +140,7 @@ export function plan(opts = {}) {
   return {
     glassbox: core.VERSION, schema: 1, kind: 'plan', generated: now, redacted: !!opts.redact,
     scope: 'Claude Code transcripts on this machine; claude.ai, the apps and other machines are not included',
-    plan: { key, label: info ? info.label : null, price, priceFrom: opts.planPrice != null ? 'flag' : info ? 'default' : null, tier: found.tier || null, file: found.file, override: opts.plan !== undefined },
+    plan: { key, label: info ? info.label : null, price, priceFrom: opts.planPrice != null ? 'flag' : info ? 'default' : null, tier: found.tier || null, file: shownFile(found.file, opts.redact), override: opts.plan !== undefined },
     sessions, requests: reqs.length, since,
     periods: periods.map((p) => { const b = bucket(reqs, p.from, p.to); const elapsed = Math.min(now, p.to) - p.from;
       return { from: p.from, to: p.to, current: now < p.to, days: Math.round((p.to - p.from) / D), daysElapsed: Math.max(1, Math.ceil(elapsed / D)), list: b.list, requests: b.requests, multiple: price ? b.list / price : null, models: models(b.byModel, b.list) }; }),
