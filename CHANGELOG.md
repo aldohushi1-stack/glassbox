@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.12.1 — 2026-10-29
+- **Fix: `plan --redact` named the OS user.** `plan.file` held the full path to `.claude.json` (`C:\Users\<name>\.claude.json`, `/Users/<name>/.claude.json`) in the JSON, and in the text and markdown headline when no plan was found. Under `--redact` it is now `~/.claude.json` when the file is in the user's home, else just `.claude.json`; without `--redact` it is unchanged. The rest of the redacted report was checked for anything that names a person or machine: titles were already null, session ids are random UUIDs, the email and user id in `.claude.json` were never read. `shownFile()` exported.
+- Tests: `test/plan.test.mjs` +1 (no user path in json, text or md, with and without a plan, and with `--live`).
 - **Tests: `npm test` passes on Windows.** The 0.12.0 release gates ran on Linux, so three tests in `test/jsonl.test.mjs` failed on Windows unseen: two built the fixtures path from `new URL(import.meta.url).pathname` (`/C:/…`, read as `C:\C:\…`; now `fileURLToPath`), and the `recall` one planted its transcript in `-work-big`, a POSIX folder name — on Windows `/work/big` resolves to `C:\work\big`, which Claude Code files under `C--work-big`, so `recall` was right not to find it (the test now names the folder with `encodeProject`, as the other tests do). No change to `src/`; no other test builds paths that way.
 
 ## 0.12.0 — 2026-10-28
