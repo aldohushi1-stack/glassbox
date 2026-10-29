@@ -7,14 +7,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { session } from './gen.mjs';
 import { forEachLine, readRecords, readTranscript, streamBytes } from '../src/jsonl.mjs';
 import { loadSessionFiles, analyse, checkReport, resolveTarget, main } from '../src/cli.mjs';
 import { scanFile, shredFile, fence } from '../src/fence.mjs';
+import { encodeProject } from '../src/adhere.mjs';
 const require = createRequire(import.meta.url);
 const core = require('../src/trace-core.js');
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIX = path.join(HERE, 'fixtures');
 const tmp = (p = 'glassbox-jsonl-') => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const J = (...parts) => parts.join('');
@@ -80,7 +82,7 @@ test('a single line past the string limit is skipped with a problem, not fatal; 
 });
 
 function plantedHome() {
-  const home = tmp('glassbox-jsonl-home-'); const proj = path.join(home, 'projects', '-work-big'); fs.mkdirSync(proj, { recursive: true });
+  const home = tmp('glassbox-jsonl-home-'); const proj = path.join(home, 'projects', encodeProject(path.resolve('/work/big'))); fs.mkdirSync(proj, { recursive: true });
   const s = session({ sessionId: 'b16b16b1-0000', cwd: '/work/big' });
   s.user('run the tests until they pass');
   for (let i = 0; i < 4; i++) s.call('Bash', { command: 'npm test' }, 'FAIL 3 tests\n' + 'output '.repeat(400), { error: true });

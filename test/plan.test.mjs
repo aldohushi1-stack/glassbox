@@ -7,7 +7,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { session } from './gen.mjs';
 import { main, loadRates } from '../src/cli.mjs';
-import { plan, planText, planMarkdown, readPlan, tierPlan, billingPeriods, rebuildWindows, limitKind } from '../src/plan.mjs';
+import { plan, planText, planMarkdown, readPlan, shownFile, tierPlan, billingPeriods, rebuildWindows, limitKind } from '../src/plan.mjs';
 const require = createRequire(import.meta.url);
 const core = require('../src/trace-core.js');
 
@@ -160,6 +160,33 @@ test('plan(): --plan / --plan-price / --bill-day override; --redact drops titles
   assert.equal(none.plan.key, null); assert.equal(none.periods.length, 0); assert.equal(none.windows.count, 0);
   assert.equal(none.last7d.list, 24);
   assert.match(planText(none), /no Claude plan found/);
+});
+
+test('--redact: no path to .claude.json in json, text or md — the user name in it stays on the machine', async () => {
+  // A home under a user folder, as on Windows (C:\Users\<name>\.claude) or macOS (/Users/<name>/.claude).
+  const root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'glassbox-plan-')), 'Users', 'jane.doe');
+  const home = path.join(root, '.claude'); const pdir = path.join(home, 'projects', 'C--work'); fs.mkdirSync(pdir, { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude.json'), JSON.stringify({ oauthAccount: MAX20 }));
+  const s = session({ sessionId: 'dddd4444-0000', start: NOW - 2 * H }); s.summary('Jane\'s secret project'); opus(s, NOW - 2 * H, 2);
+  fs.writeFileSync(path.join(pdir, s.sessionId + '.jsonl'), s.text());
+  const leaks = (t) => ['jane.doe', root, JSON.stringify(root).slice(1, -1), os.homedir(), JSON.stringify(os.homedir()).slice(1, -1), 'secret project', 'example.com'].filter((x) => t.includes(x));
+
+  assert.equal(plan({ home, now: NOW }).plan.file, path.join(root, '.claude.json'), 'unredacted keeps the path');
+  for (const flags of [['--plan', 'max-20x'], ['--plan', 'none'], ['--live']]) {
+    const outs = []; const io = { stdout: (x) => outs.push(x), stderr: () => {}, now: NOW };
+    assert.equal(await main(['plan', '--home', home, '--redact', '--format', 'json', ...flags], io), 0);
+    const j = JSON.parse(outs.join('\n'));
+    assert.equal(j.redacted, true); assert.equal(j.plan.file, '.claude.json');
+    assert.deepEqual(leaks(outs.join('\n')), [], `json ${flags.join(' ')}`);
+  }
+  for (const p of ['max-20x', 'none']) { // `none` puts the file in the headline
+    const rep = plan({ home, now: NOW, plan: p, redact: true });
+    assert.deepEqual(leaks(planText(rep)), [], `text --plan ${p}`); assert.deepEqual(leaks(planMarkdown(rep)), [], `md --plan ${p}`);
+  }
+  assert.match(planText(plan({ home, now: NOW, plan: 'none', redact: true })), /no Claude plan found in \.claude\.json /);
+  assert.equal(shownFile(path.join(root, '.claude.json'), true, root), '~/.claude.json', 'in the user\'s own home');
+  assert.equal(shownFile(path.join(home, '.claude.json'), true, root), '.claude.json', 'a CLAUDE_CONFIG_DIR copy');
+  assert.equal(shownFile(null, true), null);
 });
 
 test('planText / planMarkdown say what list price is not, and show the open window first', () => {
