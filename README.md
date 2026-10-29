@@ -358,3 +358,5 @@ Source: [github.com/aldohushi1-stack/glassbox](https://github.com/aldohushi1-sta
 ## Security
 
 Found a way Glassbox could leak, run something it shouldn't, or be tampered with? Please report it privately — see [SECURITY.md](SECURITY.md).
+
+<sub><i>Built for the next 6–12 months.</i></sub>
