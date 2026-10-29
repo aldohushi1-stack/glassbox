@@ -1,7 +1,7 @@
 {
   "name": "glassbox",
   "displayName": "Glassbox",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Other tools show what happened in a Claude Code session; Glassbox tells you what went wrong. A Stop hook that ends every turn with a one-screen summary (turns, tool calls, context peak, cost, top findings), a loop guard that stops a call that already failed twice in a row unchanged, opt-in feedback of the findings to the agent, an opt-in memory that writes the lessons that keep coming back into the agent's own memory, and skills to check the current session, search past sessions, open the timeline viewer, or compare two sessions. Local only, no dependencies.",
   "author": {
     "name": "Aldo Hushi",
