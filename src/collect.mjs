@@ -105,10 +105,20 @@ export function collect(sources, opts = {}) {
     lowerBoundSessions: sessions.filter((s) => s.summary.costLowerBound).length,
     partialResponses: sum(sessions, (s) => s.summary.usagePartial && s.summary.usagePartial.responses),
   };
+  // Sessions whose models were priced through another model's row (or not priced): the cost above includes a guess.
+  const approxModels = new Map(); let approxSessions = 0;
+  for (const s of sessions) {
+    const rc = s.summary.rateCard; if (!rc) continue;
+    const list = (rc.approximate || []).map((a) => ({ model: a.model, as: a.as })).concat((rc.unpriced || []).map((m) => ({ model: m, as: null })));
+    if (!list.length) continue;
+    approxSessions++;
+    for (const a of list) if (!approxModels.has(a.model)) approxModels.set(a.model, a);
+  }
+  const approximate = { sessions: approxSessions, models: Array.from(approxModels.values()) };
   const top = topN(opts.top || 5).map((s) => ({ source: s.source, session: s.summary.session, cost: s.summary.cost || 0, share: cost ? (s.summary.cost || 0) / cost : 0, wallMs: s.summary.wallMs, turns: s.summary.turns, requests: s.summary.requests, findings: s.findings.length, worst: s.findings.slice().sort((a, b) => SEV[a.severity] - SEV[b.severity])[0] || null, model: s.summary.model }));
   return {
     glassbox: core.VERSION, schema: 1, kind: 'collect', generated: new Date(opts.now || Date.now()).toISOString(), since: since ? new Date(since).toISOString() : null,
-    totals, concentration: { top, topShare: share(topN(opts.top || 5)), halfOfSpendSessions: cost ? half : 0 },
+    totals, approximate, concentration: { top, topShare: share(topN(opts.top || 5)), halfOfSpendSessions: cost ? half : 0 },
     rules: ruleList, sources: perSource, files: fileList,
   };
 }
@@ -116,6 +126,12 @@ export function collect(sources, opts = {}) {
 const usd = (v) => v == null ? '—' : '$' + (v < 1 ? v.toFixed(3) : v.toFixed(2));
 const pct = (v) => Math.round(v * 100) + '%';
 const id8 = (s) => (s || '').slice(0, 8);
+// One line for sessions priced through another model's row, or null.
+function approxLine(r) {
+  const a = r.approximate; if (!a || !a.sessions) return null;
+  const names = a.models.map((m) => m.as ? `${m.model} as ${m.as}` : `${m.model} (no price)`).join(', ');
+  return `${a.sessions} session${a.sessions === 1 ? '' : 's'} priced approximately: ${names}. Check platform.claude.com/docs/en/about-claude/pricing, or pass --rates FILE.`;
+}
 
 export function collectMarkdown(r) {
   const T = r.totals, fmt = core.fmtDur, fi = core.fmtInt;
@@ -132,6 +148,7 @@ export function collectMarkdown(r) {
   L.push(`| Sessions failing their threshold | ${fi(T.failed)} |`);
   if (T.undated) L.push(`| Sessions with no date (kept) | ${fi(T.undated)} |`);
   L.push('');
+  const al = approxLine(r); if (al) L.push(`> ${al}`, '');
   L.push(`## Where the money went`, '');
   if (T.sessions) L.push(`${r.concentration.halfOfSpendSessions} session${r.concentration.halfOfSpendSessions === 1 ? '' : 's'} carried half the spend; the top ${r.concentration.top.length} carried ${pct(r.concentration.topShare)}.`, '');
   L.push(`| # | source | session | cost | share | wall | turns | requests | findings | worst |`, `|---|---|---|---|---|---|---|---|---|---|`);
@@ -165,6 +182,7 @@ export function collectText(r) {
   L.push(`Glassbox fleet · ${T.sources} source${T.sources === 1 ? '' : 's'} · ${T.sessions} session${T.sessions === 1 ? '' : 's'}${r.since ? ` since ${r.since.slice(0, 10)}` : ''}`);
   L.push(`  cost ${T.lowerBoundSessions ? '≥ ' : ''}${usd(T.cost)}${T.estimated ? ' (est.)' : ''}${T.lowerBoundSessions ? ` (${T.lowerBoundSessions} session${T.lowerBoundSessions === 1 ? '' : 's'} a floor)` : ''} · wall ${fmt(T.wallMs)} (active ${fmt(T.activeMs)}) · ${fi(T.requests)} requests · ${fi(T.toolCalls)} tool calls (${fi(T.toolErrors)} failed)`);
   L.push(`  ${fi(T.findings)} findings (${fi(T.errors)} error, ${fi(T.warns)} warn) · ${fi(T.failed)} session${T.failed === 1 ? '' : 's'} failing`);
+  const al = approxLine(r); if (al) L.push('  ' + al);
   if (T.sessions) L.push(`  ${r.concentration.halfOfSpendSessions} session${r.concentration.halfOfSpendSessions === 1 ? '' : 's'} = half the spend; top ${r.concentration.top.length} = ${pct(r.concentration.topShare)}`);
   L.push('');
   for (const s of r.concentration.top) L.push(`  ${usd(s.cost).padStart(9)}  ${pct(s.share).padStart(4)}  ${s.source.padEnd(16).slice(0, 16)}  ${id8(s.session)}  ${fmt(s.wallMs).padStart(7)}  ${s.findings} finding${s.findings === 1 ? '' : 's'}${s.worst ? ` (${s.worst.severity} ${s.worst.id})` : ''}`);

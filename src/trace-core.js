@@ -9,20 +9,23 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '0.12.1';
+  const VERSION = '0.12.2';
 
   // ---------------------------------------------------------------------------
   // Rate card (USD per million tokens). Prefix-matched against model ids so dated
   // ids like claude-sonnet-4-5-20250929 resolve. Longest prefix wins.
-  // Source: platform.claude.com/docs/en/about-claude/pricing, fetched 2026-10-25.
+  // Source: platform.claude.com/docs/en/about-claude/pricing, fetched 2026-10-25; Fable 5.2 / Mythos 5.2 rows added
+  // 2026-11-18 from the 9 Nov 2026 launch prices ($8 / $40, cache reads $0.20, writes 1.25× / 2× input).
   // `over`: a second price set for requests whose prompt (input + cache reads + cache writes) is over
   // `at` tokens; the whole request pays it (Haiku 5.5).
   // ---------------------------------------------------------------------------
   const RATES = {
+    'claude-fable-5-2':   { in: 8,   out: 40, w5m: 10,    w1h: 16,  read: 0.2 },
     'claude-fable-5-1':   { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 0.25 },
     'claude-opus-5-5':    { in: 4,   out: 20, w5m: 5,     w1h: 8,   read: 0.2 },
     'claude-sonnet-5-5':  { in: 2,   out: 10, w5m: 2.5,   w1h: 4,   read: 0.1 },
     'claude-haiku-5-5':   { in: 0.1, out: 0.5, w5m: 0.125, w1h: 0.2, read: 0.01, over: { at: 100000, in: 0.5, out: 2.5, w5m: 0.625, w1h: 1, read: 0.05 } },
+    'claude-mythos-5-2':  { in: 8,   out: 40, w5m: 10,    w1h: 16,  read: 0.2 },
     'claude-mythos-5-1':  { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 0.25 },
     'claude-fable-5':     { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 1.0 },
     'claude-mythos-5':    { in: 10,  out: 50, w5m: 12.5,  w1h: 20,  read: 1.0 },
@@ -41,7 +44,7 @@
     'claude-3-5-haiku':   { in: 0.8, out: 4,  w5m: 1.0,   w1h: 1.6, read: 0.08 },
   };
   // The day RATES was checked against the pricing page. rateCardCheck() warns when a session ran long after it.
-  const RATES_DATE = '2026-10-25';
+  const RATES_DATE = '2026-11-18';
   const RATES_STALE_DAYS = 60;
 
   const DEFAULTS = {
@@ -1296,7 +1299,8 @@
     if (r < 10) { const p = (r - 1) * 100; return '+' + (p < 10 ? p.toFixed(1) : Math.round(p)) + '%'; }
     return fmtRatio(r);
   }
-  function compare(A, B) {
+  function compare(A, B, opts) {
+    opts = opts || {};
     const metrics = METRICS.map((d) => {
       const a = d.get(A), b = d.get(B);
       const ok = a != null && b != null && Number.isFinite(a) && Number.isFinite(b);
@@ -1320,7 +1324,12 @@
     const pick = (key) => { const m = metrics.find((x) => x.key === key); return m ? m.better : null; };
     const cleaner = (() => { const ea = A.findings.filter((f) => f.severity === 'error').length, eb = B.findings.filter((f) => f.severity === 'error').length; if (ea !== eb) return ea < eb ? 'a' : 'b'; const wa = A.findings.length, wb = B.findings.length; return wa === wb ? null : (wa < wb ? 'a' : 'b'); })();
     const verdict = { cheaper: pick('cost'), faster: pick('wallMs') || pick('activeMs'), cleaner };
-    return { metrics, tools, findings: { onlyA, onlyB, both }, verdict, a: { sessionId: A.trace.meta.sessionId, title: A.trace.meta.title, models: A.trace.meta.models }, b: { sessionId: B.trace.meta.sessionId, title: B.trace.meta.title, models: B.trace.meta.models } };
+    // Both sessions' models against the card: a model priced through another model's row (or not priced at all)
+    // makes "cheaper" a guess, and the report says so instead of reading it as fact.
+    const ends = [A.trace.meta.end, B.trace.meta.end].filter((x) => x != null);
+    const rateCard = rateCardCheck((A.trace.meta.models || []).concat(B.trace.meta.models || []), opts.rates || undefined, { latest: ends.length ? Math.max.apply(null, ends) : null, custom: !!(opts.rates && opts.rates._custom) });
+    rateCard.costApproximate = !!(rateCard.approximate.length || rateCard.unpriced.length);
+    return { metrics, tools, findings: { onlyA, onlyB, both }, verdict, rateCard, a: { sessionId: A.trace.meta.sessionId, title: A.trace.meta.title, models: A.trace.meta.models }, b: { sessionId: B.trace.meta.sessionId, title: B.trace.meta.title, models: B.trace.meta.models } };
   }
   function compareMarkdown(c, opts) {
     opts = opts || {};
@@ -1329,7 +1338,9 @@
     out.push(`- ${la}: ${c.a.sessionId || '—'}${c.a.title ? ' · ' + oneLine(c.a.title, 70) : ''}${c.a.models.length ? ' · ' + c.a.models.join(', ') : ''}`);
     out.push(`- ${lb}: ${c.b.sessionId || '—'}${c.b.title ? ' · ' + oneLine(c.b.title, 70) : ''}${c.b.models.length ? ' · ' + c.b.models.join(', ') : ''}`, '');
     const v = c.verdict; const who = (x) => x === 'a' ? la : x === 'b' ? lb : 'tie';
-    out.push(`**Verdict** — cheaper: ${who(v.cheaper)} · faster: ${who(v.faster)} · cleaner: ${who(v.cleaner)}`, '');
+    const approx = c.rateCard && c.rateCard.costApproximate ? ' (prices approximate)' : '';
+    out.push(`**Verdict** — cheaper: ${who(v.cheaper)}${approx} · faster: ${who(v.faster)} · cleaner: ${who(v.cleaner)}`, '');
+    const rl = rateCardLine(c.rateCard); if (rl) out.push(`> ${rl}`, '');
     out.push(`| metric | ${la} | ${lb} | change |`, '|---|---|---|---|');
     for (const m of c.metrics) { const ch = fmtChange(m); out.push(`| ${m.label} | ${m.aText} | ${m.bText} | ${ch}${m.better ? ' (' + who(m.better) + ' better)' : ''} |`); }
     out.push('');
