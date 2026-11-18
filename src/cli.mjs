@@ -538,10 +538,13 @@ export function outputFormat(flags) {
 }
 
 export function compareReport(A, B, opts = {}) {
-  const c = core.compare(A, B);
+  const c = core.compare(A, B, { rates: opts.rates });
   const la = opts.labelA || (A.trace.meta.sessionId || 'A').slice(0, 8), lb = opts.labelB || (B.trace.meta.sessionId || 'B').slice(0, 8);
   const who = (x) => x === 'a' ? la : x === 'b' ? lb : 'tie';
-  const lines = [`Glassbox compare · ${la} vs ${lb}`, `  cheaper: ${who(c.verdict.cheaper)} · faster: ${who(c.verdict.faster)} · cleaner: ${who(c.verdict.cleaner)}`, ''];
+  const approx = c.rateCard.costApproximate ? ' (prices approximate)' : '';
+  const lines = [`Glassbox compare · ${la} vs ${lb}`, `  cheaper: ${who(c.verdict.cheaper)}${approx} · faster: ${who(c.verdict.faster)} · cleaner: ${who(c.verdict.cleaner)}`];
+  const rateLine = core.rateCardLine(c.rateCard); if (rateLine) lines.push('  ' + rateLine);
+  lines.push('');
   const w = Math.max(la.length, lb.length, 10);
   lines.push('  ' + 'metric'.padEnd(22) + la.padStart(w) + '  ' + lb.padStart(w) + '  change');
   for (const m of c.metrics) { const ch = core.fmtChange(m); lines.push('  ' + m.label.padEnd(22) + m.aText.padStart(w) + '  ' + m.bText.padStart(w) + '  ' + ch + (m.better ? ' (' + who(m.better) + ')' : '')); }
@@ -610,7 +613,7 @@ export async function main(argv, io = {}) {
       if (!args._[1] || !args._[2]) throw new Error('compare needs two sessions: glassbox compare A B');
       const sa = resolveTarget(args._[1], { home }), sb = resolveTarget(args._[2], { home });
       const fa = loadSessionFiles(sa), fb = loadSessionFiles(sb);
-      const rep = compareReport(analyse(fa, rates), analyse(fb, rates), { labelA: args.flags['label-a'], labelB: args.flags['label-b'] });
+      const rep = compareReport(analyse(fa, rates), analyse(fb, rates), { labelA: args.flags['label-a'], labelB: args.flags['label-b'], rates });
       if (args.flags.out) {
         const html = embed({ files: fa, compare: fb }, { template: io.template });
         const outFile = path.resolve(args.flags.out); fs.writeFileSync(outFile, html);

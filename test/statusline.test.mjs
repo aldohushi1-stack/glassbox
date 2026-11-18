@@ -154,8 +154,8 @@ test('rateCardCheck: a newer version priced through an older row, no row at all,
   const bad = core.rateCardCheck(['claude-opus-5-6', 'claude-sonnet-6', 'gpt-x'], undefined, { latest: Date.parse('2027-01-30T00:00:00Z') });
   assert.deepEqual(bad.approximate, [{ model: 'claude-opus-5-6', as: 'claude-opus-5' }]);
   assert.deepEqual(bad.unpriced, ['claude-sonnet-6', 'gpt-x']);
-  assert.equal(bad.ageDays, 97); assert.equal(bad.old, true);
-  assert.match(core.rateCardLine(bad), /^rate card: claude-opus-5-6 priced as claude-opus-5 \(no row of its own\); no price for claude-sonnet-6, gpt-x; the built-in card is from 2026-10-25, 97 days before this ran\./);
+  assert.equal(bad.ageDays, 73); assert.equal(bad.old, true);
+  assert.match(core.rateCardLine(bad), /^rate card: claude-opus-5-6 priced as claude-opus-5 \(no row of its own\); no price for claude-sonnet-6, gpt-x; the built-in card is from 2026-11-18, 73 days before this ran\./);
   assert.equal(core.rateCardCheck([], { x: {} }, { latest: Date.parse('2030-01-01T00:00:00Z'), custom: true }).old, false, 'a --rates card is the user\'s own');
   assert.equal(core.rateCardLine(ok), null);
 });
